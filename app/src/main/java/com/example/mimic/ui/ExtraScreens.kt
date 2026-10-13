@@ -62,7 +62,6 @@ import com.example.mimic.data.db.PlaylistEntity
 import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.components.SongRow
 import com.example.mimic.ui.designsystem.ThemeDefinition
-import com.example.mimic.ui.designsystem.ThemeRegistry
 
 @Composable
 private fun ScreenHeader(title: String, onBack: () -> Unit, trailing: @Composable () -> Unit = {}) {
@@ -94,7 +93,7 @@ fun SettingsScreen(
     onOpenMusicServer: () -> Unit,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
-    val current = ThemeRegistry.byId(settings.themeId)
+    val current by vm.activeTheme.collectAsStateWithLifecycle()
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Settings", onBack)
         Text(

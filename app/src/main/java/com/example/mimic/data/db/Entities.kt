@@ -75,4 +75,6 @@ data class CustomThemeEntity(
     val textPrimary: Long,
     val textSecondary: Long,
     val createdAt: Long,
+    /** ThemeStyle as flat JSON (MImic 2.9+). Null for themes saved before 2.9 => default style. */
+    val styleJson: String? = null,
 )

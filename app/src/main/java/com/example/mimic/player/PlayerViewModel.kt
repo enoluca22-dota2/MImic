@@ -511,30 +511,58 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 com.example.mimic.ui.designsystem.ThemeRegistry.presets,
             )
 
+    /** The selected theme (preset or custom), resolved once here instead of in every screen. */
+    val activeTheme: StateFlow<com.example.mimic.ui.designsystem.ThemeDefinition> =
+        combine(settings.map { it.themeId }.distinctUntilChanged(), allThemes) { id, themes ->
+            themes.firstOrNull { it.id == id } ?: com.example.mimic.ui.designsystem.ThemeRegistry.byId(id)
+        }
+            .distinctUntilChanged()
+            .stateIn(
+                viewModelScope,
+                SharingStarted.Eagerly,
+                com.example.mimic.ui.designsystem.ThemeRegistry.byId(com.example.mimic.ui.designsystem.ThemeRegistry.DEFAULT_ID),
+            )
+
     /**
-     * When the "album_adaptive" theme is selected, colors extracted from the current song's
-     * artwork (off the main thread, recomputed only when the song or theme actually changes).
-     * Null when inactive or when no colors could be derived — callers fall back to a preset.
+     * Seed color from the current song's artwork, computed only while the active theme has
+     * album-adaptive coloring on (any theme can, not just the "Album Adaptive" preset). Runs off
+     * the main thread and only when the *song* or the adaptive flag changes — never per frame or
+     * per playback tick. Null => use the theme's own colors.
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val adaptiveTheme: StateFlow<com.example.mimic.ui.designsystem.ThemeDefinition?> =
+    val adaptiveSeed: StateFlow<Int?> =
         combine(
-            uiState.map { it.currentSong?.id }.distinctUntilChanged(),
-            settings.map { it.themeId }.distinctUntilChanged(),
-        ) { songId, themeId -> songId to themeId }
-            .mapLatest { (songId, themeId) ->
-                if (themeId != "album_adaptive" || songId == null) {
-                    null
-                } else {
-                    val song = songsById[songId] ?: return@mapLatest null
-                    com.example.mimic.data.AdaptivePalette.fromSong(getApplication(), song)?.let { colors ->
-                        com.example.mimic.ui.designsystem.ThemeDefinition(
-                            "album_adaptive", "Album Adaptive", true, colors,
-                        )
-                    }
-                }
+            uiState.map { it.currentSong }.distinctUntilChanged { a, b -> a?.id == b?.id && a?.albumArtUri == b?.albumArtUri },
+            activeTheme.map { it.style.albumAdaptive }.distinctUntilChanged(),
+        ) { song, adaptive -> song to adaptive }
+            .mapLatest { (song, adaptive) ->
+                if (!adaptive || song == null) null
+                else com.example.mimic.data.AdaptivePalette.seedFromSong(getApplication(), song)
             }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    fun setGlassQuality(quality: com.example.mimic.data.GlassQuality) {
+        viewModelScope.launch { settingsRepo.setGlassQuality(quality) }
+    }
+
+    /**
+     * "Restore defaults" in Theme Studio: back to the default preset and device-appropriate glass
+     * quality, nav/player styles back to follow-the-theme. Custom themes are NOT touched.
+     */
+    fun restoreThemeDefaults() {
+        viewModelScope.launch {
+            val s = settings.value
+            settingsRepo.setThemeId(com.example.mimic.ui.designsystem.ThemeRegistry.DEFAULT_ID)
+            settingsRepo.setGlassQuality(com.example.mimic.data.GlassQuality.safeDefault())
+            settingsRepo.setHomeConfig(s.homeConfig.copy(navStyle = com.example.mimic.data.NavStyle.AUTO))
+            settingsRepo.setPlayerLayout(
+                s.playerLayout.copy(
+                    background = com.example.mimic.data.PlayerBackground.AUTO,
+                    controlStyle = com.example.mimic.data.ControlStyle.AUTO,
+                ),
+            )
+        }
+    }
 
     fun saveCustomTheme(theme: com.example.mimic.ui.designsystem.ThemeDefinition, apply: Boolean) {
         viewModelScope.launch {

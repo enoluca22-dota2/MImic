@@ -1,5 +1,9 @@
 package com.example.mimic.ui
 
+import androidx.compose.foundation.horizontalScroll
+import com.example.mimic.data.ControlStyle
+import com.example.mimic.data.PlayerBackground
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -84,7 +88,7 @@ fun PlayerLayoutStudioScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
         SelectRow(
             "Artwork shape",
-            listOf("Rounded", "Circle", "Square"),
+            listOf("Rounded", "Circle", "Square", "Squircle"),
             config.artworkShape.ordinal,
         ) { update(config.copy(artworkShape = ArtworkShape.entries[it])) }
 
@@ -93,6 +97,24 @@ fun PlayerLayoutStudioScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             listOf("Small", "Medium", "Large"),
             config.artworkSize.ordinal,
         ) { update(config.copy(artworkSize = ArtworkSize.entries[it])) }
+
+        SelectRow(
+            "Background",
+            listOf("Auto", "Solid", "Gradient", "Blurred artwork"),
+            config.background.ordinal,
+        ) { update(config.copy(background = PlayerBackground.entries[it])) }
+
+        SelectRow(
+            "Controls",
+            listOf("Auto", "Filled", "Liquid Glass", "Minimal"),
+            config.controlStyle.ordinal,
+        ) { update(config.copy(controlStyle = ControlStyle.entries[it])) }
+        Text(
+            "Auto follows the theme: Liquid Glass themes get glass controls over the blurred cover.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
 
         ToggleRow("Show shuffle & repeat", config.showShuffleRepeat) {
             update(config.copy(showShuffleRepeat = it))
@@ -114,7 +136,11 @@ fun SelectRow(title: String, options: List<String>, selected: Int, onSelect: (In
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.padding(bottom = 8.dp),
         )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        // Scrolls horizontally so long option sets never clip on narrow phones.
+        Row(
+            Modifier.horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
             options.forEachIndexed { index, label ->
                 val isSelected = index == selected
                 Box(
@@ -167,8 +193,11 @@ fun PlayerLayoutPreview(config: PlayerLayoutConfig, modifier: Modifier = Modifie
         PlayerLayout.COMPACT -> minOf(config.artworkSize.fraction(), 0.6f)
         PlayerLayout.CLASSIC -> config.artworkSize.fraction()
     } * 0.55f // scale down for the preview card
-    val shape = if (config.artworkShape == ArtworkShape.CIRCLE) CircleShape
-    else RoundedCornerShape(config.artworkShape.cornerDp().dp)
+    val shape = when (config.artworkShape) {
+        ArtworkShape.CIRCLE -> CircleShape
+        ArtworkShape.SQUIRCLE -> com.kyant.shapes.RoundedRectangle(config.artworkShape.cornerDp().dp)
+        else -> RoundedCornerShape(config.artworkShape.cornerDp().dp)
+    }
 
     Column(
         modifier

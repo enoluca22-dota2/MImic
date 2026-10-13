@@ -25,19 +25,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.example.mimic.data.Song
+import com.example.mimic.ui.designsystem.LocalGlass
+import com.example.mimic.ui.designsystem.glassSurface
+import com.example.mimic.ui.designsystem.surfaceShape
 import java.util.Locale
 
-/** Square album artwork with a placeholder note icon when none is available. */
+/**
+ * Square album artwork with a placeholder note icon when none is available. [shape] overrides
+ * [corner] (used for squircle artwork). The image model is the song's stable art URI, so Coil's
+ * cache key never changes between recompositions (2.8.1 fix).
+ */
 @Composable
-fun AlbumArt(song: Song?, modifier: Modifier = Modifier, corner: Int = 6) {
+fun AlbumArt(song: Song?, modifier: Modifier = Modifier, corner: Int = 6, shape: Shape? = null) {
+    val clipShape = shape ?: RoundedCornerShape(corner.dp)
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(corner.dp))
+            .clip(clipShape)
             .background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center,
     ) {
@@ -46,7 +55,7 @@ fun AlbumArt(song: Song?, modifier: Modifier = Modifier, corner: Int = 6) {
                 model = song.albumArtUri,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.matchParentSize().clip(RoundedCornerShape(corner.dp)),
+                modifier = Modifier.matchParentSize().clip(clipShape),
             )
         } else {
             Icon(
@@ -67,6 +76,8 @@ fun SongRow(
     isFavorite: Boolean = false,
     onMenu: (() -> Unit)? = null,
 ) {
+    // Rows stay flat (no glass) by design: glass is reserved for a few large surfaces.
+    val env = LocalGlass.current
     Row(
         modifier = modifier
             .fillMaxWidth()
@@ -74,12 +85,13 @@ fun SongRow(
             .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AlbumArt(song, modifier = Modifier.size(52.dp))
+        AlbumArt(song, modifier = Modifier.size(52.dp), corner = env.style.cornerRadius / 3)
         Spacer(Modifier.width(12.dp))
         androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
             Text(
                 song.title,
                 style = MaterialTheme.typography.bodyLarge,
+                fontWeight = env.titleFontWeight,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -87,6 +99,7 @@ fun SongRow(
             Text(
                 song.artist,
                 style = MaterialTheme.typography.bodyMedium,
+                fontWeight = env.artistFontWeight,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -119,7 +132,11 @@ fun SongRow(
     }
 }
 
-/** The persistent now-playing bar shown above the bottom navigation. */
+/**
+ * The persistent now-playing bar shown above the bottom navigation. On glass themes it becomes a
+ * floating frosted capsule (backdrop blur of the list scrolling beneath it); otherwise the
+ * original flat bar. Same API and the same click targets either way.
+ */
 @Composable
 fun MiniPlayer(
     song: Song,
@@ -130,22 +147,29 @@ fun MiniPlayer(
     isBuffering: Boolean = false,
     error: String? = null,
 ) {
+    val env = LocalGlass.current
+    val glass = env.enabled
+    val shape = if (glass) env.style.surfaceShape(0.9f) else RoundedCornerShape((env.style.cornerRadius * 0.45f).dp)
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .height(60.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(MaterialTheme.colorScheme.surfaceVariant)
+            .height(if (glass) 64.dp else 60.dp)
+            .glassSurface(shape, fallback = MaterialTheme.colorScheme.surfaceVariant)
             .clickable(onClick = onClick)
-            .padding(horizontal = 8.dp),
+            .padding(horizontal = if (glass) 10.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AlbumArt(song, modifier = Modifier.size(44.dp))
+        AlbumArt(
+            song,
+            modifier = Modifier.size(44.dp),
+            shape = if (glass) env.style.surfaceShape(0.45f) else null,
+        )
         Spacer(Modifier.width(12.dp))
         androidx.compose.foundation.layout.Column(modifier = Modifier.weight(1f)) {
             Text(
                 song.title,
                 style = MaterialTheme.typography.bodyMedium,
+                fontWeight = env.titleFontWeight,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,

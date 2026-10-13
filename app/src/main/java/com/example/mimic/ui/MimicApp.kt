@@ -37,7 +37,31 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.example.mimic.data.Song
 import com.example.mimic.player.PlayerViewModel
+import com.example.mimic.ui.components.GlassNavBar
+import com.example.mimic.ui.components.GlassNavItem
 import com.example.mimic.ui.components.MiniPlayer
+import com.example.mimic.data.resolve
+import com.example.mimic.ui.designsystem.GlassEnv
+import com.example.mimic.ui.designsystem.LocalGlass
+import com.example.mimic.ui.designsystem.LocalGlassBackdrop
+import com.example.mimic.ui.designsystem.blockTouchesBehind
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 
 @androidx.compose.runtime.Composable
 private fun BottomBar(
@@ -47,18 +71,30 @@ private fun BottomBar(
     val backStack by navController.currentBackStackEntryAsState()
     val currentDest = backStack?.destination
     val compact = navStyle == com.example.mimic.data.NavStyle.COMPACT
+    val goTo: (Tab) -> Unit = { tab ->
+        navController.navigate(tab.route) {
+            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+    if (navStyle == com.example.mimic.data.NavStyle.GLASS) {
+        // -1 on pushed sub-screens (Settings, Theme Studio, ...) so no tab looks selected there.
+        val selectedIndex = tabs.indexOfFirst { tab -> currentDest?.hierarchy?.any { it.route == tab.route } == true }
+        GlassNavBar(
+            items = glassTabs,
+            selectedIndex = selectedIndex,
+            onSelect = { goTo(tabs[it]) },
+            modifier = Modifier.navigationBarsPadding(),
+        )
+        return
+    }
     val content: @androidx.compose.runtime.Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
         tabs.forEach { tab ->
             val selected = currentDest?.hierarchy?.any { it.route == tab.route } == true
             NavigationBarItem(
                 selected = selected,
-                onClick = {
-                    navController.navigate(tab.route) {
-                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                        launchSingleTop = true
-                        restoreState = true
-                    }
-                },
+                onClick = { goTo(tab) },
                 icon = { Icon(tab.icon, contentDescription = tab.label) },
                 label = if (compact) null else ({ Text(tab.label) }),
                 alwaysShowLabel = !compact,
@@ -85,6 +121,8 @@ private val tabs = listOf(
     Tab("library", "Your Library", Icons.Default.LibraryMusic),
 )
 
+private val glassTabs = tabs.map { GlassNavItem(it.label, it.icon) }
+
 /**
  * Insets full-screen sub-screens (Settings, Player Layout, Account, etc.) by the Scaffold's
  * [padding]: the top keeps their header below the status-bar clock, the bottom keeps their last
@@ -102,6 +140,17 @@ fun MimicApp(viewModel: PlayerViewModel) {
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val navController = rememberNavController()
+    val glassEnv = LocalGlass.current
+    val navStyle = settings.homeConfig.navStyle.resolve(
+        themeWantsGlassNav = glassEnv.style.glass && glassEnv.style.pillNav,
+        glassTheme = glassEnv.style.glass,
+    )
+    // Live content layer for backdrop blur/refraction. Only recorded when a glass theme can
+    // actually blur on this device + quality; otherwise nothing extra is drawn at all.
+    val liveGlass = glassEnv.enabled && glassEnv.quality.blurFactor > 0f &&
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+    val backdrop = rememberLayerBackdrop()
+    val navMotion = navTransitions(glassEnv)
 
     var nowPlayingOpen by remember { mutableStateOf(false) }
     var queueOpen by remember { mutableStateOf(false) }
@@ -160,8 +209,12 @@ fun MimicApp(viewModel: PlayerViewModel) {
         }
     }
 
+    CompositionLocalProvider(LocalGlassBackdrop provides if (liveGlass) backdrop else null) {
+    // While a full-screen overlay is up, the screen beneath is hidden from TalkBack too.
+    val overlayOpen = (nowPlayingOpen && uiState.currentSong != null) || editingTheme != null
     Scaffold(
-        modifier = Modifier.fillMaxSize(),
+        modifier = Modifier.fillMaxSize().then(if (overlayOpen) Modifier.clearAndSetSemantics {} else Modifier),
+        containerColor = if (glassEnv.style.gradientBackground) Color.Transparent else MaterialTheme.colorScheme.background,
         bottomBar = {
             Column {
                 val current = uiState.currentSong
@@ -171,16 +224,34 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         isPlaying = uiState.isPlaying,
                         onPlayPause = viewModel::togglePlayPause,
                         onClick = { nowPlayingOpen = true },
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.padding(
+                            horizontal = if (navStyle == com.example.mimic.data.NavStyle.GLASS) 14.dp else 8.dp,
+                            vertical = 4.dp,
+                        ),
                         isBuffering = uiState.isBuffering,
                         error = uiState.playbackError,
                     )
                 }
-                BottomBar(navController, settings.homeConfig.navStyle)
+                BottomBar(navController, navStyle)
             }
         },
     ) { innerPadding ->
-        NavHost(navController = navController, startDestination = "home") {
+        // The content (and the theme backdrop gradient) is recorded into the backdrop layer; the
+        // nav bar / mini-player sample it. Lists still scroll edge-to-edge behind them.
+        Box(
+            Modifier
+                .fillMaxSize()
+                .then(if (liveGlass) Modifier.layerBackdrop(backdrop) else Modifier)
+                .themeBackground(),
+        ) {
+        NavHost(
+            navController = navController,
+            startDestination = "home",
+            enterTransition = { navMotion.first },
+            exitTransition = { navMotion.second },
+            popEnterTransition = { navMotion.first },
+            popExitTransition = { navMotion.second },
+        ) {
             composable("home") {
                 HomeScreen(viewModel, innerPadding, onOpenSettings = { navController.navigate("settings") }, onSongMenu)
             }
@@ -268,6 +339,8 @@ fun MimicApp(viewModel: PlayerViewModel) {
                 InsetScreen(innerPadding) { PlaylistDetailScreen(viewModel, id, name, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu) }
             }
         }
+        }
+    }
     }
 
     // ---- Overlays, sheets and dialogs ----
@@ -331,12 +404,58 @@ fun MimicApp(viewModel: PlayerViewModel) {
     }
 
     editingTheme?.let { theme ->
-        ThemeEditorScreen(
-            initial = theme,
-            onSave = { edited, apply -> viewModel.saveCustomTheme(edited, apply) },
-            onExport = shareTheme,
-            onBack = { editingTheme = null },
-        )
+        // Full-screen overlay: opaque, inset from the system bars, and Back closes it (same rules
+        // as the 2.8.4 Now Playing fix: nothing underneath may bleed through or receive touches).
+        androidx.activity.compose.BackHandler { editingTheme = null }
+        Box(
+            Modifier
+                .fillMaxSize()
+                .blockTouchesBehind()
+                .background(MaterialTheme.colorScheme.background)
+                .systemBarsPadding(),
+        ) {
+            ThemeEditorScreen(
+                initial = theme,
+                quality = settings.glassQuality,
+                onSave = { edited, apply -> viewModel.saveCustomTheme(edited, apply) },
+                onExport = shareTheme,
+                onBack = { editingTheme = null },
+            )
+        }
     }
 
+}
+
+/**
+ * Screen transitions honoring the theme's motion settings: a short cross-fade whose duration
+ * follows the transition speed, or no animation at all when motion / system animations are off.
+ */
+private fun navTransitions(env: GlassEnv): Pair<EnterTransition, ExitTransition> {
+    if (env.motionScale == 0f) return EnterTransition.None to ExitTransition.None
+    val ms = (220 / env.style.transitionSpeed).toInt()
+    return fadeIn(tween(ms)) to fadeOut(tween(ms))
+}
+
+/**
+ * The theme backdrop: a static vertical gradient (plus a soft accent glow on glass themes) painted
+ * behind all content. Static => no per-frame work; it is what glass surfaces frost over.
+ */
+@Composable
+private fun Modifier.themeBackground(): Modifier {
+    val env = LocalGlass.current
+    if (!env.style.gradientBackground) return this
+    val scheme = MaterialTheme.colorScheme
+    val top = if (env.style.gradientColor != 0L) Color(env.style.gradientColor) else lerp(scheme.background, scheme.primary, 0.22f)
+    val glow = scheme.tertiary.copy(alpha = 0.22f)
+    return this
+        .background(Brush.verticalGradient(0f to top, 0.55f to scheme.background, 1f to scheme.background))
+        .then(
+            if (env.style.glass) {
+                Modifier.background(
+                    Brush.radialGradient(listOf(glow, Color.Transparent), center = Offset(900f, 260f), radius = 900f),
+                )
+            } else {
+                Modifier
+            },
+        )
 }

@@ -52,13 +52,14 @@ import com.example.mimic.data.Song
 import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.components.AlbumArt
 import com.example.mimic.ui.components.SongRow
+import com.example.mimic.ui.designsystem.LocalGlass
 
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
     Text(
         text,
         style = MaterialTheme.typography.titleLarge,
-        fontWeight = FontWeight.Bold,
+        fontWeight = LocalGlass.current.headerFontWeight,
         color = MaterialTheme.colorScheme.onBackground,
         modifier = modifier.padding(start = 16.dp, top = 20.dp, bottom = 10.dp),
     )
@@ -66,12 +67,14 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun SongCard(song: Song, onClick: () -> Unit) {
+    val env = LocalGlass.current
     Column(modifier = Modifier.width(144.dp).clickable(onClick = onClick)) {
-        AlbumArt(song, modifier = Modifier.size(144.dp), corner = 8)
+        AlbumArt(song, modifier = Modifier.size(144.dp), corner = (env.style.cornerRadius * 0.45f).toInt())
         Spacer(Modifier.height(6.dp))
         Text(
             song.title,
             style = MaterialTheme.typography.bodyMedium,
+            fontWeight = env.titleFontWeight,
             color = MaterialTheme.colorScheme.onBackground,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
@@ -140,7 +143,7 @@ fun HomeScreen(
                 Text(
                     "Good evening",
                     style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = LocalGlass.current.headerFontWeight,
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.weight(1f),
                 )
@@ -185,12 +188,21 @@ fun SearchScreen(
     }
     Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
         SectionHeader("Search")
-        OutlinedTextField(
+        // Pill-shaped search field; flat (no live glass) so typing/scrolling costs nothing extra.
+        val searchShape = if (LocalGlass.current.style.glass) com.kyant.shapes.Capsule() else RoundedCornerShape(12.dp)
+        androidx.compose.material3.TextField(
             value = query,
             onValueChange = { query = it },
             placeholder = { Text("Songs, artists, albums") },
             leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
             singleLine = true,
+            shape = searchShape,
+            colors = androidx.compose.material3.TextFieldDefaults.colors(
+                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+            ),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
         )
         when {

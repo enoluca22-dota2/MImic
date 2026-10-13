@@ -18,9 +18,11 @@ fun CustomThemeEntity.toDefinition(): ThemeDefinition = ThemeDefinition(
         textSecondary = textSecondary,
         isDark = isDark,
     ),
+    // Pre-2.9 rows have no style => parseStyle(null) gives the default flat style.
+    style = ThemeSerialization.parseStyle(styleJson),
 )
 
-fun ThemeDefinition.toEntity(): CustomThemeEntity = CustomThemeEntity(
+fun ThemeDefinition.toEntity(createdAt: Long = System.currentTimeMillis()): CustomThemeEntity = CustomThemeEntity(
     id = id,
     name = name,
     isDark = colors.isDark,
@@ -31,5 +33,6 @@ fun ThemeDefinition.toEntity(): CustomThemeEntity = CustomThemeEntity(
     surfaceElevated = colors.surfaceElevated,
     textPrimary = colors.textPrimary,
     textSecondary = colors.textSecondary,
-    createdAt = System.currentTimeMillis(),
+    createdAt = createdAt,
+    styleJson = ThemeSerialization.styleToJson(style),
 )

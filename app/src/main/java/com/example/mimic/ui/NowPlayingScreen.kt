@@ -57,6 +57,24 @@ import com.example.mimic.data.cornerDp
 import com.example.mimic.data.fraction
 import com.example.mimic.player.PlayerUiState
 import com.example.mimic.ui.components.AlbumArt
+import com.example.mimic.ui.components.GlassIconButton
+import com.example.mimic.data.ControlStyle
+import com.example.mimic.data.PlayerBackground
+import com.example.mimic.data.resolvedBackground
+import com.example.mimic.data.resolvedControls
+import com.example.mimic.ui.designsystem.LocalGlass
+import com.example.mimic.ui.designsystem.LocalGlassBackdrop
+import com.example.mimic.ui.designsystem.blockTouchesBehind
+import com.example.mimic.ui.designsystem.glassSurface
+import com.example.mimic.ui.designsystem.roundControlShape
+import com.example.mimic.ui.designsystem.surfaceShape
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
+import com.kyant.shapes.RoundedRectangle
+import androidx.compose.foundation.layout.width
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.graphics.vector.ImageVector
 import com.example.mimic.ui.components.formatDuration
 
 @Composable
@@ -78,10 +96,14 @@ fun NowPlayingScreen(
     val song = state.currentSong
     // System back collapses (minimizes) the full-screen player — it never gets stuck open.
     BackHandler(onBack = onBack)
-    // The overlay must FULLY occlude whatever is behind it. Immersive paints a translucent accent
-    // gradient, so it is layered ON TOP of an opaque base; otherwise the screen underneath bleeds
-    // through (the reported "Now Playing over the settings page / darkened screen" bug).
-    val immersiveOverlay = if (config.layout == PlayerLayout.IMMERSIVE) {
+    val env = LocalGlass.current
+    val glassTheme = env.enabled
+    val background = config.resolvedBackground(glassTheme)
+    val controls = config.resolvedControls(glassTheme)
+    // The overlay must FULLY occlude whatever is behind it. Gradient / artwork backgrounds are
+    // translucent, so they are always layered ON TOP of an opaque base; otherwise the screen
+    // underneath bleeds through (the 2.8.4 "Now Playing over the settings page" bug).
+    val gradientOverlay = if (background == PlayerBackground.GRADIENT) {
         Modifier.background(
             Brush.verticalGradient(
                 listOf(
@@ -93,6 +115,10 @@ fun NowPlayingScreen(
     } else {
         Modifier
     }
+    // Glass controls sample the player's own background (never the screen behind the overlay).
+    val liveGlass = glassTheme && env.quality.blurFactor > 0f &&
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+    val playerBackdrop = rememberLayerBackdrop()
 
     val artworkFraction = when (config.layout) {
         PlayerLayout.IMMERSIVE -> maxOf(config.artworkSize.fraction(), 0.9f)
@@ -100,27 +126,33 @@ fun NowPlayingScreen(
         PlayerLayout.CLASSIC -> config.artworkSize.fraction()
     }
     val corner = if (config.artworkShape == ArtworkShape.CIRCLE) 1000 else config.artworkShape.cornerDp()
+    val artShape = if (config.artworkShape == ArtworkShape.SQUIRCLE) RoundedRectangle(corner.dp) else null
 
     // Opaque base fills edge-to-edge (behind the system bars for an immersive look); the content
     // Column is inset with systemBarsPadding so the header clears the status bar and the controls
     // clear the navigation bar.
     Box(
         Modifier.fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .then(immersiveOverlay),
+            .blockTouchesBehind()
+            .background(MaterialTheme.colorScheme.background),
     ) {
+    Box(
+        Modifier.matchParentSize()
+            .then(if (liveGlass) Modifier.layerBackdrop(playerBackdrop) else Modifier)
+            .then(gradientOverlay),
+    ) {
+        if (background == PlayerBackground.BLURRED_ARTWORK) BlurredArtwork(song)
+    }
+    CompositionLocalProvider(LocalGlassBackdrop provides if (liveGlass) playerBackdrop else null) {
     Column(
         modifier = Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Top bar: Minimize (collapse, keeps playing) + Stop & Close + optional secondary actions.
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize")
-            }
-            IconButton(onClick = onStop) {
-                Icon(Icons.Default.Stop, contentDescription = "Stop & close")
-            }
+            TopAction(controls, Icons.Default.KeyboardArrowDown, "Minimize", onBack)
+            Spacer(Modifier.width(if (controls == ControlStyle.GLASS) 8.dp else 0.dp))
+            TopAction(controls, Icons.Default.Stop, "Stop & close", onStop)
             Text(
                 "Now Playing",
                 style = MaterialTheme.typography.titleSmall,
@@ -129,8 +161,9 @@ fun NowPlayingScreen(
                 textAlign = TextAlign.Center,
             )
             if (config.showSecondaryActions) {
-                IconButton(onClick = onOpenSleep) { Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer") }
-                IconButton(onClick = onOpenQueue) { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Queue") }
+                TopAction(controls, Icons.Default.Bedtime, "Sleep timer", onOpenSleep)
+                Spacer(Modifier.width(if (controls == ControlStyle.GLASS) 8.dp else 0.dp))
+                TopAction(controls, Icons.AutoMirrored.Filled.QueueMusic, "Queue", onOpenQueue)
             } else {
                 Spacer(Modifier.size(48.dp))
             }
@@ -142,6 +175,7 @@ fun NowPlayingScreen(
             song,
             modifier = Modifier.fillMaxWidth(artworkFraction).aspectRatio(1f),
             corner = corner,
+            shape = artShape,
         )
 
         if (config.layout == PlayerLayout.IMMERSIVE) Spacer(Modifier.weight(1f)) else Spacer(Modifier.height(28.dp))
@@ -153,7 +187,7 @@ fun NowPlayingScreen(
                     song?.title ?: "Nothing playing",
                     style = if (config.layout == PlayerLayout.COMPACT) MaterialTheme.typography.titleLarge
                     else MaterialTheme.typography.headlineSmall,
-                    fontWeight = FontWeight.Bold,
+                    fontWeight = env.headerFontWeight,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -177,13 +211,69 @@ fun NowPlayingScreen(
         }
 
         Spacer(Modifier.height(if (config.layout == PlayerLayout.COMPACT) 8.dp else 16.dp))
-        SeekBar(state, onSeek)
-
-        Spacer(Modifier.height(8.dp))
-        Controls(state, config, onPlayPause, onNext, onPrevious, onShuffle, onRepeat)
+        if (controls == ControlStyle.GLASS) {
+            // One frosted control deck holding seek + transport, like a floating glass panel.
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .glassSurface(env.style.surfaceShape(1.1f), fallback = MaterialTheme.colorScheme.surfaceVariant)
+                    .padding(horizontal = 14.dp, vertical = 12.dp),
+            ) {
+                SeekBar(state, onSeek)
+                Spacer(Modifier.height(4.dp))
+                Controls(state, config, controls, onPlayPause, onNext, onPrevious, onShuffle, onRepeat)
+            }
+        } else {
+            SeekBar(state, onSeek)
+            Spacer(Modifier.height(8.dp))
+            Controls(state, config, controls, onPlayPause, onNext, onPrevious, onShuffle, onRepeat)
+        }
 
         if (config.layout == PlayerLayout.IMMERSIVE) Spacer(Modifier.height(24.dp))
     }
+    }
+    }
+}
+
+/** Top-bar action: a glass circle on glass control style, else the original plain icon button. */
+@Composable
+private fun TopAction(style: ControlStyle, icon: ImageVector, label: String, onClick: () -> Unit) {
+    if (style == ControlStyle.GLASS) {
+        GlassIconButton(icon, label, onClick, size = 48.dp, iconSize = 22.dp)
+    } else {
+        IconButton(onClick = onClick) { Icon(icon, contentDescription = label) }
+    }
+}
+
+/**
+ * The current cover, heavily blurred and dimmed, as the player backdrop. Static (no animation);
+ * Coil serves the already-cached cover by its stable URL at a small decode size. Below API 31
+ * [blur] is a no-op, so the scrim is denser there to keep text readable.
+ */
+@Composable
+private fun BlurredArtwork(song: com.example.mimic.data.Song?) {
+    val art = song?.albumArtUri ?: return
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val request = remember(art) {
+        coil.request.ImageRequest.Builder(context).data(art).size(256).crossfade(true).build()
+    }
+    val canBlur = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
+    val bg = MaterialTheme.colorScheme.background
+    Box(Modifier.fillMaxSize()) {
+        coil.compose.AsyncImage(
+            model = request,
+            contentDescription = null,
+            contentScale = androidx.compose.ui.layout.ContentScale.Crop,
+            alpha = if (canBlur) 0.85f else 0.35f,
+            modifier = Modifier.fillMaxSize().then(if (canBlur) Modifier.blur(60.dp) else Modifier),
+        )
+        Box(
+            Modifier.fillMaxSize().background(
+                Brush.verticalGradient(
+                    listOf(bg.copy(alpha = 0.25f), bg.copy(alpha = 0.55f), bg.copy(alpha = 0.88f)),
+                ),
+            ),
+        )
     }
 }
 
@@ -191,6 +281,7 @@ fun NowPlayingScreen(
 private fun Controls(
     state: PlayerUiState,
     config: PlayerLayoutConfig,
+    style: ControlStyle,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -212,26 +303,48 @@ private fun Controls(
                 )
             }
         }
-        IconButton(onClick = onPrevious) {
-            Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(40.dp))
-        }
-        Box(
-            modifier = Modifier
-                .size(72.dp)
-                .clip(androidx.compose.foundation.shape.CircleShape)
-                .background(MaterialTheme.colorScheme.primary)
-                .clickable(onClick = onPlayPause),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                contentDescription = if (state.isPlaying) "Pause" else "Play",
-                tint = MaterialTheme.colorScheme.onPrimary,
-                modifier = Modifier.size(40.dp),
-            )
-        }
-        IconButton(onClick = onNext) {
-            Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(40.dp))
+        val playIcon = if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow
+        val playLabel = if (state.isPlaying) "Pause" else "Play"
+        when (style) {
+            ControlStyle.GLASS -> {
+                GlassIconButton(Icons.Default.SkipPrevious, "Previous", onPrevious, size = 56.dp, iconSize = 32.dp)
+                GlassIconButton(playIcon, playLabel, onPlayPause, size = 76.dp, iconSize = 40.dp, accent = true)
+                GlassIconButton(Icons.Default.SkipNext, "Next", onNext, size = 56.dp, iconSize = 32.dp)
+            }
+            ControlStyle.MINIMAL -> {
+                IconButton(onClick = onPrevious) {
+                    Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(36.dp))
+                }
+                IconButton(onClick = onPlayPause, modifier = Modifier.size(72.dp)) {
+                    Icon(playIcon, contentDescription = playLabel, modifier = Modifier.size(56.dp))
+                }
+                IconButton(onClick = onNext) {
+                    Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(36.dp))
+                }
+            }
+            else -> {
+                IconButton(onClick = onPrevious) {
+                    Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(40.dp))
+                }
+                Box(
+                    modifier = Modifier
+                        .size(72.dp)
+                        .clip(LocalGlass.current.style.roundControlShape())
+                        .background(MaterialTheme.colorScheme.primary)
+                        .clickable(onClick = onPlayPause),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        playIcon,
+                        contentDescription = playLabel,
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                        modifier = Modifier.size(40.dp),
+                    )
+                }
+                IconButton(onClick = onNext) {
+                    Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(40.dp))
+                }
+            }
         }
         if (config.showShuffleRepeat) {
             IconButton(onClick = onRepeat) {

@@ -16,10 +16,27 @@ included. No proprietary (e.g. Spotify) code or assets are used.
 | AndroidX Palette | album-art color extraction (Album Adaptive theme) | Apache-2.0 |
 | OkHttp | HTTP client for the Subsonic/Navidrome music server | Apache-2.0 |
 | KSP (build-time) | Room code generation | Apache-2.0 |
+| Kyant Backdrop `io.github.kyant0:backdrop:1.0.6` | Liquid Glass: backdrop blur, lens refraction, rim highlight (2.9) | Apache-2.0 |
+| Kyant Shapes `io.github.kyant0:shapes:1.2.0` | continuous-curvature (squircle) & capsule shapes (2.9) | Apache-2.0 |
+| MaterialKolor `com.materialkolor:material-color-utilities:4.1.1` | contrast-safe album-adaptive schemes (2.9) | MIT (port of Google's Apache-2.0 material-color-utilities) |
+| skydoves colorpicker-compose `1.1.3` | HSV color wheel in Theme Studio (2.9) | Apache-2.0 |
 | JUnit4, AndroidX Test, Espresso (test only) | testing | EPL-1.0 / Apache-2.0 |
 
 MImic's own source is intended to be released under the MIT License (`LICENSE`).
 
-## Not yet added (evaluated, deferred)
-MaterialKolor, Haze, skydoves colorpicker-compose, ComposeDynamicTheme — must be
-license-verified at a pinned version before integration. See `DESIGN_RESEARCH.md`.
+## Version pinning (2.9)
+MImic builds with Kotlin 2.2.10 / Compose BOM 2026.02.01 (foundation 1.10.4, material3 1.4.0).
+The newest releases of these libraries (backdrop 2.0.x, colorpicker 1.2+/1.3, MaterialKolor 5.x)
+are compiled with Kotlin 2.4 metadata and Compose 1.11–1.12, which a Kotlin 2.2 compiler cannot
+read. The pinned versions above are the newest that fit the current toolchain. Resolved graph was
+checked: material3 stays 1.4.0, foundation 1.10.4; only the runtime kotlin-stdlib moves
+2.2.10 → 2.3.10 (readable by the 2.2 compiler). Upgrading these requires a Kotlin 2.4 migration.
+
+Only the *color-utilities* artifact of MaterialKolor is used: its `material-kolor` UI artifact
+pulls JetBrains `material3 1.10.0-alpha05`, which would push AndroidX material3 to an alpha.
+
+## Evaluated, not added
+- **Haze** (Apache-2.0) — redundant: Backdrop already provides the blur for the few glass surfaces.
+- **KMPalette** (MIT) — redundant: AndroidX Palette (already used) does the extraction on Android.
+- **Resonate** (MIT) — studied as a design reference only; no code copied.
+- No Apple assets, fonts or icons are used; typography uses Android's built-in system families.

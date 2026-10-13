@@ -15,6 +15,7 @@ data class AppSettings(
     val sleepTimerMinutes: Int = 0,
     val playerLayout: PlayerLayoutConfig = PlayerLayoutConfig(),
     val homeConfig: HomeConfig = HomeConfig(),
+    val glassQuality: GlassQuality = GlassQuality.BALANCED,
 )
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -37,6 +38,9 @@ class SettingsRepository(private val context: Context) {
         val HOME_ORDER = stringPreferencesKey("home_section_order")
         val HOME_HIDDEN = stringPreferencesKey("home_hidden")
         val NAV_STYLE = stringPreferencesKey("nav_style")
+        val PLAYER_BG = stringPreferencesKey("player_background")
+        val CONTROL_STYLE = stringPreferencesKey("player_control_style")
+        val GLASS_QUALITY = stringPreferencesKey("glass_quality")
     }
 
     private fun decodeSections(csv: String?): List<HomeSection> =
@@ -52,12 +56,15 @@ class SettingsRepository(private val context: Context) {
                 artworkSize = decode(prefs[Keys.ART_SIZE], ArtworkSize.LARGE),
                 showShuffleRepeat = prefs[Keys.SHOW_SHUFFLE_REPEAT] ?: true,
                 showSecondaryActions = prefs[Keys.SHOW_SECONDARY] ?: true,
+                background = decode(prefs[Keys.PLAYER_BG], PlayerBackground.AUTO),
+                controlStyle = decode(prefs[Keys.CONTROL_STYLE], ControlStyle.AUTO),
             ),
             homeConfig = HomeConfig(
                 sectionOrder = decodeSections(prefs[Keys.HOME_ORDER]).ifEmpty { HomeSection.entries },
                 hidden = decodeSections(prefs[Keys.HOME_HIDDEN]).toSet(),
-                navStyle = decode(prefs[Keys.NAV_STYLE], NavStyle.STANDARD),
+                navStyle = decode(prefs[Keys.NAV_STYLE], NavStyle.AUTO),
             ),
+            glassQuality = decode(prefs[Keys.GLASS_QUALITY], GlassQuality.safeDefault()),
         )
     }
 
@@ -76,6 +83,8 @@ class SettingsRepository(private val context: Context) {
             it[Keys.ART_SIZE] = config.artworkSize.name
             it[Keys.SHOW_SHUFFLE_REPEAT] = config.showShuffleRepeat
             it[Keys.SHOW_SECONDARY] = config.showSecondaryActions
+            it[Keys.PLAYER_BG] = config.background.name
+            it[Keys.CONTROL_STYLE] = config.controlStyle.name
         }
     }
 
@@ -85,5 +94,9 @@ class SettingsRepository(private val context: Context) {
             it[Keys.HOME_HIDDEN] = config.hidden.joinToString(",") { s -> s.name }
             it[Keys.NAV_STYLE] = config.navStyle.name
         }
+    }
+
+    suspend fun setGlassQuality(quality: GlassQuality) {
+        context.dataStore.edit { it[Keys.GLASS_QUALITY] = quality.name }
     }
 }

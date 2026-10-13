@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.9 — MImic Liquid Glass + full Theme Studio customization
+Resumed from an interrupted session (laptop shutdown): the uncommitted `ThemeStyle` model, 14-preset
+registry and `GlassQuality` enum were recovered intact and finished, not rewritten.
+- **MImic Liquid Glass** flagship theme: dark liquid glass that re-tints itself from the playing
+  album. Real backdrop blur + vibrancy (API 31+), lens refraction (API 33+, High quality), rim
+  highlight and soft shadow via Kyant Backdrop. Glass is applied only to the floating pill nav,
+  the mini-player and the Now Playing controls — never to list rows.
+- **14 canonical presets** (Liquid Glass Clear / Frosted / Dark, AMOLED Pure Black & Purple, Classic
+  Music Dark & Light, Album Adaptive, Neon Cyberpunk, Midnight Blue, Sunset Gradient, Minimal
+  Monochrome, Premium Gold, Material 3 Expressive) + the six older presets kept; all ids stable.
+- **Glass quality** (device setting): High / Balanced (default on API 31+) / Performance (frosted
+  tint, no blur) / Off (opaque). Glass panels keep a readability floor: low blur => denser frost.
+- **Theme editor** with live preview built from the real components, sections for Colors (incl.
+  accent, gradient, glass tint, album-adaptive toggle, HSV color wheel), Glass (transparency, blur,
+  refraction, edge highlight, shadow, light/dark glass), Shapes (card/nav radius, rounded/capsule/
+  squircle buttons), Text (system font family, size, header/title/artist weights), Motion
+  (on/off, intensity, speed; honors Android "Remove animations"), Navigation (pill nav, indicator).
+- **Album-adaptive coloring for any theme**: seed from artwork via Coil's cache (no re-download) +
+  Palette, scheme from MaterialKolor's `SchemeContent` — text contrast unit-tested ≥ 7:1 on
+  loud/dark/pale/grey covers.
+- **Player**: Background (Auto/Solid/Gradient/Blurred artwork) and Controls (Auto/Filled/Liquid
+  Glass/Minimal); squircle artwork shape. Gradients/artwork always sit on the 2.8.4 opaque base.
+- **Navigation**: new Liquid Glass and Auto (follow theme) styles; Floating on a glass theme renders
+  the glass pill. Screen transitions follow the theme's motion settings.
+- **Theme files v2**: `style` block; v1 files (and files without a version) import with the default
+  style; future versions and hostile values are rejected/clamped. Room migration 3 → 4 adds a nullable
+  `styleJson` column — existing custom themes are kept unchanged.
+- Theme Studio: grouped sections, delete **with confirmation**, "Customize (copy)" for presets,
+  **Restore defaults** (custom themes untouched). Settings now names custom themes correctly.
+- **Fixed (pre-existing since 2.8.4):** taps on empty areas of the full-screen player fell through
+  to the list underneath and started another song. Overlays now own every touch inside their bounds
+  and hide the screen beneath from TalkBack. The theme editor overlay is now opaque, inset and closes
+  on Back.
+- Tests: 53 JVM unit tests (+15: schema v1/v2, migration, clamping, album-color contrast, style
+  resolution, glass env) and 8 instrumented tests (+1: real v3 → v4 database migration), all passing.
+  versionCode 15 / versionName 2.9; applicationId + signing unchanged.
+
 ## 2.8.4 — Player overlay / insets / Stop & Close (real phone UI bug report)
 Repairs the broken Player Layout / Now Playing experience reported on a physical Xiaomi phone.
 - **Root cause of "Now Playing over the settings page / darkened screen":** the Immersive layout's

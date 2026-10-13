@@ -55,9 +55,15 @@ fun HomeCustomizeScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
         SelectRow(
             "Navigation style",
-            listOf("Standard", "Floating", "Compact"),
+            listOf("Standard", "Floating", "Compact", "Liquid Glass", "Auto (theme)"),
             config.navStyle.ordinal,
         ) { vm.setHomeConfig(config.copy(navStyle = NavStyle.entries[it])) }
+        Text(
+            "Auto uses the floating glass pill on Liquid Glass themes and the standard bar otherwise.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
 
         Text(
             "Home sections",
