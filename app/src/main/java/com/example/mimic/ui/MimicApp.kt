@@ -176,6 +176,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     contentPadding = innerPadding,
                     onOpenPlaylist = { navController.navigate("playlist/$it") },
                     onOpenFavorites = { navController.navigate("favorites") },
+                    onOpenDownloads = { navController.navigate("downloads") },
                     onCreatePlaylist = { createDialog = true },
                     onBrowse = { navController.navigate("browse/${it.name}") },
                     onSongMenu = onSongMenu,
@@ -188,10 +189,29 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenThemeStudio = { navController.navigate("themestudio") },
                     onOpenPlayerStudio = { navController.navigate("playerstudio") },
                     onOpenHomeCustomize = { navController.navigate("homecustomize") },
+                    onOpenMusicServer = { navController.navigate("musicserver") },
                 )
             }
             composable("playerstudio") { PlayerLayoutStudioScreen(viewModel, onBack = { navController.popBackStack() }) }
             composable("homecustomize") { HomeCustomizeScreen(viewModel, onBack = { navController.popBackStack() }) }
+            composable("musicserver") {
+                MusicServerScreen(
+                    viewModel,
+                    onBack = { navController.popBackStack() },
+                    onOpenBrowse = { navController.navigate("serverbrowse") },
+                )
+            }
+            composable("serverbrowse") { ServerBrowseScreen(viewModel, onBack = { navController.popBackStack() }) }
+            composable("downloads") {
+                val downloads by viewModel.downloads.collectAsStateWithLifecycle()
+                SongListScreen(
+                    title = "Downloads",
+                    songs = downloads,
+                    onBack = { navController.popBackStack() },
+                    onPlay = viewModel::play,
+                    onSongMenu = onSongMenu,
+                )
+            }
             composable("themestudio") {
                 ThemeStudioScreen(
                     vm = viewModel,

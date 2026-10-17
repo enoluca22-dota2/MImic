@@ -48,6 +48,19 @@ data class PlayCount(
     val count: Int,
 )
 
+/** A track downloaded from the music server for offline playback. */
+@Entity(tableName = "downloads")
+data class DownloadEntity(
+    @PrimaryKey val remoteId: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    val durationMs: Long,
+    val fileUri: String,
+    val coverArtUri: String?,
+    val downloadedAt: Long,
+)
+
 /** A user-created/edited theme. Built-in presets live in code; these are editable. */
 @Entity(tableName = "custom_themes")
 data class CustomThemeEntity(

@@ -49,6 +49,21 @@ interface HistoryDao {
 }
 
 @Dao
+interface DownloadDao {
+    @Query("SELECT * FROM downloads ORDER BY downloadedAt DESC")
+    fun all(): Flow<List<DownloadEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(download: DownloadEntity)
+
+    @Query("DELETE FROM downloads WHERE remoteId = :remoteId")
+    suspend fun delete(remoteId: String)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM downloads WHERE remoteId = :remoteId)")
+    suspend fun isDownloaded(remoteId: String): Boolean
+}
+
+@Dao
 interface CustomThemeDao {
     @Query("SELECT * FROM custom_themes ORDER BY createdAt DESC")
     fun all(): Flow<List<CustomThemeEntity>>

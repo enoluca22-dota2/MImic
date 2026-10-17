@@ -4,6 +4,7 @@ import android.app.Application
 import com.example.mimic.data.MusicRepository
 import com.example.mimic.data.SettingsRepository
 import com.example.mimic.data.db.MimicDatabase
+import com.example.mimic.data.server.ServerCredentialsRepository
 
 /**
  * Simple manual dependency container. Avoids an annotation-processing DI framework
@@ -14,11 +15,13 @@ class AppContainer(application: Application) {
     val database: MimicDatabase = MimicDatabase.get(application)
     val musicRepository: MusicRepository = MusicRepository(application)
     val settingsRepository: SettingsRepository = SettingsRepository(application)
+    val serverCredentialsRepository: ServerCredentialsRepository = ServerCredentialsRepository(application)
 
     val favoriteDao get() = database.favoriteDao()
     val historyDao get() = database.historyDao()
     val playlistDao get() = database.playlistDao()
     val customThemeDao get() = database.customThemeDao()
+    val downloadDao get() = database.downloadDao()
 }
 
 class MimicApplication : Application() {

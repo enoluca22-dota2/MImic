@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.5 — Music server (Navidrome/Subsonic) connection [code complete, end-to-end UNVERIFIED]
+- Navidrome deployment prepared: `server/docker-compose.yml` (music mounted read-only) +
+  `docs/SERVER_SETUP.md`. Not started/streamed in this environment — run it on your laptop.
+- Android Subsonic client (OkHttp): salted-token auth (password never sent/logged), ping,
+  album list, album songs, stream + cover URLs, file download.
+- Settings → Music Server: enter address/user/password, Test & Connect, status, Disconnect
+  (credentials persist in app-private DataStore; NOT yet encrypted at rest — hardening TODO).
+- Browse server albums → songs → stream via the existing Media3 engine; per-song Download.
+- Downloads stored in Room (migration 2→3) and listed under Library → Downloads for offline
+  playback. Local MediaStore playback remains fully functional and login-free.
+- Unit tests for Subsonic auth (official token vector; password absent from URL).
+- NOTE: streaming and offline playback are implemented but have NOT been verified against a
+  live server or physical phone here — that acceptance test is yours to run.
+
 ## 2.4 — Browsing, customization, file themes, adaptive colors
 - Library browsing: Albums, Artists, Folders, and Genres (genre where metadata permits).
 - Home customization: show/hide and reorder home sections; persisted.

@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Label
@@ -212,6 +213,7 @@ fun LibraryScreen(
     contentPadding: PaddingValues,
     onOpenPlaylist: (Long) -> Unit,
     onOpenFavorites: () -> Unit,
+    onOpenDownloads: () -> Unit,
     onCreatePlaylist: () -> Unit,
     onBrowse: (BrowseType) -> Unit,
     onSongMenu: (Song) -> Unit,
@@ -219,6 +221,7 @@ fun LibraryScreen(
     val songs by vm.songs.collectAsStateWithLifecycle()
     val playlists by vm.playlists.collectAsStateWithLifecycle()
     val favorites by vm.favoriteSongs.collectAsStateWithLifecycle()
+    val downloads by vm.downloads.collectAsStateWithLifecycle()
 
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item { SectionHeader("Your Library") }
@@ -234,6 +237,20 @@ fun LibraryScreen(
                 title = "Liked Songs",
                 subtitle = "${favorites.size} songs",
                 onClick = onOpenFavorites,
+            )
+        }
+        item {
+            LibraryEntry(
+                leading = {
+                    Box(
+                        Modifier.size(52.dp).clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Icons.Default.Download, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                },
+                title = "Downloads",
+                subtitle = "${downloads.size} offline",
+                onClick = onOpenDownloads,
             )
         }
         item {

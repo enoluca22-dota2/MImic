@@ -14,8 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistEntity::class,
         PlaylistSongEntity::class,
         CustomThemeEntity::class,
+        DownloadEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = false,
 )
 abstract class MimicDatabase : RoomDatabase() {
@@ -23,6 +24,7 @@ abstract class MimicDatabase : RoomDatabase() {
     abstract fun historyDao(): HistoryDao
     abstract fun playlistDao(): PlaylistDao
     abstract fun customThemeDao(): CustomThemeDao
+    abstract fun downloadDao(): DownloadDao
 
     companion object {
         @Volatile
@@ -43,6 +45,18 @@ abstract class MimicDatabase : RoomDatabase() {
             }
         }
 
+        /** v2 → v3: add the downloads table. Existing user data is untouched. */
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `downloads` (" +
+                        "`remoteId` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, " +
+                        "`album` TEXT NOT NULL, `durationMs` INTEGER NOT NULL, `fileUri` TEXT NOT NULL, " +
+                        "`coverArtUri` TEXT, `downloadedAt` INTEGER NOT NULL, PRIMARY KEY(`remoteId`))",
+                )
+            }
+        }
+
         fun get(context: Context): MimicDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -50,7 +64,7 @@ abstract class MimicDatabase : RoomDatabase() {
                     MimicDatabase::class.java,
                     "mimic.db",
                 )
-                    .addMigrations(MIGRATION_1_2)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                     .build()
                     .also { instance = it }
             }

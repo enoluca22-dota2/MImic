@@ -13,8 +13,16 @@ import com.example.mimic.AppContainer
 import com.example.mimic.MimicApplication
 import com.example.mimic.data.AppSettings
 import com.example.mimic.data.Song
+import com.example.mimic.data.server.RemoteAlbum
+import com.example.mimic.data.server.RemoteSong
+import com.example.mimic.data.server.ServerCredentials
+import com.example.mimic.data.server.ServerStatus
+import com.example.mimic.data.server.SubsonicClient
+import com.example.mimic.data.server.remoteStableId
 import com.example.mimic.data.toDefinition
 import com.example.mimic.data.toEntity
+import com.example.mimic.data.db.DownloadEntity
+import java.io.File
 import com.example.mimic.data.db.FavoriteEntity
 import com.example.mimic.data.db.PlaylistEntity
 import com.example.mimic.data.db.PlaylistSongEntity
@@ -153,6 +161,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun play(queue: List<Song>, index: Int) {
         val c = controller ?: return
+        // Remote/downloaded songs aren't in the scanned library, so register them for
+        // current-song/queue resolution.
+        songsById = songsById + queue.associateBy { it.id }
         c.setMediaItems(queue.map { it.toMediaItem() }, index, 0L)
         c.prepare()
         c.play()
@@ -263,6 +274,121 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setHomeConfig(config: com.example.mimic.data.HomeConfig) {
         viewModelScope.launch { settingsRepo.setHomeConfig(config) }
+    }
+
+    // ---- Music server (Navidrome / Subsonic) ----
+
+    private val serverCredsRepo = container.serverCredentialsRepository
+    private val downloadDao = container.downloadDao
+
+    private val _serverStatus = MutableStateFlow<ServerStatus>(ServerStatus.Disconnected)
+    val serverStatus: StateFlow<ServerStatus> = _serverStatus.asStateFlow()
+
+    private val _remoteAlbums = MutableStateFlow<List<RemoteAlbum>>(emptyList())
+    val remoteAlbums: StateFlow<List<RemoteAlbum>> = _remoteAlbums.asStateFlow()
+
+    val serverCredentials: StateFlow<ServerCredentials?> = serverCredsRepo.credentials
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    /** Downloaded tracks as playable (offline, file-backed) [Song]s. */
+    val downloads: StateFlow<List<Song>> = downloadDao.all()
+        .map { list ->
+            list.map {
+                Song(
+                    id = remoteStableId(it.remoteId),
+                    title = it.title, artist = it.artist, album = it.album,
+                    durationMs = it.durationMs, uri = it.fileUri, albumArtUri = it.coverArtUri,
+                    dateAddedSec = it.downloadedAt / 1000, folder = "Downloads",
+                )
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private var serverClient: SubsonicClient? = null
+
+    init {
+        // Rebuild the client from saved credentials so the server survives app restarts.
+        viewModelScope.launch {
+            serverCredsRepo.credentials.collect { creds ->
+                if (creds != null && serverClient == null) {
+                    serverClient = SubsonicClient(creds)
+                    _serverStatus.value = ServerStatus.Connected
+                }
+            }
+        }
+    }
+
+    /** Validate credentials with a ping, then persist and connect on success. */
+    fun connectServer(baseUrl: String, username: String, password: String) {
+        viewModelScope.launch {
+            _serverStatus.value = ServerStatus.Connecting
+            val creds = ServerCredentials(baseUrl.trim(), username.trim(), password)
+            val client = SubsonicClient(creds)
+            client.ping().fold(
+                onSuccess = {
+                    serverClient = client
+                    serverCredsRepo.save(creds)
+                    _serverStatus.value = ServerStatus.Connected
+                    loadRemoteAlbums()
+                },
+                onFailure = { _serverStatus.value = ServerStatus.Error(it.message ?: "Connection failed") },
+            )
+        }
+    }
+
+    fun disconnectServer() {
+        viewModelScope.launch {
+            serverClient = null
+            _remoteAlbums.value = emptyList()
+            serverCredsRepo.clear()
+            _serverStatus.value = ServerStatus.Disconnected
+        }
+    }
+
+    fun loadRemoteAlbums() {
+        val client = serverClient ?: return
+        viewModelScope.launch {
+            client.albums().onSuccess { _remoteAlbums.value = it }
+                .onFailure { _serverStatus.value = ServerStatus.Error(it.message ?: "Failed to load albums") }
+        }
+    }
+
+    suspend fun remoteAlbumSongs(albumId: String): List<RemoteSong> =
+        serverClient?.albumSongs(albumId)?.getOrNull() ?: emptyList()
+
+    fun remoteCoverUrl(coverArtId: String?): String? = serverClient?.coverArtUrl(coverArtId)
+
+    /** Stream a remote album (converts to playable Songs whose uri streams from the server). */
+    fun playRemote(songs: List<RemoteSong>, index: Int) {
+        val client = serverClient ?: return
+        play(songs.map { client.toPlayableSong(it) }, index)
+    }
+
+    suspend fun isDownloaded(remoteId: String): Boolean = downloadDao.isDownloaded(remoteId)
+
+    /** Download a remote track to app storage for offline playback. */
+    fun downloadRemote(song: RemoteSong, onResult: (Boolean) -> Unit) {
+        val client = serverClient ?: return onResult(false)
+        viewModelScope.launch {
+            val dir = File(getApplication<Application>().filesDir, "downloads")
+            val ext = song.suffix?.takeIf { it.isNotBlank() } ?: "mp3"
+            val target = File(dir, "${song.id}.$ext")
+            client.download(song, target).fold(
+                onSuccess = {
+                    downloadDao.upsert(
+                        DownloadEntity(
+                            remoteId = song.id, title = song.title, artist = song.artist,
+                            album = song.album, durationMs = song.durationMs,
+                            fileUri = android.net.Uri.fromFile(target).toString(),
+                            coverArtUri = client.coverArtUrl(song.coverArtId),
+                            downloadedAt = System.currentTimeMillis(),
+                        ),
+                    )
+                    onResult(true)
+                },
+                onFailure = { onResult(false) },
+            )
+        }
     }
 
     // ---- Custom themes (Theme Studio) ----

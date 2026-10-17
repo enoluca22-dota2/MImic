@@ -1,0 +1,19 @@
+# MImic personal music server — Navidrome (Subsonic/OpenSubsonic API).
+# Music is mounted READ-ONLY (:ro) so the server can never modify your original files.
+# The database/cache lives in ./navidrome-data and survives restarts (back that folder up).
+services:
+  navidrome:
+    image: deluan/navidrome:latest
+    container_name: mimic-navidrome
+    restart: unless-stopped          # optional auto-start; remove if you don't want it
+    ports:
+      - "4533:4533"
+    environment:
+      ND_SCANSCHEDULE: "1h"          # detect new music hourly
+      ND_LOGLEVEL: "info"
+      ND_SESSIONTIMEOUT: "24h"
+      ND_ENABLESHARING: "true"
+    volumes:
+      - "./navidrome-data:/data"
+      # Set MIMIC_MUSIC_DIR to your music folder, e.g. C:\Users\Eno\Music
+      - "${MIMIC_MUSIC_DIR:-./music}:/music:ro"
