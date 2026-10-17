@@ -47,3 +47,19 @@ data class PlayCount(
     val songId: Long,
     val count: Int,
 )
+
+/** A user-created/edited theme. Built-in presets live in code; these are editable. */
+@Entity(tableName = "custom_themes")
+data class CustomThemeEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val isDark: Boolean,
+    val primary: Long,
+    val secondary: Long,
+    val background: Long,
+    val surface: Long,
+    val surfaceElevated: Long,
+    val textPrimary: Long,
+    val textSecondary: Long,
+    val createdAt: Long,
+)

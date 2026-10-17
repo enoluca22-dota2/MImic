@@ -18,6 +18,7 @@ class AppContainer(application: Application) {
     val favoriteDao get() = database.favoriteDao()
     val historyDao get() = database.historyDao()
     val playlistDao get() = database.playlistDao()
+    val customThemeDao get() = database.customThemeDao()
 }
 
 class MimicApplication : Application() {

@@ -137,41 +137,6 @@ fun ThemeSwatch(theme: ThemeDefinition, size: Int) {
     }
 }
 
-@Composable
-fun ThemeStudioScreen(vm: PlayerViewModel, onBack: () -> Unit) {
-    val settings by vm.settings.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize()) {
-        ScreenHeader("Theme Studio", onBack)
-        Text(
-            "Pick a theme — it applies instantly and is remembered.",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-        )
-        LazyColumn(Modifier.fillMaxSize()) {
-            items(ThemeRegistry.presets, key = { it.id }) { theme ->
-                val selected = theme.id == settings.themeId
-                Row(
-                    Modifier.fillMaxWidth().clickable { vm.setThemeId(theme.id) }
-                        .padding(horizontal = 16.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    ThemeSwatch(theme, size = 52)
-                    Spacer(Modifier.width(16.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(theme.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
-                        Text(
-                            if (theme.colors.isDark) "Dark" else "Light",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    if (selected) Icon(Icons.Default.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
-                }
-            }
-        }
-    }
-}
 
 @Composable
 fun SongListScreen(

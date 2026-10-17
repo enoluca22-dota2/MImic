@@ -60,6 +60,25 @@ class MimicDatabaseTest {
         assertEquals(1L, dao.mostPlayed(10).first().first().songId)
     }
 
+    @Test fun custom_themes_upsert_and_delete() = runBlocking {
+        val dao = db.customThemeDao()
+        val theme = com.example.mimic.data.db.CustomThemeEntity(
+            id = "custom_1", name = "Test", isDark = true,
+            primary = 0xFF1DB954, secondary = 0xFF17A34A, background = 0xFF121212,
+            surface = 0xFF181818, surfaceElevated = 0xFF242424,
+            textPrimary = 0xFFFFFFFF, textSecondary = 0xFFB3B3B3, createdAt = 1,
+        )
+        dao.upsert(theme)
+        assertEquals("Test", dao.get("custom_1")?.name)
+        assertEquals(1, dao.all().first().size)
+        // Upsert with same id updates in place.
+        dao.upsert(theme.copy(name = "Renamed"))
+        assertEquals("Renamed", dao.get("custom_1")?.name)
+        assertEquals(1, dao.all().first().size)
+        dao.delete("custom_1")
+        assertTrue(dao.all().first().isEmpty())
+    }
+
     @Test fun playlist_membership_persists_and_reorders() = runBlocking {
         val dao = db.playlistDao()
         val id = dao.create(PlaylistEntity(name = "Roadtrip", createdAt = 0))

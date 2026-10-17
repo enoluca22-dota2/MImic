@@ -19,8 +19,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.example.mimic.ui.designsystem.ThemeDefinition
+import com.example.mimic.ui.designsystem.ThemeRegistry
 import androidx.navigation.NavDestination.Companion.hierarchy
 import androidx.navigation.NavGraph.Companion.findStartDestination
 import androidx.navigation.compose.NavHost
@@ -53,8 +56,19 @@ fun MimicApp(viewModel: PlayerViewModel) {
     var addSong by remember { mutableStateOf<Song?>(null) }
     var createDialog by remember { mutableStateOf(false) }
     var createForSong by remember { mutableStateOf<Song?>(null) }
+    var editingTheme by remember { mutableStateOf<ThemeDefinition?>(null) }
+    var importThemeOpen by remember { mutableStateOf(false) }
 
+    val context = LocalContext.current
     val onSongMenu: (Song) -> Unit = { menuSong = it }
+    val shareTheme: (ThemeDefinition) -> Unit = { theme ->
+        val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(android.content.Intent.EXTRA_SUBJECT, "MImic theme: ${theme.name}")
+            putExtra(android.content.Intent.EXTRA_TEXT, viewModel.exportTheme(theme))
+        }
+        context.startActivity(android.content.Intent.createChooser(send, "Share theme"))
+    }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -114,7 +128,19 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenThemeStudio = { navController.navigate("themestudio") },
                 )
             }
-            composable("themestudio") { ThemeStudioScreen(viewModel, onBack = { navController.popBackStack() }) }
+            composable("themestudio") {
+                ThemeStudioScreen(
+                    vm = viewModel,
+                    onEdit = { editingTheme = it },
+                    onCreateNew = {
+                        val base = ThemeRegistry.byId(ThemeRegistry.DEFAULT_ID)
+                        editingTheme = base.copy(id = viewModel.newThemeId(), name = "My Theme", builtIn = false)
+                    },
+                    onImport = { importThemeOpen = true },
+                    onExport = shareTheme,
+                    onBack = { navController.popBackStack() },
+                )
+            }
             composable("favorites") {
                 FavoritesScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
             }
@@ -181,6 +207,27 @@ fun MimicApp(viewModel: PlayerViewModel) {
         CreatePlaylistDialog(
             onDismiss = { createDialog = false; createForSong = null },
             onCreate = { viewModel.createPlaylist(it, song) },
+        )
+    }
+
+    editingTheme?.let { theme ->
+        ThemeEditorScreen(
+            initial = theme,
+            onSave = { edited, apply -> viewModel.saveCustomTheme(edited, apply) },
+            onExport = shareTheme,
+            onBack = { editingTheme = null },
+        )
+    }
+
+    if (importThemeOpen) {
+        ImportThemeDialog(
+            onDismiss = { importThemeOpen = false },
+            onImport = { json ->
+                viewModel.importTheme(json).fold(
+                    onSuccess = { null },
+                    onFailure = { it.message ?: "Invalid theme file" },
+                )
+            },
         )
     }
 }

@@ -49,6 +49,21 @@ interface HistoryDao {
 }
 
 @Dao
+interface CustomThemeDao {
+    @Query("SELECT * FROM custom_themes ORDER BY createdAt DESC")
+    fun all(): Flow<List<CustomThemeEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsert(theme: CustomThemeEntity)
+
+    @Query("DELETE FROM custom_themes WHERE id = :id")
+    suspend fun delete(id: String)
+
+    @Query("SELECT * FROM custom_themes WHERE id = :id")
+    suspend fun get(id: String): CustomThemeEntity?
+}
+
+@Dao
 interface PlaylistDao {
     @Query("SELECT * FROM playlists ORDER BY createdAt DESC")
     fun playlists(): Flow<List<PlaylistEntity>>

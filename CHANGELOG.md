@@ -1,6 +1,14 @@
 # Changelog
 
-## 2.1 (in progress) — Theme engine
+## 2.2 — Theme Studio (editable themes)
+- Custom themes persisted in Room (new `custom_themes` table; migration 1→2 preserves data).
+- Theme Studio gallery: apply, duplicate & edit, edit, export, delete (built-ins protected).
+- Original color editor: RGB sliders + live HEX field, per-token editing, live preview card.
+- Versioned JSON export (via share sheet) and paste-to-import with strict validation
+  (rejects missing fields, bad colors, oversized input; imports can't overwrite built-ins).
+- Unit tests: JSON round-trip, hex parsing, validation rejections; custom-theme DAO test.
+
+## 2.1 — Theme engine
 - Token-based theme engine (`ThemeDefinition` / `ThemeColors`) driving the whole UI.
 - 14 built-in theme presets (AMOLED Black, Emerald, Ocean Neon, Sunset, Rose Gold,
   Arctic Light, Purple Galaxy, Midnight Blue, Retro Vinyl, Minimal Monochrome,

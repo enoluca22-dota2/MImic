@@ -13,6 +13,8 @@ import com.example.mimic.AppContainer
 import com.example.mimic.MimicApplication
 import com.example.mimic.data.AppSettings
 import com.example.mimic.data.Song
+import com.example.mimic.data.toDefinition
+import com.example.mimic.data.toEntity
 import com.example.mimic.data.db.FavoriteEntity
 import com.example.mimic.data.db.PlaylistEntity
 import com.example.mimic.data.db.PlaylistSongEntity
@@ -250,6 +252,63 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setThemeId(id: String) {
         viewModelScope.launch { settingsRepo.setThemeId(id) }
+    }
+
+    // ---- Custom themes (Theme Studio) ----
+
+    private val customThemeDao = container.customThemeDao
+
+    val customThemes: StateFlow<List<com.example.mimic.ui.designsystem.ThemeDefinition>> =
+        customThemeDao.all()
+            .map { list -> list.map { it.toDefinition() } }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Built-in presets plus the user's custom themes, for the gallery and resolution. */
+    val allThemes: StateFlow<List<com.example.mimic.ui.designsystem.ThemeDefinition>> =
+        customThemes
+            .map { custom -> com.example.mimic.ui.designsystem.ThemeRegistry.presets + custom }
+            .stateIn(
+                viewModelScope,
+                SharingStarted.WhileSubscribed(5000),
+                com.example.mimic.ui.designsystem.ThemeRegistry.presets,
+            )
+
+    fun saveCustomTheme(theme: com.example.mimic.ui.designsystem.ThemeDefinition, apply: Boolean) {
+        viewModelScope.launch {
+            customThemeDao.upsert(theme.toEntity())
+            if (apply) settingsRepo.setThemeId(theme.id)
+        }
+    }
+
+    fun deleteCustomTheme(id: String) {
+        viewModelScope.launch {
+            customThemeDao.delete(id)
+            if (settings.value.themeId == id) {
+                settingsRepo.setThemeId(com.example.mimic.ui.designsystem.ThemeRegistry.DEFAULT_ID)
+            }
+        }
+    }
+
+    /** Clone any theme (preset or custom) into a new editable custom theme. */
+    fun duplicateTheme(source: com.example.mimic.ui.designsystem.ThemeDefinition): com.example.mimic.ui.designsystem.ThemeDefinition {
+        val copy = source.copy(id = newThemeId(), name = source.name + " copy", builtIn = false)
+        saveCustomTheme(copy, apply = false)
+        return copy
+    }
+
+    fun newThemeId(): String = "custom_" + System.currentTimeMillis()
+
+    fun exportTheme(theme: com.example.mimic.ui.designsystem.ThemeDefinition): String =
+        com.example.mimic.data.ThemeSerialization.toJson(theme)
+
+    /** Parse + validate pasted JSON, saving it as a custom theme on success. */
+    fun importTheme(json: String): Result<com.example.mimic.ui.designsystem.ThemeDefinition> {
+        return com.example.mimic.data.ThemeSerialization.parse(json).map { parsed ->
+            // Always store imports under a fresh custom id so they can't clobber a built-in.
+            val theme = parsed.copy(id = newThemeId(), builtIn = false)
+            saveCustomTheme(theme, apply = false)
+            theme
+        }
     }
 
     // ---- Sleep timer ----
