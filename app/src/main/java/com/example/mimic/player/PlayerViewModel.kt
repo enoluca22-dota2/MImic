@@ -248,12 +248,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Settings ----
 
-    fun setThemeMode(mode: com.example.mimic.data.ThemeMode) {
-        viewModelScope.launch { settingsRepo.setThemeMode(mode) }
-    }
-
-    fun setAccent(accent: com.example.mimic.data.AccentColor) {
-        viewModelScope.launch { settingsRepo.setAccent(accent) }
+    fun setThemeId(id: String) {
+        viewModelScope.launch { settingsRepo.setThemeId(id) }
     }
 
     // ---- Sleep timer ----

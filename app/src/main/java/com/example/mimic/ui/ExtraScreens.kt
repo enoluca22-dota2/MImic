@@ -55,13 +55,12 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.mimic.data.AccentColor
 import com.example.mimic.data.Song
-import com.example.mimic.data.ThemeMode
 import com.example.mimic.data.db.PlaylistEntity
 import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.components.SongRow
-import com.example.mimic.ui.theme.accentToColor
+import com.example.mimic.ui.designsystem.ThemeDefinition
+import com.example.mimic.ui.designsystem.ThemeRegistry
 
 @Composable
 private fun ScreenHeader(title: String, onBack: () -> Unit, trailing: @Composable () -> Unit = {}) {
@@ -84,60 +83,35 @@ private fun ScreenHeader(title: String, onBack: () -> Unit, trailing: @Composabl
 }
 
 @Composable
-fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
+fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit, onOpenThemeStudio: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
+    val current = ThemeRegistry.byId(settings.themeId)
     Column(Modifier.fillMaxSize()) {
         ScreenHeader("Settings", onBack)
         Text(
-            "Theme",
+            "Appearance",
             style = MaterialTheme.typography.titleMedium,
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
         )
-        ThemeMode.entries.forEach { mode ->
-            Row(
-                Modifier.fillMaxWidth().clickable { vm.setThemeMode(mode) }
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(selected = settings.themeMode == mode, onClick = { vm.setThemeMode(mode) })
-                Spacer(Modifier.width(8.dp))
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenThemeStudio).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            ThemeSwatch(current, size = 44)
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Theme Studio", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                 Text(
-                    mode.label(),
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    "Current: ${current.name}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
         }
-        Text(
-            "Accent color",
-            style = MaterialTheme.typography.titleMedium,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 8.dp),
-        )
-        Row(
-            Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(16.dp),
-        ) {
-            AccentColor.entries.forEach { accent ->
-                val selected = settings.accent == accent
-                Box(
-                    Modifier.size(40.dp).clip(CircleShape).background(accentToColor(accent))
-                        .border(
-                            width = if (selected) 3.dp else 0.dp,
-                            color = MaterialTheme.colorScheme.onBackground,
-                            shape = CircleShape,
-                        )
-                        .clickable { vm.setAccent(accent) },
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (selected) Icon(Icons.Default.Check, contentDescription = null, tint = Color.White)
-                }
-            }
-        }
-        Spacer(Modifier.height(24.dp))
+        Spacer(Modifier.height(16.dp))
         Text(
             "MImic — a personal, offline music player. Plays audio stored on this device. " +
                 "No account, no telemetry, nothing leaves your phone.",
@@ -148,12 +122,55 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
     }
 }
 
-private fun ThemeMode.label() = when (this) {
-    ThemeMode.SYSTEM -> "Follow system"
-    ThemeMode.LIGHT -> "Light"
-    ThemeMode.DARK -> "Dark"
-    ThemeMode.AMOLED -> "AMOLED black"
-    ThemeMode.GLASS -> "Glass"
+/** A small rounded preview of a theme's core colors. */
+@Composable
+fun ThemeSwatch(theme: ThemeDefinition, size: Int) {
+    Box(
+        Modifier.size(size.dp).clip(RoundedCornerShape(10.dp))
+            .background(Color(theme.colors.background)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Box(
+            Modifier.size((size * 0.45f).dp).clip(CircleShape)
+                .background(Color(theme.colors.primary)),
+        )
+    }
+}
+
+@Composable
+fun ThemeStudioScreen(vm: PlayerViewModel, onBack: () -> Unit) {
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    Column(Modifier.fillMaxSize()) {
+        ScreenHeader("Theme Studio", onBack)
+        Text(
+            "Pick a theme — it applies instantly and is remembered.",
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        LazyColumn(Modifier.fillMaxSize()) {
+            items(ThemeRegistry.presets, key = { it.id }) { theme ->
+                val selected = theme.id == settings.themeId
+                Row(
+                    Modifier.fillMaxWidth().clickable { vm.setThemeId(theme.id) }
+                        .padding(horizontal = 16.dp, vertical = 10.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    ThemeSwatch(theme, size = 52)
+                    Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(theme.name, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                        Text(
+                            if (theme.colors.isDark) "Dark" else "Light",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (selected) Icon(Icons.Default.Check, contentDescription = "Selected", tint = MaterialTheme.colorScheme.primary)
+                }
+            }
+        }
+    }
 }
 
 @Composable

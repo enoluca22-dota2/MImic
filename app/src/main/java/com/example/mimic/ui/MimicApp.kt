@@ -107,7 +107,14 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onSongMenu = onSongMenu,
                 )
             }
-            composable("settings") { SettingsScreen(viewModel, onBack = { navController.popBackStack() }) }
+            composable("settings") {
+                SettingsScreen(
+                    viewModel,
+                    onBack = { navController.popBackStack() },
+                    onOpenThemeStudio = { navController.navigate("themestudio") },
+                )
+            }
+            composable("themestudio") { ThemeStudioScreen(viewModel, onBack = { navController.popBackStack() }) }
             composable("favorites") {
                 FavoritesScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
             }

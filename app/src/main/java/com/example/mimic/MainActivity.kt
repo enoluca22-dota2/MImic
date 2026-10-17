@@ -43,7 +43,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val viewModel: PlayerViewModel = viewModel()
             val settings by viewModel.settings.collectAsStateWithLifecycle()
-            MImicTheme(themeMode = settings.themeMode, accent = settings.accent) {
+            MImicTheme(theme = com.example.mimic.ui.designsystem.ThemeRegistry.byId(settings.themeId)) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
