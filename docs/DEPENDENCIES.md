@@ -13,6 +13,7 @@ included. No proprietary (e.g. Spotify) code or assets are used.
 | AndroidX Room (runtime/ktx/compiler) | local database | Apache-2.0 |
 | AndroidX DataStore (Preferences) | settings | Apache-2.0 |
 | Coil (coil-compose) | async image loading | Apache-2.0 |
+| AndroidX Palette | album-art color extraction (Album Adaptive theme) | Apache-2.0 |
 | KSP (build-time) | Room code generation | Apache-2.0 |
 | JUnit4, AndroidX Test, Espresso (test only) | testing | EPL-1.0 / Apache-2.0 |
 

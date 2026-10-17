@@ -27,8 +27,11 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -258,6 +261,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settingsRepo.setPlayerLayout(config) }
     }
 
+    fun setHomeConfig(config: com.example.mimic.data.HomeConfig) {
+        viewModelScope.launch { settingsRepo.setHomeConfig(config) }
+    }
+
     // ---- Custom themes (Theme Studio) ----
 
     private val customThemeDao = container.customThemeDao
@@ -276,6 +283,31 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 SharingStarted.WhileSubscribed(5000),
                 com.example.mimic.ui.designsystem.ThemeRegistry.presets,
             )
+
+    /**
+     * When the "album_adaptive" theme is selected, colors extracted from the current song's
+     * artwork (off the main thread, recomputed only when the song or theme actually changes).
+     * Null when inactive or when no colors could be derived — callers fall back to a preset.
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val adaptiveTheme: StateFlow<com.example.mimic.ui.designsystem.ThemeDefinition?> =
+        combine(
+            uiState.map { it.currentSong?.id }.distinctUntilChanged(),
+            settings.map { it.themeId }.distinctUntilChanged(),
+        ) { songId, themeId -> songId to themeId }
+            .mapLatest { (songId, themeId) ->
+                if (themeId != "album_adaptive" || songId == null) {
+                    null
+                } else {
+                    val song = songsById[songId] ?: return@mapLatest null
+                    com.example.mimic.data.AdaptivePalette.fromSong(getApplication(), song)?.let { colors ->
+                        com.example.mimic.ui.designsystem.ThemeDefinition(
+                            "album_adaptive", "Album Adaptive", true, colors,
+                        )
+                    }
+                }
+            }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     fun saveCustomTheme(theme: com.example.mimic.ui.designsystem.ThemeDefinition, apply: Boolean) {
         viewModelScope.launch {

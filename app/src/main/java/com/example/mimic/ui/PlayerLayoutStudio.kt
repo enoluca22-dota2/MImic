@@ -105,7 +105,7 @@ fun PlayerLayoutStudioScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 }
 
 @Composable
-private fun SelectRow(title: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+fun SelectRow(title: String, options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Text(
             title,
@@ -140,7 +140,7 @@ private fun SelectRow(title: String, options: List<String>, selected: Int, onSel
 }
 
 @Composable
-private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
     Row(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -44,8 +44,13 @@ class MainActivity : ComponentActivity() {
             val viewModel: PlayerViewModel = viewModel()
             val settings by viewModel.settings.collectAsStateWithLifecycle()
             val allThemes by viewModel.allThemes.collectAsStateWithLifecycle()
-            val activeTheme = allThemes.firstOrNull { it.id == settings.themeId }
-                ?: com.example.mimic.ui.designsystem.ThemeRegistry.byId(settings.themeId)
+            val adaptiveTheme by viewModel.adaptiveTheme.collectAsStateWithLifecycle()
+            val activeTheme = if (settings.themeId == "album_adaptive" && adaptiveTheme != null) {
+                adaptiveTheme!!
+            } else {
+                allThemes.firstOrNull { it.id == settings.themeId }
+                    ?: com.example.mimic.ui.designsystem.ThemeRegistry.byId(settings.themeId)
+            }
             MImicTheme(theme = activeTheme) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

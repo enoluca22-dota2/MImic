@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.4 — Browsing, customization, file themes, adaptive colors
+- Library browsing: Albums, Artists, Folders, and Genres (genre where metadata permits).
+- Home customization: show/hide and reorder home sections; persisted.
+- Navigation styles: Standard, Floating, Compact bottom bar.
+- Theme import/export as real `.json` files via the system file picker (plus Share).
+- "Album Adaptive" theme now genuinely derives colors from the current song's artwork
+  (AndroidX Palette, extracted off the main thread, recomputed only on song/theme change).
+- Settings → Home & Navigation screen. Unit tests for grouping and home-config logic.
+
 ## 2.3 — Player Layout Studio
 - Three Now Playing layouts: Classic, Immersive (accent gradient, oversized art), Compact.
 - Configurable artwork shape (Rounded/Circle/Square) and size (Small/Medium/Large).

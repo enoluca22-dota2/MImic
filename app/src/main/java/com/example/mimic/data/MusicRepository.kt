@@ -22,15 +22,19 @@ class MusicRepository(private val context: Context) {
             MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
         }
 
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST,
-            MediaStore.Audio.Media.ALBUM,
-            MediaStore.Audio.Media.ALBUM_ID,
-            MediaStore.Audio.Media.DURATION,
-            MediaStore.Audio.Media.DATE_ADDED,
-        )
+        val isQ = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q
+        val isR = android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R
+        val projection = buildList {
+            add(MediaStore.Audio.Media._ID)
+            add(MediaStore.Audio.Media.TITLE)
+            add(MediaStore.Audio.Media.ARTIST)
+            add(MediaStore.Audio.Media.ALBUM)
+            add(MediaStore.Audio.Media.ALBUM_ID)
+            add(MediaStore.Audio.Media.DURATION)
+            add(MediaStore.Audio.Media.DATE_ADDED)
+            if (isQ) add(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME) // folder name
+            if (isR) add(MediaStore.Audio.Media.GENRE) // genre, where available
+        }.toTypedArray()
         // Only real music files, skip tiny clips and ringtones.
         val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
             "${MediaStore.Audio.Media.DURATION} >= 30000"
@@ -45,6 +49,9 @@ class MusicRepository(private val context: Context) {
             val albumIdCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val dateAddedCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            // These may be absent on older OS versions; -1 means "not present".
+            val folderCol = if (isQ) c.getColumnIndex(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME) else -1
+            val genreCol = if (isR) c.getColumnIndex(MediaStore.Audio.Media.GENRE) else -1
 
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
@@ -58,6 +65,8 @@ class MusicRepository(private val context: Context) {
                     uri = ContentUris.withAppendedId(collection, id).toString(),
                     albumArtUri = ContentUris.withAppendedId(albumArtBase, albumId).toString(),
                     dateAddedSec = c.getLong(dateAddedCol),
+                    folder = folderCol.takeIf { it >= 0 }?.let { c.getString(it) } ?: "Unknown folder",
+                    genre = genreCol.takeIf { it >= 0 }?.let { c.getString(it) },
                 )
             }
         }

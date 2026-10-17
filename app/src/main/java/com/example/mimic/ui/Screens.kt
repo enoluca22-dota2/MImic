@@ -21,7 +21,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -114,6 +118,7 @@ fun HomeScreen(
     val mostPlayed by vm.mostPlayed.collectAsStateWithLifecycle()
     val favorites by vm.favoriteSongs.collectAsStateWithLifecycle()
     val suggested by vm.suggested.collectAsStateWithLifecycle()
+    val homeConfig by vm.settings.collectAsStateWithLifecycle()
 
     if (loading) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
@@ -142,11 +147,16 @@ fun HomeScreen(
                 }
             }
         }
-        carousel("Recently played", recentlyPlayed, vm::play)
-        carousel("Jump back in", mostPlayed, vm::play)
-        carousel("Your favorites", favorites, vm::play)
-        carousel("Recently added", recentlyAdded, vm::play)
-        carousel("Suggested for you", suggested, vm::play)
+        homeConfig.homeConfig.visibleOrdered().forEach { section ->
+            val (title, list) = when (section) {
+                com.example.mimic.data.HomeSection.RECENTLY_PLAYED -> "Recently played" to recentlyPlayed
+                com.example.mimic.data.HomeSection.MOST_PLAYED -> "Jump back in" to mostPlayed
+                com.example.mimic.data.HomeSection.FAVORITES -> "Your favorites" to favorites
+                com.example.mimic.data.HomeSection.RECENTLY_ADDED -> "Recently added" to recentlyAdded
+                com.example.mimic.data.HomeSection.SUGGESTED -> "Suggested for you" to suggested
+            }
+            carousel(title, list, vm::play)
+        }
 
         item { SectionHeader("All songs") }
         items(count = songs.size, key = { songs[it].id }) { index ->
@@ -203,6 +213,7 @@ fun LibraryScreen(
     onOpenPlaylist: (Long) -> Unit,
     onOpenFavorites: () -> Unit,
     onCreatePlaylist: () -> Unit,
+    onBrowse: (BrowseType) -> Unit,
     onSongMenu: (Song) -> Unit,
 ) {
     val songs by vm.songs.collectAsStateWithLifecycle()
@@ -224,6 +235,30 @@ fun LibraryScreen(
                 subtitle = "${favorites.size} songs",
                 onClick = onOpenFavorites,
             )
+        }
+        item {
+            val browse = listOf(
+                BrowseType.ALBUMS to Icons.Default.Album,
+                BrowseType.ARTISTS to Icons.Default.Person,
+                BrowseType.FOLDERS to Icons.Default.Folder,
+                BrowseType.GENRES to Icons.Default.Label,
+            )
+            Column {
+                browse.forEach { (type, icon) ->
+                    LibraryEntry(
+                        leading = {
+                            Box(
+                                Modifier.size(52.dp).clip(RoundedCornerShape(6.dp))
+                                    .background(MaterialTheme.colorScheme.surfaceVariant),
+                                contentAlignment = Alignment.Center,
+                            ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        },
+                        title = type.name.lowercase().replaceFirstChar { it.uppercase() },
+                        subtitle = "Browse by ${type.name.lowercase()}",
+                        onClick = { onBrowse(type) },
+                    )
+                }
+            }
         }
         item {
             Row(

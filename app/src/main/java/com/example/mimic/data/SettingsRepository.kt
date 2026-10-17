@@ -14,6 +14,7 @@ data class AppSettings(
     val themeId: String = ThemeRegistry.DEFAULT_ID,
     val sleepTimerMinutes: Int = 0,
     val playerLayout: PlayerLayoutConfig = PlayerLayoutConfig(),
+    val homeConfig: HomeConfig = HomeConfig(),
 )
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -33,7 +34,13 @@ class SettingsRepository(private val context: Context) {
         val ART_SIZE = stringPreferencesKey("artwork_size")
         val SHOW_SHUFFLE_REPEAT = booleanPreferencesKey("show_shuffle_repeat")
         val SHOW_SECONDARY = booleanPreferencesKey("show_secondary_actions")
+        val HOME_ORDER = stringPreferencesKey("home_section_order")
+        val HOME_HIDDEN = stringPreferencesKey("home_hidden")
+        val NAV_STYLE = stringPreferencesKey("nav_style")
     }
+
+    private fun decodeSections(csv: String?): List<HomeSection> =
+        csv?.split(",")?.mapNotNull { runCatching { HomeSection.valueOf(it) }.getOrNull() } ?: emptyList()
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
@@ -45,6 +52,11 @@ class SettingsRepository(private val context: Context) {
                 artworkSize = decode(prefs[Keys.ART_SIZE], ArtworkSize.LARGE),
                 showShuffleRepeat = prefs[Keys.SHOW_SHUFFLE_REPEAT] ?: true,
                 showSecondaryActions = prefs[Keys.SHOW_SECONDARY] ?: true,
+            ),
+            homeConfig = HomeConfig(
+                sectionOrder = decodeSections(prefs[Keys.HOME_ORDER]).ifEmpty { HomeSection.entries },
+                hidden = decodeSections(prefs[Keys.HOME_HIDDEN]).toSet(),
+                navStyle = decode(prefs[Keys.NAV_STYLE], NavStyle.STANDARD),
             ),
         )
     }
@@ -64,6 +76,14 @@ class SettingsRepository(private val context: Context) {
             it[Keys.ART_SIZE] = config.artworkSize.name
             it[Keys.SHOW_SHUFFLE_REPEAT] = config.showShuffleRepeat
             it[Keys.SHOW_SECONDARY] = config.showSecondaryActions
+        }
+    }
+
+    suspend fun setHomeConfig(config: HomeConfig) {
+        context.dataStore.edit {
+            it[Keys.HOME_ORDER] = config.sectionOrder.joinToString(",") { s -> s.name }
+            it[Keys.HOME_HIDDEN] = config.hidden.joinToString(",") { s -> s.name }
+            it[Keys.NAV_STYLE] = config.navStyle.name
         }
     }
 }

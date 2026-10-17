@@ -1,5 +1,7 @@
 package com.example.mimic.ui
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
@@ -18,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -33,6 +36,44 @@ import androidx.navigation.compose.rememberNavController
 import com.example.mimic.data.Song
 import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.components.MiniPlayer
+
+@androidx.compose.runtime.Composable
+private fun BottomBar(
+    navController: androidx.navigation.NavHostController,
+    navStyle: com.example.mimic.data.NavStyle,
+) {
+    val backStack by navController.currentBackStackEntryAsState()
+    val currentDest = backStack?.destination
+    val compact = navStyle == com.example.mimic.data.NavStyle.COMPACT
+    val content: @androidx.compose.runtime.Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        tabs.forEach { tab ->
+            val selected = currentDest?.hierarchy?.any { it.route == tab.route } == true
+            NavigationBarItem(
+                selected = selected,
+                onClick = {
+                    navController.navigate(tab.route) {
+                        popUpTo(navController.graph.findStartDestination().id) { saveState = true }
+                        launchSingleTop = true
+                        restoreState = true
+                    }
+                },
+                icon = { Icon(tab.icon, contentDescription = tab.label) },
+                label = if (compact) null else ({ Text(tab.label) }),
+                alwaysShowLabel = !compact,
+            )
+        }
+    }
+    if (navStyle == com.example.mimic.data.NavStyle.FLOATING) {
+        NavigationBar(
+            modifier = Modifier
+                .padding(horizontal = 12.dp, vertical = 8.dp)
+                .clip(androidx.compose.foundation.shape.RoundedCornerShape(28.dp)),
+            content = content,
+        )
+    } else {
+        NavigationBar(content = content)
+    }
+}
 
 private data class Tab(val route: String, val label: String, val icon: ImageVector)
 
@@ -57,7 +98,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
     var createDialog by remember { mutableStateOf(false) }
     var createForSong by remember { mutableStateOf<Song?>(null) }
     var editingTheme by remember { mutableStateOf<ThemeDefinition?>(null) }
-    var importThemeOpen by remember { mutableStateOf(false) }
+    var pendingExportTheme by remember { mutableStateOf<ThemeDefinition?>(null) }
 
     val context = LocalContext.current
     val onSongMenu: (Song) -> Unit = { menuSong = it }
@@ -68,6 +109,42 @@ fun MimicApp(viewModel: PlayerViewModel) {
             putExtra(android.content.Intent.EXTRA_TEXT, viewModel.exportTheme(theme))
         }
         context.startActivity(android.content.Intent.createChooser(send, "Share theme"))
+    }
+
+    // SAF: write a theme JSON to a file the user picks.
+    val exportLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json"),
+    ) { uri ->
+        val theme = pendingExportTheme
+        if (uri != null && theme != null) {
+            runCatching {
+                context.contentResolver.openOutputStream(uri)?.use {
+                    it.write(viewModel.exportTheme(theme).toByteArray())
+                }
+            }
+            android.widget.Toast.makeText(context, "Theme exported", android.widget.Toast.LENGTH_SHORT).show()
+        }
+        pendingExportTheme = null
+    }
+
+    // SAF: read a theme JSON file the user picks and import it.
+    val importLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.OpenDocument(),
+    ) { uri ->
+        if (uri != null) {
+            val text = runCatching {
+                context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }
+            }.getOrNull()
+            val msg = if (text == null) {
+                "Could not read file"
+            } else {
+                viewModel.importTheme(text).fold(
+                    onSuccess = { "Imported \"${it.name}\"" },
+                    onFailure = { it.message ?: "Invalid theme file" },
+                )
+            }
+            android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_SHORT).show()
+        }
     }
 
     Scaffold(
@@ -84,25 +161,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                 }
-                NavigationBar {
-                    val backStack by navController.currentBackStackEntryAsState()
-                    val currentDest = backStack?.destination
-                    tabs.forEach { tab ->
-                        val selected = currentDest?.hierarchy?.any { it.route == tab.route } == true
-                        NavigationBarItem(
-                            selected = selected,
-                            onClick = {
-                                navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            },
-                            icon = { Icon(tab.icon, contentDescription = tab.label) },
-                            label = { Text(tab.label) },
-                        )
-                    }
-                }
+                BottomBar(navController, settings.homeConfig.navStyle)
             }
         },
     ) { innerPadding ->
@@ -118,6 +177,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenPlaylist = { navController.navigate("playlist/$it") },
                     onOpenFavorites = { navController.navigate("favorites") },
                     onCreatePlaylist = { createDialog = true },
+                    onBrowse = { navController.navigate("browse/${it.name}") },
                     onSongMenu = onSongMenu,
                 )
             }
@@ -127,9 +187,11 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onBack = { navController.popBackStack() },
                     onOpenThemeStudio = { navController.navigate("themestudio") },
                     onOpenPlayerStudio = { navController.navigate("playerstudio") },
+                    onOpenHomeCustomize = { navController.navigate("homecustomize") },
                 )
             }
             composable("playerstudio") { PlayerLayoutStudioScreen(viewModel, onBack = { navController.popBackStack() }) }
+            composable("homecustomize") { HomeCustomizeScreen(viewModel, onBack = { navController.popBackStack() }) }
             composable("themestudio") {
                 ThemeStudioScreen(
                     vm = viewModel,
@@ -138,13 +200,20 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         val base = ThemeRegistry.byId(ThemeRegistry.DEFAULT_ID)
                         editingTheme = base.copy(id = viewModel.newThemeId(), name = "My Theme", builtIn = false)
                     },
-                    onImport = { importThemeOpen = true },
-                    onExport = shareTheme,
+                    onImport = { importLauncher.launch(arrayOf("application/json", "text/plain", "text/*")) },
+                    onExportFile = { pendingExportTheme = it; exportLauncher.launch("mimic-theme-${it.name}.json") },
+                    onShare = shareTheme,
                     onBack = { navController.popBackStack() },
                 )
             }
             composable("favorites") {
                 FavoritesScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
+            }
+            composable("browse/{type}") { entry ->
+                val type = entry.arguments?.getString("type")
+                    ?.let { runCatching { BrowseType.valueOf(it) }.getOrNull() }
+                    ?: BrowseType.ALBUMS
+                BrowseScreen(viewModel, type, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
             }
             composable("playlist/{id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
@@ -222,15 +291,4 @@ fun MimicApp(viewModel: PlayerViewModel) {
         )
     }
 
-    if (importThemeOpen) {
-        ImportThemeDialog(
-            onDismiss = { importThemeOpen = false },
-            onImport = { json ->
-                viewModel.importTheme(json).fold(
-                    onSuccess = { null },
-                    onFailure = { it.message ?: "Invalid theme file" },
-                )
-            },
-        )
-    }
 }

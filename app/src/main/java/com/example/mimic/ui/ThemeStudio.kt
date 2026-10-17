@@ -79,7 +79,8 @@ fun ThemeStudioScreen(
     onEdit: (ThemeDefinition) -> Unit,
     onCreateNew: () -> Unit,
     onImport: () -> Unit,
-    onExport: (ThemeDefinition) -> Unit,
+    onExportFile: (ThemeDefinition) -> Unit,
+    onShare: (ThemeDefinition) -> Unit,
     onBack: () -> Unit,
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -104,7 +105,8 @@ fun ThemeStudioScreen(
                     onEdit = { onEdit(theme) },
                     onDuplicate = { onEdit(vm.duplicateTheme(theme)) },
                     onDelete = { vm.deleteCustomTheme(theme.id) },
-                    onExport = { onExport(theme) },
+                    onExportFile = { onExportFile(theme) },
+                    onShare = { onShare(theme) },
                 )
             }
         }
@@ -119,7 +121,8 @@ private fun ThemeRow(
     onEdit: () -> Unit,
     onDuplicate: () -> Unit,
     onDelete: () -> Unit,
-    onExport: () -> Unit,
+    onExportFile: () -> Unit,
+    onShare: () -> Unit,
 ) {
     var menu by remember { mutableStateOf(false) }
     Row(
@@ -149,7 +152,8 @@ private fun ThemeRow(
                 if (!theme.builtIn) {
                     DropdownMenuItem(text = { Text("Edit") }, onClick = { menu = false; onEdit() })
                 }
-                DropdownMenuItem(text = { Text("Export") }, onClick = { menu = false; onExport() })
+                DropdownMenuItem(text = { Text("Export to file") }, onClick = { menu = false; onExportFile() })
+                DropdownMenuItem(text = { Text("Share") }, onClick = { menu = false; onShare() })
                 if (!theme.builtIn) {
                     DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onDelete() })
                 }
