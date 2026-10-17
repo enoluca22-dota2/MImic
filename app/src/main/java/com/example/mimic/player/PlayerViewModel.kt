@@ -48,11 +48,14 @@ import kotlinx.coroutines.launch
 data class PlayerUiState(
     val currentSong: Song? = null,
     val isPlaying: Boolean = false,
+    val isBuffering: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
     val shuffle: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val isCurrentFavorite: Boolean = false,
+    /** Non-null when the last play attempt failed; cleared when a new item starts loading. */
+    val playbackError: String? = null,
 )
 
 class PlayerViewModel(app: Application) : AndroidViewModel(app) {
@@ -147,7 +150,30 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            // A new item started loading — clear any stale error from the previous track.
+            _uiState.update { it.copy(playbackError = null) }
             mediaItem?.mediaId?.toLongOrNull()?.let { recordPlay(it) }
+        }
+
+        override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            // Classify without leaking the stream URL (which carries the auth token).
+            val reason = when (error.errorCode) {
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+                    "Can't reach the server. Check your connection (or Tailscale) and try again."
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
+                    "Server rejected the request. Try signing in again."
+                androidx.media3.common.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
+                    "Track not found on the server."
+                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+                androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ->
+                    // The server returned something that isn't playable audio — almost always a
+                    // missing/renamed file on the server (Navidrome sends a 200 + JSON error body).
+                    "This track isn't playable — it may be missing on the server. Try another, or rescan your library."
+                else -> "Playback error (${error.errorCodeName})."
+            }
+            android.util.Log.w("MImic", "Playback error ${error.errorCodeName}", error)
+            _uiState.update { it.copy(isBuffering = false, playbackError = reason) }
         }
 
         override fun onEvents(player: Player, events: Player.Events) {
@@ -189,6 +215,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         // Remote/downloaded songs aren't in the scanned library, so register them for
         // current-song/queue resolution.
         songsById = songsById + queue.associateBy { it.id }
+        _uiState.update { it.copy(playbackError = null) }
         c.setMediaItems(queue.map { it.toMediaItem() }, index, 0L)
         c.prepare()
         c.play()
@@ -568,14 +595,18 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private fun syncFromPlayer(player: Player) {
         val current = player.currentMediaItem?.mediaId?.toLongOrNull()?.let { songsById[it] }
         val fav = current?.let { favoriteIds.value.contains(it.id) } ?: false
+        val buffering = player.playbackState == Player.STATE_BUFFERING
         _uiState.update {
             it.copy(
                 currentSong = current,
                 isPlaying = player.isPlaying,
+                isBuffering = buffering,
                 durationMs = player.duration.coerceAtLeast(0L),
                 shuffle = player.shuffleModeEnabled,
                 repeatMode = player.repeatMode,
                 isCurrentFavorite = fav,
+                // A successful play (or ready/ended state) clears a prior error.
+                playbackError = if (player.playbackState == Player.STATE_READY) null else it.playbackError,
             )
         }
     }

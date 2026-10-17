@@ -1,5 +1,31 @@
 # Changelog
 
+## 2.8.1 — Scroll jank + playback-freeze repair (real phone bug report)
+Fixes two issues reported on a physical phone over Tailscale (both environment-dependent, so
+the earlier localhost emulator test didn't surface them):
+- **Root cause of scroll jank / audio starvation:** `SubsonicClient` generated a *fresh random
+  salt on every call*, so `coverArtUrl()`/`streamUrl()` returned a different URL each time they
+  were invoked in a composable. Coil saw a new URL on every recomposition/scroll and re-downloaded
+  every cover — invisible on localhost, a network storm over Tailscale that janked scrolling and
+  starved the audio stream. Fixed by using **one stable salt per client (session)**; salted-token
+  auth stays secure (the password is never derivable). Cover URLs are now also memoized per
+  `coverArtId`. Regression tests: `SubsonicClientUrlTest` (URLs stable per client, differ across
+  sessions, never contain the password).
+- **Root cause of "freeze on song select":** when a stream fails, the app previously showed no
+  feedback and appeared frozen. Added Media3 `Player.Listener` diagnostics (`onPlayerError`,
+  buffering/ready state) and surfaced a **buffering spinner + a clear red error** in the mini-player.
+  No more indefinite silent hang. Errors are classified without logging the auth token.
+- **Diagnostic finding (server data, not app):** on this server, 385 of 387 catalogued tracks fail
+  because their files no longer exist on disk — Navidrome's `/music` mount points at the Downloads
+  folder and the "YT Downloads" subfolder has been emptied, so `stream` returns HTTP 200 with a
+  JSON error body (`no such file or directory`). ExoPlayer can't parse JSON → it was the "fails to
+  play". The one track with a real file (System Of A Down – Aerials) streams perfectly. Fix is
+  server-side: restore the music files or repoint the mount, then rescan Navidrome.
+- Verified on emulator (emulator-5554, APK 2.8.1): scrolling the full 386-track list (A→B→G and
+  back to top), valid-file streaming (`state=PLAYING`, position advanced, 0 errors), failed-track
+  error now visible instead of a freeze, local playback, upgrade preserves data (theme, history,
+  download). 37 unit tests pass. versionCode 11 / versionName 2.8.1; applicationId + signing unchanged.
+
 ## Acceptance — Streaming & offline playback VERIFIED (2026-10-17, emulator)
 End-to-end verified on the Android emulator against the live Navidrome server (`enoluca`):
 - Authenticated API: ping OK (Navidrome 1.16.1), 386-track library, search3=387, wrong-password

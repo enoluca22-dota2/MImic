@@ -127,6 +127,8 @@ fun MiniPlayer(
     onPlayPause: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    isBuffering: Boolean = false,
+    error: String? = null,
 ) {
     Row(
         modifier = modifier
@@ -148,12 +150,24 @@ fun MiniPlayer(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // Error takes priority, then a live "Buffering…" hint, else the artist.
+            val (subtitle, subtitleColor) = when {
+                error != null -> error to MaterialTheme.colorScheme.error
+                isBuffering -> "Buffering…" to MaterialTheme.colorScheme.onSurfaceVariant
+                else -> song.artist to MaterialTheme.colorScheme.onSurfaceVariant
+            }
             Text(
-                song.artist,
+                subtitle,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                color = subtitleColor,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+        if (isBuffering && error == null) {
+            androidx.compose.material3.CircularProgressIndicator(
+                modifier = Modifier.size(24.dp).padding(end = 4.dp),
+                strokeWidth = 2.dp,
             )
         }
         IconButton(onClick = onPlayPause) {

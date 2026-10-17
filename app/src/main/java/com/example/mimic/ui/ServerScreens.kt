@@ -267,11 +267,12 @@ fun ServerBrowseScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             } else {
                 LazyColumn(Modifier.fillMaxSize()) {
                     items(albums, key = { it.id }) { album ->
+                        val coverUrl = remember(album.coverArtId) { vm.remoteCoverUrl(album.coverArtId) }
                         Row(
                             Modifier.fillMaxWidth().clickable { selected = album }.padding(horizontal = 16.dp, vertical = 8.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            RemoteArt(vm.remoteCoverUrl(album.coverArtId), Modifier.size(52.dp))
+                            RemoteArt(coverUrl, Modifier.size(52.dp))
                             Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(album.name, color = MaterialTheme.colorScheme.onBackground, maxLines = 1)
@@ -306,7 +307,7 @@ private fun AlbumSongsScreen(vm: PlayerViewModel, album: RemoteAlbum, onBack: ()
                         Text("Play all")
                     }
                 }
-                LazyColumn {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
                     items(list, key = { it.id }) { song ->
                         RemoteSongRow(
                             vm = vm,
@@ -325,12 +326,13 @@ private fun RemoteSongRow(vm: PlayerViewModel, song: RemoteSong, onPlay: () -> U
     var downloaded by remember(song.id) { mutableStateOf(false) }
     var downloading by remember(song.id) { mutableStateOf(false) }
     LaunchedEffect(song.id) { downloaded = vm.isDownloaded(song.id) }
+    val coverUrl = remember(song.coverArtId) { vm.remoteCoverUrl(song.coverArtId) }
 
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onPlay).padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RemoteArt(vm.remoteCoverUrl(song.coverArtId), Modifier.size(48.dp))
+        RemoteArt(coverUrl, Modifier.size(48.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
             Text(song.title, color = MaterialTheme.colorScheme.onBackground, maxLines = 1)

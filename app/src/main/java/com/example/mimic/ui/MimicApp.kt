@@ -159,6 +159,8 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         onPlayPause = viewModel::togglePlayPause,
                         onClick = { nowPlayingOpen = true },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                        isBuffering = uiState.isBuffering,
+                        error = uiState.playbackError,
                     )
                 }
                 BottomBar(navController, settings.homeConfig.navStyle)

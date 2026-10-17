@@ -20,11 +20,19 @@ class SubsonicClient(private val creds: ServerCredentials) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
+    // One salt per client instance (i.e. per session), not per call. Salted-token auth stays
+    // secure either way (the password is never derivable from salt+token), but a STABLE salt
+    // makes stream/cover URLs deterministic. Previously a fresh random salt per call produced a
+    // different cover-art URL on every recomposition, defeating Coil's cache and re-downloading
+    // every image on each scroll/tick — invisible on localhost, a network storm over Tailscale
+    // that janked scrolling and starved the audio stream. See MImic 2.8.1.
+    private val salt: String = SubsonicAuth.randomSalt()
+
     private fun url(endpoint: String, extra: Map<String, String> = emptyMap()): String =
         SubsonicAuth.buildUrl(
             creds.baseUrl,
             endpoint,
-            SubsonicAuth.authParams(creds.username, creds.password),
+            SubsonicAuth.authParams(creds.username, creds.password, salt),
             extra,
         )
 
