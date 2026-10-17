@@ -1,5 +1,18 @@
 # Changelog
 
+## Acceptance — Streaming & offline playback VERIFIED (2026-10-17, emulator)
+End-to-end verified on the Android emulator against the live Navidrome server (`enoluca`):
+- Authenticated API: ping OK (Navidrome 1.16.1), 386-track library, search3=387, wrong-password
+  rejected (code 40). Real stream = 9,749,679-byte `audio/mpeg` (ID3), download = full file.
+- In-app on emulator: signed in ("Signed in · Connected") via `http://localhost:4533` (adb reverse);
+  browsed server library (386 + 1 tracks); **streamed** a track (Media3 `state=PLAYING`, position
+  advanced); **downloaded** it (✓); went **airplane-mode offline** and played the download (position
+  advanced); **force-stopped + relaunched** and replayed it offline. No app-code crashes.
+- Credential encryption at rest confirmed on-device: `music_server.preferences_pb` holds
+  `password_enc` (ciphertext) — no plaintext password key and no plaintext password anywhere in
+  app data. (Separately, 3 instrumented CredentialCipher tests pass.)
+- Physical-phone acceptance remains PENDING (no device attached); emulator milestone complete.
+
 ## 2.7.1 — Smart Collections (local, no server)
 - New **Library → Smart Collections**: generated views over your own library + play history —
   **Never Played**, **Least Played**, **Forgotten Favorites**, **Random Discovery** (reproducible
