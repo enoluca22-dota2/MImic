@@ -83,7 +83,12 @@ private fun ScreenHeader(title: String, onBack: () -> Unit, trailing: @Composabl
 }
 
 @Composable
-fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit, onOpenThemeStudio: () -> Unit) {
+fun SettingsScreen(
+    vm: PlayerViewModel,
+    onBack: () -> Unit,
+    onOpenThemeStudio: () -> Unit,
+    onOpenPlayerStudio: () -> Unit,
+) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val current = ThemeRegistry.byId(settings.themeId)
     Column(Modifier.fillMaxSize()) {
@@ -110,6 +115,24 @@ fun SettingsScreen(vm: PlayerViewModel, onBack: () -> Unit, onOpenThemeStudio: (
                 )
             }
             Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenPlayerStudio).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Player Layout", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                Text(
+                    "Layout: ${settings.playerLayout.layout.name.lowercase().replaceFirstChar { it.uppercase() }}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
         }
         Spacer(Modifier.height(16.dp))
         Text(

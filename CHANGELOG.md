@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.3 — Player Layout Studio
+- Three Now Playing layouts: Classic, Immersive (accent gradient, oversized art), Compact.
+- Configurable artwork shape (Rounded/Circle/Square) and size (Small/Medium/Large).
+- Show/hide shuffle+repeat and queue+sleep controls.
+- Settings → Player Layout studio with a live miniature preview; applies instantly and
+  does not interrupt playback. All settings persist in DataStore, independent of theme.
+- Unit tests for artwork sizing/shape helpers.
+
 ## 2.2 — Theme Studio (editable themes)
 - Custom themes persisted in Room (new `custom_themes` table; migration 1→2 preserves data).
 - Theme Studio gallery: apply, duplicate & edit, edit, export, delete (built-ins protected).

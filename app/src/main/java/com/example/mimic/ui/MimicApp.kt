@@ -126,8 +126,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     viewModel,
                     onBack = { navController.popBackStack() },
                     onOpenThemeStudio = { navController.navigate("themestudio") },
+                    onOpenPlayerStudio = { navController.navigate("playerstudio") },
                 )
             }
+            composable("playerstudio") { PlayerLayoutStudioScreen(viewModel, onBack = { navController.popBackStack() }) }
             composable("themestudio") {
                 ThemeStudioScreen(
                     vm = viewModel,
@@ -157,6 +159,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
     if (nowPlayingOpen && uiState.currentSong != null) {
         NowPlayingScreen(
             state = uiState,
+            config = settings.playerLayout,
             onBack = { nowPlayingOpen = false },
             onPlayPause = viewModel::togglePlayPause,
             onNext = { viewModel.next() },

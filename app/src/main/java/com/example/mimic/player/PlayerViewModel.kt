@@ -254,6 +254,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settingsRepo.setThemeId(id) }
     }
 
+    fun setPlayerLayout(config: com.example.mimic.data.PlayerLayoutConfig) {
+        viewModelScope.launch { settingsRepo.setPlayerLayout(config) }
+    }
+
     // ---- Custom themes (Theme Studio) ----
 
     private val customThemeDao = container.customThemeDao

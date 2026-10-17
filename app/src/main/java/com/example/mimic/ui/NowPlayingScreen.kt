@@ -40,11 +40,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
+import com.example.mimic.data.ArtworkShape
+import com.example.mimic.data.PlayerLayout
+import com.example.mimic.data.PlayerLayoutConfig
+import com.example.mimic.data.cornerDp
+import com.example.mimic.data.fraction
 import com.example.mimic.player.PlayerUiState
 import com.example.mimic.ui.components.AlbumArt
 import com.example.mimic.ui.components.formatDuration
@@ -52,6 +58,7 @@ import com.example.mimic.ui.components.formatDuration
 @Composable
 fun NowPlayingScreen(
     state: PlayerUiState,
+    config: PlayerLayoutConfig,
     onBack: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
@@ -64,13 +71,32 @@ fun NowPlayingScreen(
     onOpenSleep: () -> Unit,
 ) {
     val song = state.currentSong
+    // Immersive uses a subtle top-down gradient from the accent into the background.
+    val background = if (config.layout == PlayerLayout.IMMERSIVE) {
+        Modifier.background(
+            Brush.verticalGradient(
+                listOf(
+                    MaterialTheme.colorScheme.primary.copy(alpha = 0.35f),
+                    MaterialTheme.colorScheme.background,
+                ),
+            ),
+        )
+    } else {
+        Modifier.background(MaterialTheme.colorScheme.background)
+    }
+
+    val artworkFraction = when (config.layout) {
+        PlayerLayout.IMMERSIVE -> maxOf(config.artworkSize.fraction(), 0.9f)
+        PlayerLayout.COMPACT -> minOf(config.artworkSize.fraction(), 0.6f)
+        PlayerLayout.CLASSIC -> config.artworkSize.fraction()
+    }
+    val corner = if (config.artworkShape == ArtworkShape.CIRCLE) 1000 else config.artworkShape.cornerDp()
+
     Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background)
-            .padding(horizontal = 24.dp),
+        modifier = Modifier.fillMaxSize().then(background).padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
+        // Top bar: collapse + optional secondary actions.
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
                 Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Collapse")
@@ -82,27 +108,31 @@ fun NowPlayingScreen(
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
             )
-            IconButton(onClick = onOpenSleep) {
-                Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer")
-            }
-            IconButton(onClick = onOpenQueue) {
-                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Queue")
+            if (config.showSecondaryActions) {
+                IconButton(onClick = onOpenSleep) { Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer") }
+                IconButton(onClick = onOpenQueue) { Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Queue") }
+            } else {
+                Spacer(Modifier.size(48.dp))
             }
         }
 
-        Spacer(Modifier.height(24.dp))
+        if (config.layout == PlayerLayout.COMPACT) Spacer(Modifier.height(12.dp)) else Spacer(Modifier.height(24.dp))
+
         AlbumArt(
             song,
-            modifier = Modifier.fillMaxWidth().aspectRatio(1f),
-            corner = 12,
+            modifier = Modifier.fillMaxWidth(artworkFraction).aspectRatio(1f),
+            corner = corner,
         )
 
-        Spacer(Modifier.height(32.dp))
+        if (config.layout == PlayerLayout.IMMERSIVE) Spacer(Modifier.weight(1f)) else Spacer(Modifier.height(28.dp))
+
+        // Title + favorite
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(
                     song?.title ?: "Nothing playing",
-                    style = MaterialTheme.typography.headlineSmall,
+                    style = if (config.layout == PlayerLayout.COMPACT) MaterialTheme.typography.titleLarge
+                    else MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
@@ -126,15 +156,32 @@ fun NowPlayingScreen(
             }
         }
 
-        Spacer(Modifier.height(16.dp))
+        Spacer(Modifier.height(if (config.layout == PlayerLayout.COMPACT) 8.dp else 16.dp))
         SeekBar(state, onSeek)
 
         Spacer(Modifier.height(8.dp))
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
+        Controls(state, config, onPlayPause, onNext, onPrevious, onShuffle, onRepeat)
+
+        if (config.layout == PlayerLayout.IMMERSIVE) Spacer(Modifier.height(24.dp))
+    }
+}
+
+@Composable
+private fun Controls(
+    state: PlayerUiState,
+    config: PlayerLayoutConfig,
+    onPlayPause: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onShuffle: () -> Unit,
+    onRepeat: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.SpaceEvenly,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (config.showShuffleRepeat) {
             IconButton(onClick = onShuffle) {
                 Icon(
                     Icons.Default.Shuffle,
@@ -143,27 +190,29 @@ fun NowPlayingScreen(
                     else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
-            IconButton(onClick = onPrevious) {
-                Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(40.dp))
-            }
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .clip(androidx.compose.foundation.shape.CircleShape)
-                    .background(MaterialTheme.colorScheme.primary)
-                    .clickable(onClick = onPlayPause),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                    contentDescription = if (state.isPlaying) "Pause" else "Play",
-                    tint = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.size(40.dp),
-                )
-            }
-            IconButton(onClick = onNext) {
-                Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(40.dp))
-            }
+        }
+        IconButton(onClick = onPrevious) {
+            Icon(Icons.Default.SkipPrevious, contentDescription = "Previous", modifier = Modifier.size(40.dp))
+        }
+        Box(
+            modifier = Modifier
+                .size(72.dp)
+                .clip(androidx.compose.foundation.shape.CircleShape)
+                .background(MaterialTheme.colorScheme.primary)
+                .clickable(onClick = onPlayPause),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = if (state.isPlaying) "Pause" else "Play",
+                tint = MaterialTheme.colorScheme.onPrimary,
+                modifier = Modifier.size(40.dp),
+            )
+        }
+        IconButton(onClick = onNext) {
+            Icon(Icons.Default.SkipNext, contentDescription = "Next", modifier = Modifier.size(40.dp))
+        }
+        if (config.showShuffleRepeat) {
             IconButton(onClick = onRepeat) {
                 Icon(
                     if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne
@@ -180,7 +229,6 @@ fun NowPlayingScreen(
 
 @Composable
 private fun SeekBar(state: PlayerUiState, onSeek: (Long) -> Unit) {
-    // While the user drags, show the dragged value; otherwise follow playback position.
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableStateOf(0f) }
     val duration = state.durationMs.coerceAtLeast(1L).toFloat()
