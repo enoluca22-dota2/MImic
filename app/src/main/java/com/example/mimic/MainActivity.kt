@@ -29,6 +29,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.MimicApp
@@ -40,12 +41,13 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MImicTheme {
+            val viewModel: PlayerViewModel = viewModel()
+            val settings by viewModel.settings.collectAsStateWithLifecycle()
+            MImicTheme(themeMode = settings.themeMode, accent = settings.accent) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    val viewModel: PlayerViewModel = viewModel()
                     Root(viewModel)
                 }
             }
@@ -70,10 +72,9 @@ private fun Root(viewModel: PlayerViewModel) {
         )
     }
 
-    // Ask for notification permission too (33+) so the media notification can show.
     val notifLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { /* result ignored: playback works regardless */ }
+    ) { /* playback works regardless of the result */ }
 
     val audioLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.RequestPermission(),

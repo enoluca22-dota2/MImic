@@ -55,8 +55,8 @@ class MusicRepository(private val context: Context) {
                     artist = c.getString(artistCol)?.takeIf { it != "<unknown>" } ?: "Unknown artist",
                     album = c.getString(albumCol) ?: "Unknown album",
                     durationMs = c.getLong(durationCol),
-                    uri = ContentUris.withAppendedId(collection, id),
-                    albumArtUri = ContentUris.withAppendedId(albumArtBase, albumId),
+                    uri = ContentUris.withAppendedId(collection, id).toString(),
+                    albumArtUri = ContentUris.withAppendedId(albumArtBase, albumId).toString(),
                     dateAddedSec = c.getLong(dateAddedCol),
                 )
             }

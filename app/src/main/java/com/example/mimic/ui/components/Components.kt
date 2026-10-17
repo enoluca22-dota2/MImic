@@ -12,6 +12,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -58,12 +60,18 @@ fun AlbumArt(song: Song?, modifier: Modifier = Modifier, corner: Int = 6) {
 }
 
 @Composable
-fun SongRow(song: Song, onClick: () -> Unit, modifier: Modifier = Modifier) {
+fun SongRow(
+    song: Song,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    isFavorite: Boolean = false,
+    onMenu: (() -> Unit)? = null,
+) {
     Row(
         modifier = modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         AlbumArt(song, modifier = Modifier.size(52.dp))
@@ -85,11 +93,29 @@ fun SongRow(song: Song, onClick: () -> Unit, modifier: Modifier = Modifier) {
             )
         }
         Spacer(Modifier.width(8.dp))
+        if (isFavorite) {
+            Icon(
+                androidx.compose.material.icons.Icons.Default.Favorite,
+                contentDescription = "Favorite",
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(18.dp),
+            )
+            Spacer(Modifier.width(8.dp))
+        }
         Text(
             formatDuration(song.durationMs),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
+        if (onMenu != null) {
+            IconButton(onClick = onMenu) {
+                Icon(
+                    androidx.compose.material.icons.Icons.Default.MoreVert,
+                    contentDescription = "More options",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
     }
 }
 

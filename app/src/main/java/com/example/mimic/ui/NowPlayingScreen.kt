@@ -14,6 +14,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.QueueMusic
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
@@ -55,6 +59,9 @@ fun NowPlayingScreen(
     onSeek: (Long) -> Unit,
     onShuffle: () -> Unit,
     onRepeat: () -> Unit,
+    onToggleFavorite: () -> Unit,
+    onOpenQueue: () -> Unit,
+    onOpenSleep: () -> Unit,
 ) {
     val song = state.currentSong
     Column(
@@ -75,7 +82,12 @@ fun NowPlayingScreen(
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
             )
-            Spacer(Modifier.size(48.dp))
+            IconButton(onClick = onOpenSleep) {
+                Icon(Icons.Default.Bedtime, contentDescription = "Sleep timer")
+            }
+            IconButton(onClick = onOpenQueue) {
+                Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = "Queue")
+            }
         }
 
         Spacer(Modifier.height(24.dp))
@@ -86,23 +98,33 @@ fun NowPlayingScreen(
         )
 
         Spacer(Modifier.height(32.dp))
-        Text(
-            song?.title ?: "Nothing playing",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Text(
-            song?.artist ?: "",
-            style = MaterialTheme.typography.titleMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.fillMaxWidth(),
-        )
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(
+                    song?.title ?: "Nothing playing",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Text(
+                    song?.artist ?: "",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+            IconButton(onClick = onToggleFavorite, enabled = song != null) {
+                Icon(
+                    if (state.isCurrentFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                    contentDescription = "Like",
+                    tint = if (state.isCurrentFavorite) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
 
         Spacer(Modifier.height(16.dp))
         SeekBar(state, onSeek)

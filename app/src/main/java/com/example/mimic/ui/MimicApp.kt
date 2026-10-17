@@ -27,6 +27,7 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.example.mimic.data.Song
 import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.components.MiniPlayer
 
@@ -40,10 +41,20 @@ private val tabs = listOf(
 
 @Composable
 fun MimicApp(viewModel: PlayerViewModel) {
-    val songs by viewModel.songs.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val playlists by viewModel.playlists.collectAsStateWithLifecycle()
+    val settings by viewModel.settings.collectAsStateWithLifecycle()
     val navController = rememberNavController()
+
     var nowPlayingOpen by remember { mutableStateOf(false) }
+    var queueOpen by remember { mutableStateOf(false) }
+    var sleepOpen by remember { mutableStateOf(false) }
+    var menuSong by remember { mutableStateOf<Song?>(null) }
+    var addSong by remember { mutableStateOf<Song?>(null) }
+    var createDialog by remember { mutableStateOf(false) }
+    var createForSong by remember { mutableStateOf<Song?>(null) }
+
+    val onSongMenu: (Song) -> Unit = { menuSong = it }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -68,9 +79,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                             selected = selected,
                             onClick = {
                                 navController.navigate(tab.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
+                                    popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                     launchSingleTop = true
                                     restoreState = true
                                 }
@@ -84,11 +93,33 @@ fun MimicApp(viewModel: PlayerViewModel) {
         },
     ) { innerPadding ->
         NavHost(navController = navController, startDestination = "home") {
-            composable("home") { HomeScreen(songs, innerPadding, viewModel::play) }
-            composable("search") { SearchScreen(songs, innerPadding, viewModel::play) }
-            composable("library") { LibraryScreen(songs, innerPadding, viewModel::play) }
+            composable("home") {
+                HomeScreen(viewModel, innerPadding, onOpenSettings = { navController.navigate("settings") }, onSongMenu)
+            }
+            composable("search") { SearchScreen(viewModel, innerPadding, onSongMenu) }
+            composable("library") {
+                LibraryScreen(
+                    vm = viewModel,
+                    contentPadding = innerPadding,
+                    onOpenPlaylist = { navController.navigate("playlist/$it") },
+                    onOpenFavorites = { navController.navigate("favorites") },
+                    onCreatePlaylist = { createDialog = true },
+                    onSongMenu = onSongMenu,
+                )
+            }
+            composable("settings") { SettingsScreen(viewModel, onBack = { navController.popBackStack() }) }
+            composable("favorites") {
+                FavoritesScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
+            }
+            composable("playlist/{id}") { entry ->
+                val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
+                val name = playlists.firstOrNull { it.id == id }?.name ?: "Playlist"
+                PlaylistDetailScreen(viewModel, id, name, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
+            }
         }
     }
+
+    // ---- Overlays, sheets and dialogs ----
 
     if (nowPlayingOpen && uiState.currentSong != null) {
         NowPlayingScreen(
@@ -100,6 +131,49 @@ fun MimicApp(viewModel: PlayerViewModel) {
             onSeek = { viewModel.seekTo(it) },
             onShuffle = { viewModel.toggleShuffle() },
             onRepeat = { viewModel.cycleRepeat() },
+            onToggleFavorite = { uiState.currentSong?.let { viewModel.toggleFavorite(it) } },
+            onOpenQueue = { queueOpen = true },
+            onOpenSleep = { sleepOpen = true },
+        )
+    }
+
+    if (queueOpen) QueueSheet(viewModel, onDismiss = { queueOpen = false })
+
+    if (sleepOpen) {
+        SleepTimerDialog(
+            current = settings.sleepTimerMinutes,
+            onDismiss = { sleepOpen = false },
+            onSet = { viewModel.startSleepTimer(it) },
+            onCancel = { viewModel.cancelSleepTimer() },
+        )
+    }
+
+    menuSong?.let { song ->
+        SongActionsSheet(
+            song = song,
+            isFavorite = viewModel.favoriteIds.collectAsStateWithLifecycle().value.contains(song.id),
+            onDismiss = { menuSong = null },
+            onPlayNext = { viewModel.playNext(song) },
+            onAddToQueue = { viewModel.addToQueue(song) },
+            onAddToPlaylist = { addSong = song; menuSong = null },
+            onToggleFavorite = { viewModel.toggleFavorite(song) },
+        )
+    }
+
+    addSong?.let { song ->
+        AddToPlaylistDialog(
+            playlists = playlists,
+            onDismiss = { addSong = null },
+            onPick = { viewModel.addSongToPlaylist(it, song.id) },
+            onCreateNew = { createForSong = song; addSong = null },
+        )
+    }
+
+    if (createDialog || createForSong != null) {
+        val song = createForSong
+        CreatePlaylistDialog(
+            onDismiss = { createDialog = false; createForSong = null },
+            onCreate = { viewModel.createPlaylist(it, song) },
         )
     }
 }
