@@ -18,12 +18,17 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Logout
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.AccountCircle
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -66,50 +71,171 @@ fun MusicServerScreen(vm: PlayerViewModel, onBack: () -> Unit, onOpenBrowse: () 
     val status by vm.serverStatus.collectAsStateWithLifecycle()
     val creds by vm.serverCredentials.collectAsStateWithLifecycle()
 
-    var url by remember(creds) { mutableStateOf(creds?.baseUrl ?: "http://") }
-    var user by remember(creds) { mutableStateOf(creds?.username ?: "") }
-    var pass by remember(creds) { mutableStateOf(creds?.password ?: "") }
-
     Column(Modifier.fillMaxSize()) {
-        Header("Music Server", onBack)
+        Header("Account", onBack)
+        val current = creds
+        if (status == ServerStatus.Connected && current != null) {
+            AccountProfile(
+                username = current.username,
+                serverUrl = current.baseUrl,
+                onBrowse = onOpenBrowse,
+                onSignOut = { vm.disconnectServer() },
+                onSwitchAccount = { vm.switchAccount() },
+            )
+        } else {
+            SignInForm(vm = vm, status = status, onContinueOffline = onBack)
+        }
+    }
+}
+
+@Composable
+private fun SignInForm(vm: PlayerViewModel, status: ServerStatus, onContinueOffline: () -> Unit) {
+    val creds by vm.serverCredentials.collectAsStateWithLifecycle()
+    val lastUrl by vm.lastServerUrl.collectAsStateWithLifecycle()
+    val stayPref by vm.staySignedIn.collectAsStateWithLifecycle()
+
+    var url by remember(creds, lastUrl) { mutableStateOf(creds?.baseUrl ?: lastUrl ?: "http://") }
+    var user by remember(creds) { mutableStateOf(creds?.username ?: "") }
+    var pass by remember(creds) { mutableStateOf("") }
+    var stay by remember(stayPref) { mutableStateOf(stayPref) }
+    var testResult by remember { mutableStateOf<String?>(null) }
+    var testing by remember { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxWidth()) {
         Text(
-            "Connect to your own Navidrome/Subsonic server. See docs/SERVER_SETUP.md.",
+            "Sign in",
+            style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        Text(
+            "Connect to your own music server (Navidrome / Subsonic). Works on your Wi-Fi, or " +
+                "from anywhere via a Tailscale address or an HTTPS URL — just enter that address below.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp),
         )
         OutlinedTextField(
-            value = url, onValueChange = { url = it }, label = { Text("Server address") },
-            placeholder = { Text("http://192.168.1.20:4533") }, singleLine = true,
+            value = url, onValueChange = { url = it; testResult = null }, label = { Text("Server address") },
+            placeholder = { Text("http://192.168.0.178:4533") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         )
         OutlinedTextField(
-            value = user, onValueChange = { user = it }, label = { Text("Username") }, singleLine = true,
+            value = user, onValueChange = { user = it; testResult = null }, label = { Text("Username") }, singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         )
         OutlinedTextField(
-            value = pass, onValueChange = { pass = it }, label = { Text("Password") }, singleLine = true,
+            value = pass, onValueChange = { pass = it; testResult = null }, label = { Text("Password") }, singleLine = true,
             visualTransformation = PasswordVisualTransformation(),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
         )
 
+        Row(
+            Modifier.fillMaxWidth().clickable { stay = !stay }.padding(horizontal = 12.dp, vertical = 2.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Checkbox(checked = stay, onCheckedChange = { stay = it })
+            Text("Stay signed in", color = MaterialTheme.colorScheme.onBackground)
+        }
+
         StatusLine(status)
+        val msg = testResult
+        if (msg != null) {
+            Text(
+                msg, style = MaterialTheme.typography.bodyMedium,
+                color = if (msg.startsWith("✓")) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
+            )
+        }
 
         Row(Modifier.padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Button(
-                onClick = { vm.connectServer(url, user, pass) },
+                onClick = { vm.connectServer(url, user, pass, stay) },
                 enabled = status != ServerStatus.Connecting && url.isNotBlank() && user.isNotBlank(),
-            ) { Text(if (status == ServerStatus.Connected) "Reconnect" else "Test & Connect") }
-            if (status == ServerStatus.Connected) {
-                OutlinedButton(onClick = { vm.disconnectServer() }) { Text("Disconnect") }
+            ) { Text("Sign In") }
+            OutlinedButton(
+                onClick = {
+                    testing = true; testResult = null
+                    vm.testServerConnection(url, user, pass) { result ->
+                        testing = false
+                        testResult = result.fold(
+                            onSuccess = { "✓ Connection OK" },
+                            onFailure = { "Could not connect: ${it.message ?: "unknown error"}" },
+                        )
+                    }
+                },
+                enabled = !testing && url.isNotBlank() && user.isNotBlank(),
+            ) { Text(if (testing) "Testing…" else "Test Connection") }
+        }
+
+        HorizontalDivider(Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+        Text(
+            "You don't need an account to use MImic — music stored on this device always plays offline.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+        )
+        OutlinedButton(onClick = onContinueOffline, modifier = Modifier.padding(horizontal = 16.dp)) {
+            Text("Continue offline (Guest)")
+        }
+    }
+}
+
+@Composable
+private fun AccountProfile(
+    username: String,
+    serverUrl: String,
+    onBrowse: () -> Unit,
+    onSignOut: () -> Unit,
+    onSwitchAccount: () -> Unit,
+) {
+    Column(Modifier.fillMaxWidth()) {
+        Row(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                Icons.Default.AccountCircle, contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(56.dp),
+            )
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text(username, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                Text(serverUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
             }
         }
-        if (status == ServerStatus.Connected) {
-            Button(onClick = onOpenBrowse, modifier = Modifier.padding(horizontal = 16.dp)) {
-                Icon(Icons.Default.Album, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-                Text("Browse server library")
-            }
+        Row(
+            Modifier.padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.CheckCircle, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(6.dp))
+            Text("Signed in · Connected", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.bodyMedium)
+        }
+
+        Button(onClick = onBrowse, modifier = Modifier.padding(16.dp)) {
+            Icon(Icons.Default.Album, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text("Browse server library")
+        }
+
+        HorizontalDivider(Modifier.padding(horizontal = 16.dp))
+
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onSwitchAccount).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.SwapHoriz, contentDescription = null, tint = MaterialTheme.colorScheme.onBackground)
+            Spacer(Modifier.width(16.dp))
+            Text("Switch account", color = MaterialTheme.colorScheme.onBackground)
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onSignOut).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.AutoMirrored.Filled.Logout, contentDescription = null, tint = MaterialTheme.colorScheme.error)
+            Spacer(Modifier.width(16.dp))
+            Text("Sign out", color = MaterialTheme.colorScheme.error)
         }
     }
 }

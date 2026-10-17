@@ -24,6 +24,7 @@ class ServerCredentialsRepository(private val context: Context) {
         val USER = stringPreferencesKey("username")
         val PASS = stringPreferencesKey("password")
         val CONNECTED = booleanPreferencesKey("connected")
+        val STAY = booleanPreferencesKey("stay_signed_in")
     }
 
     val credentials: Flow<ServerCredentials?> = context.serverStore.data.map { p ->
@@ -36,12 +37,19 @@ class ServerCredentialsRepository(private val context: Context) {
 
     val connected: Flow<Boolean> = context.serverStore.data.map { it[Keys.CONNECTED] ?: false }
 
-    suspend fun save(creds: ServerCredentials) {
+    /** When true (default), saved credentials auto-reconnect on app launch. */
+    val staySignedIn: Flow<Boolean> = context.serverStore.data.map { it[Keys.STAY] ?: true }
+
+    /** Last server address, kept across sign-out so "Switch account" can prefill it. */
+    val lastServerUrl: Flow<String?> = context.serverStore.data.map { it[Keys.URL] }
+
+    suspend fun save(creds: ServerCredentials, staySignedIn: Boolean = true) {
         context.serverStore.edit {
             it[Keys.URL] = creds.baseUrl
             it[Keys.USER] = creds.username
             it[Keys.PASS] = creds.password
             it[Keys.CONNECTED] = true
+            it[Keys.STAY] = staySignedIn
         }
     }
 
@@ -49,7 +57,21 @@ class ServerCredentialsRepository(private val context: Context) {
         context.serverStore.edit { it[Keys.CONNECTED] = value }
     }
 
+    suspend fun setStaySignedIn(value: Boolean) {
+        context.serverStore.edit { it[Keys.STAY] = value }
+    }
+
+    /** Full sign-out: removes the account entirely (server address included). */
     suspend fun clear() {
         context.serverStore.edit { it.clear() }
+    }
+
+    /** "Switch account": drop username/password/session but keep the server address prefilled. */
+    suspend fun signOutKeepServer() {
+        context.serverStore.edit {
+            it.remove(Keys.USER)
+            it.remove(Keys.PASS)
+            it[Keys.CONNECTED] = false
+        }
     }
 }

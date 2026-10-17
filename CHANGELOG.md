@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.6 — Account / Sign In experience
+- Settings → "Music Server" reworked into **Account**: a real Sign In screen (server address,
+  username, password) with **Test Connection** (pings without saving) and **Sign In** (validates
+  then persists), plus a **Stay signed in** toggle that controls auto-reconnect on launch.
+- When signed in, the screen shows an **account profile** (username + server + Connected status)
+  with **Browse server library**, **Switch account** (keeps server address, forgets the user),
+  and **Sign out** (forgets the account entirely).
+- **Offline Guest mode**: "Continue offline (Guest)" — and the screen states that on-device music
+  always plays without an account. Local playback remains fully login-free.
+- Remote access works today with no extra code: the server address is free-form, so a Tailscale
+  address or an HTTPS URL can be entered directly (worldwide access without the laptop's LAN IP).
+- NOTE (carried over, still true): live authenticated streaming + offline download have NOT been
+  verified against the running server or a physical phone yet — that acceptance test is pending.
+  Automatic library sync, multi-library per-account scoping, and account-data sync (brief phases
+  5/7/8) are NOT started — gated until streaming + offline are verified.
+
 ## 2.5 — Music server (Navidrome/Subsonic) connection [code complete, end-to-end UNVERIFIED]
 - Navidrome deployment prepared: `server/docker-compose.yml` (music mounted read-only) +
   `docs/SERVER_SETUP.md`. Not started/streamed in this environment — run it on your laptop.

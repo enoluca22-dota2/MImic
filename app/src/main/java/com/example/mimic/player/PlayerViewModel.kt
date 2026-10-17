@@ -38,6 +38,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -290,6 +291,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val serverCredentials: StateFlow<ServerCredentials?> = serverCredsRepo.credentials
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
+    val staySignedIn: StateFlow<Boolean> = serverCredsRepo.staySignedIn
+        .stateIn(viewModelScope, SharingStarted.Eagerly, true)
+
+    /** Remembered server address (kept across "Switch account") for prefilling the sign-in form. */
+    val lastServerUrl: StateFlow<String?> = serverCredsRepo.lastServerUrl
+        .stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
     /** Downloaded tracks as playable (offline, file-backed) [Song]s. */
     val downloads: StateFlow<List<Song>> = downloadDao.all()
         .map { list ->
@@ -307,10 +315,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var serverClient: SubsonicClient? = null
 
     init {
-        // Rebuild the client from saved credentials so the server survives app restarts.
+        // Rebuild the client from saved credentials so the server survives app restarts —
+        // but only when the user chose "Stay signed in" (otherwise they land as an offline guest).
         viewModelScope.launch {
             serverCredsRepo.credentials.collect { creds ->
-                if (creds != null && serverClient == null) {
+                val stay = serverCredsRepo.staySignedIn.first()
+                if (creds != null && stay && serverClient == null) {
                     serverClient = SubsonicClient(creds)
                     _serverStatus.value = ServerStatus.Connected
                 }
@@ -318,8 +328,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Validate credentials with a ping, then persist and connect on success. */
-    fun connectServer(baseUrl: String, username: String, password: String) {
+    /** Ping the server without persisting anything — the "Test Connection" button. */
+    fun testServerConnection(baseUrl: String, username: String, password: String, onResult: (Result<Unit>) -> Unit) {
+        viewModelScope.launch {
+            val creds = ServerCredentials(baseUrl.trim(), username.trim(), password)
+            val result = SubsonicClient(creds).ping().map { }
+            onResult(result)
+        }
+    }
+
+    /** Validate credentials with a ping, then persist and connect on success (the "Sign In" action). */
+    fun connectServer(baseUrl: String, username: String, password: String, staySignedIn: Boolean = true) {
         viewModelScope.launch {
             _serverStatus.value = ServerStatus.Connecting
             val creds = ServerCredentials(baseUrl.trim(), username.trim(), password)
@@ -327,7 +346,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             client.ping().fold(
                 onSuccess = {
                     serverClient = client
-                    serverCredsRepo.save(creds)
+                    serverCredsRepo.save(creds, staySignedIn)
                     _serverStatus.value = ServerStatus.Connected
                     loadRemoteAlbums()
                 },
@@ -336,11 +355,26 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    fun setStaySignedIn(value: Boolean) {
+        viewModelScope.launch { serverCredsRepo.setStaySignedIn(value) }
+    }
+
+    /** Full sign-out: forget the account entirely. Local (on-device) playback keeps working. */
     fun disconnectServer() {
         viewModelScope.launch {
             serverClient = null
             _remoteAlbums.value = emptyList()
             serverCredsRepo.clear()
+            _serverStatus.value = ServerStatus.Disconnected
+        }
+    }
+
+    /** Switch account: sign out of the current user but keep the server address prefilled. */
+    fun switchAccount() {
+        viewModelScope.launch {
+            serverClient = null
+            _remoteAlbums.value = emptyList()
+            serverCredsRepo.signOutKeepServer()
             _serverStatus.value = ServerStatus.Disconnected
         }
     }

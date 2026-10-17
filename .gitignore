@@ -18,3 +18,7 @@ local.properties
 keystore.properties
 *.jks
 *.keystore
+
+# Local server admin credentials for testing — never commit
+server/navi-creds.txt
+server/navidrome-data/
