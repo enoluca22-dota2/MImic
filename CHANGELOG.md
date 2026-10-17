@@ -21,10 +21,16 @@ the earlier localhost emulator test didn't surface them):
   JSON error body (`no such file or directory`). ExoPlayer can't parse JSON → it was the "fails to
   play". The one track with a real file (System Of A Down – Aerials) streams perfectly. Fix is
   server-side: restore the music files or repoint the mount, then rescan Navidrome.
-- Verified on emulator (emulator-5554, APK 2.8.1): scrolling the full 386-track list (A→B→G and
-  back to top), valid-file streaming (`state=PLAYING`, position advanced, 0 errors), failed-track
-  error now visible instead of a freeze, local playback, upgrade preserves data (theme, history,
-  download). 37 unit tests pass. versionCode 11 / versionName 2.8.1; applicationId + signing unchanged.
+- **Full-screen player could get stuck open:** added a `BackHandler` so system back collapses it,
+  and `statusBarsPadding()` so the collapse chevron no longer hides under the status-bar clock.
+- Verified on emulator (emulator-5554): scrolling the full 386-track list (A→B→G and back to top),
+  valid-file streaming (`state=PLAYING`, position advanced, 0 errors), failed-track error now
+  visible instead of a freeze, local playback, upgrade preserves data (theme, history, download).
+  **Artwork-cache proof (386 covers, through a 120 ms/chunk latency + ~0.5 MB/s proxy):** each
+  cover fetched exactly once; scrolling back over loaded rows = **0 extra network requests**;
+  playback never starved while scrolling (track advanced, fully buffered, 0 errors); pause/resume/
+  next/previous/seek all verified; download + offline playback + offline-after-restart + reconnect
+  all pass. 37 unit tests pass. versionCode 12 / versionName 2.8.1; applicationId + signing unchanged.
 
 ## Acceptance — Streaming & offline playback VERIFIED (2026-10-17, emulator)
 End-to-end verified on the Android emulator against the live Navidrome server (`enoluca`):

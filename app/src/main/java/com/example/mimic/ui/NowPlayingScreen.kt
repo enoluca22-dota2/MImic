@@ -1,5 +1,6 @@
 package com.example.mimic.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Bedtime
@@ -71,6 +73,8 @@ fun NowPlayingScreen(
     onOpenSleep: () -> Unit,
 ) {
     val song = state.currentSong
+    // System back collapses the full-screen player (previously it could get stuck open).
+    BackHandler(onBack = onBack)
     // Immersive uses a subtle top-down gradient from the accent into the background.
     val background = if (config.layout == PlayerLayout.IMMERSIVE) {
         Modifier.background(
@@ -93,7 +97,8 @@ fun NowPlayingScreen(
     val corner = if (config.artworkShape == ArtworkShape.CIRCLE) 1000 else config.artworkShape.cornerDp()
 
     Column(
-        modifier = Modifier.fillMaxSize().then(background).padding(horizontal = 24.dp),
+        // statusBarsPadding keeps the collapse chevron below the status-bar clock so it stays tappable.
+        modifier = Modifier.fillMaxSize().then(background).statusBarsPadding().padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         // Top bar: collapse + optional secondary actions.
