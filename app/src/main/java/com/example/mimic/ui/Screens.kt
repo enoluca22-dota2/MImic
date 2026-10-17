@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Folder
@@ -214,6 +215,7 @@ fun LibraryScreen(
     onOpenPlaylist: (Long) -> Unit,
     onOpenFavorites: () -> Unit,
     onOpenDownloads: () -> Unit,
+    onOpenSmart: () -> Unit,
     onCreatePlaylist: () -> Unit,
     onBrowse: (BrowseType) -> Unit,
     onSongMenu: (Song) -> Unit,
@@ -251,6 +253,20 @@ fun LibraryScreen(
                 title = "Downloads",
                 subtitle = "${downloads.size} offline",
                 onClick = onOpenDownloads,
+            )
+        }
+        item {
+            LibraryEntry(
+                leading = {
+                    Box(
+                        Modifier.size(52.dp).clip(RoundedCornerShape(6.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) { Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                },
+                title = "Smart Collections",
+                subtitle = "Never played, forgotten favorites & more",
+                onClick = onOpenSmart,
             )
         }
         item {

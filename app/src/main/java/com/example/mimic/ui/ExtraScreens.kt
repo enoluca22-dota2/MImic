@@ -475,3 +475,65 @@ fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
         }
     }
 }
+
+/**
+ * Smart Collections — generated views over the user's own library + play history (no server).
+ * A hub lists each collection with its live count; tapping one opens it in [SongListScreen].
+ * These never alter the user's manual playlists.
+ */
+@Composable
+fun SmartCollectionsScreen(vm: PlayerViewModel, onBack: () -> Unit, onSongMenu: (Song) -> Unit) {
+    val never by vm.neverPlayed.collectAsStateWithLifecycle()
+    val least by vm.leastPlayed.collectAsStateWithLifecycle()
+    val forgotten by vm.forgottenFavorites.collectAsStateWithLifecycle()
+    val random by vm.randomDiscovery.collectAsStateWithLifecycle()
+    val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
+
+    data class Collection(val title: String, val subtitle: String, val songs: List<Song>)
+    val collections = listOf(
+        Collection("Never Played", "Music in your library you haven't heard yet", never),
+        Collection("Least Played", "Songs you've played the fewest times", least),
+        Collection("Forgotten Favorites", "Liked songs you haven't played recently", forgotten),
+        Collection("Random Discovery", "A fresh shuffle from your library each day", random),
+    )
+
+    var selected by remember { mutableStateOf<Int?>(null) }
+    val sel = selected
+    if (sel == null) {
+        Column(Modifier.fillMaxSize()) {
+            ScreenHeader("Smart Collections", onBack)
+            LazyColumn(Modifier.fillMaxSize()) {
+                items(collections.size, key = { it }) { i ->
+                    val c = collections[i]
+                    Row(
+                        Modifier.fillMaxWidth().clickable { selected = i }.padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(c.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                            Text(c.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                        }
+                        Spacer(Modifier.width(8.dp))
+                        Text("${c.songs.size}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
+        }
+    } else {
+        val c = collections[sel]
+        SongListScreen(
+            title = c.title,
+            songs = c.songs,
+            onBack = { selected = null },
+            onPlay = vm::play,
+            onSongMenu = onSongMenu,
+            favoriteIds = favoriteIds,
+        )
+    }
+}

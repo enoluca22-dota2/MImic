@@ -110,6 +110,30 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             com.example.mimic.data.LibraryQueries.suggested(songs, counts, 20)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    // ---- Smart collections (generated from local library + play history; no server) ----
+
+    val neverPlayed: StateFlow<List<Song>> =
+        combine(historyDao.playedSongIds(), _songs) { playedIds, songs ->
+            com.example.mimic.data.SmartCollections.neverPlayed(songs, playedIds.toSet(), 50)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val leastPlayed: StateFlow<List<Song>> =
+        combine(historyDao.leastPlayed(50), _songs) { counts, songs ->
+            com.example.mimic.data.SmartCollections.leastPlayed(songs, counts, 50)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val forgottenFavorites: StateFlow<List<Song>> =
+        combine(favoriteDao.favoriteIds(), historyDao.recentlyPlayedIds(30), _songs) { favs, recent, songs ->
+            com.example.mimic.data.SmartCollections.forgottenFavorites(songs, favs.toSet(), recent.toSet(), 50)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    /** Reproducible for the calendar day so it doesn't reshuffle on every recomposition. */
+    val randomDiscovery: StateFlow<List<Song>> = _songs
+        .map { com.example.mimic.data.SmartCollections.randomDiscovery(it, daySeed(), 50) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private fun daySeed(): Long = System.currentTimeMillis() / 86_400_000L
+
     val playlists: StateFlow<List<PlaylistEntity>> = playlistDao.playlists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 

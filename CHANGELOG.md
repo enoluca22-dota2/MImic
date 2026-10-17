@@ -1,5 +1,17 @@
 # Changelog
 
+## 2.7.1 — Smart Collections (local, no server)
+- New **Library → Smart Collections**: generated views over your own library + play history —
+  **Never Played**, **Least Played**, **Forgotten Favorites**, **Random Discovery** (reproducible
+  per day). Pure, deterministic logic in `data/SmartCollections.kt`; new DAO queries
+  (`playedSongIds`, `leastPlayed`). Generated views only — manual playlists are never touched;
+  local/remote ids stay distinct. (Spotipy-feature brief, Phase 6 — local half, server-independent.)
+- 6 new JVM unit tests (33 total, 0 failures). Verified on emulator: hub renders with accurate
+  live counts, opens cleanly (0 app crashes under normal navigation).
+- versionCode 10 / versionName 2.7.1; applicationId + signing unchanged.
+- NOTE: authenticated streaming/download/offline remain UNVERIFIED (blocked on the server
+  password). No multi-user/sync started.
+
 ## 2.7 — Credential encryption + verified on-emulator client
 - **Credential security:** the server password is now encrypted at rest with AES-256-GCM using a
   non-exportable Android Keystore key (`data/server/CredentialCipher.kt`); only ciphertext is

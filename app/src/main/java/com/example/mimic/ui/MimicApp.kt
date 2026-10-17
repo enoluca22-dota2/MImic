@@ -177,6 +177,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenPlaylist = { navController.navigate("playlist/$it") },
                     onOpenFavorites = { navController.navigate("favorites") },
                     onOpenDownloads = { navController.navigate("downloads") },
+                    onOpenSmart = { navController.navigate("smartcollections") },
                     onCreatePlaylist = { createDialog = true },
                     onBrowse = { navController.navigate("browse/${it.name}") },
                     onSongMenu = onSongMenu,
@@ -228,6 +229,9 @@ fun MimicApp(viewModel: PlayerViewModel) {
             }
             composable("favorites") {
                 FavoritesScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
+            }
+            composable("smartcollections") {
+                SmartCollectionsScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
             }
             composable("browse/{type}") { entry ->
                 val type = entry.arguments?.getString("type")

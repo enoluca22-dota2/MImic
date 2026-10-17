@@ -44,6 +44,17 @@ interface HistoryDao {
     @Query("SELECT COUNT(*) FROM play_history WHERE songId = :songId")
     suspend fun playCount(songId: Long): Int
 
+    /** All distinct song ids that have ever been played (for "Never played"). */
+    @Query("SELECT DISTINCT songId FROM play_history")
+    fun playedSongIds(): Flow<List<Long>>
+
+    /** Least-played songs (played at least once), lowest count first. */
+    @Query(
+        "SELECT songId, COUNT(*) AS count FROM play_history " +
+            "GROUP BY songId ORDER BY count ASC, MAX(playedAt) ASC LIMIT :limit",
+    )
+    fun leastPlayed(limit: Int): Flow<List<PlayCount>>
+
     @Query("DELETE FROM play_history WHERE playedAt < :cutoff")
     suspend fun pruneOlderThan(cutoff: Long)
 }
