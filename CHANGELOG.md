@@ -1,5 +1,25 @@
 # Changelog
 
+## 2.7 — Credential encryption + verified on-emulator client
+- **Credential security:** the server password is now encrypted at rest with AES-256-GCM using a
+  non-exportable Android Keystore key (`data/server/CredentialCipher.kt`); only ciphertext is
+  written to DataStore. Legacy plaintext from older installs is migrated in place on first launch
+  (`migratePlaintextIfNeeded`), with safe fallback if the Keystore is unavailable and no loss of
+  unrelated preferences (themes/layouts live in a separate store).
+- **Verified on a running emulator (Android, x86_64):** app installs + launches (no crash); local
+  MediaStore scan + **real playback** (Media3 session `state=PLAYING`); background playback
+  (mini-player persists across screens); Account/Sign In UI renders; **auth pipeline reaches a live
+  Navidrome and correctly rejects a wrong password** ("Wrong username or password"); network-failure
+  handling shows a graceful error (10s timeout, no crash). 27 unit tests pass.
+- **Remote access:** documented in `docs/REMOTE_ACCESS.md` (Tailscale recommended; HTTPS proxy for
+  public). Tailscale is NOT yet installed on the laptop. Worldwide access NOT claimed until tested
+  from outside the home network.
+- **STILL PENDING:** authenticated streaming/download/offline with the *correct* password (both via
+  curl and in-app), and physical-phone testing. The only gap for streaming is the real password.
+- versionCode 9 / versionName 2.7; applicationId + signing unchanged.
+- Build note: `cmd //c "gradlew.bat ..."` silently no-ops in this shell (current dir excluded from
+  search); use `.\gradlew.bat`. Earlier 2.6 "builds" this session had not actually compiled.
+
 ## 2.6 — Account / Sign In experience
 - Settings → "Music Server" reworked into **Account**: a real Sign In screen (server address,
   username, password) with **Test Connection** (pings without saving) and **Sign In** (validates

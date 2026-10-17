@@ -315,6 +315,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var serverClient: SubsonicClient? = null
 
     init {
+        // Encrypt any legacy plaintext password left by an older install (safe no-op otherwise).
+        viewModelScope.launch { serverCredsRepo.migratePlaintextIfNeeded() }
         // Rebuild the client from saved credentials so the server survives app restarts —
         // but only when the user chose "Stay signed in" (otherwise they land as an offline guest).
         viewModelScope.launch {
