@@ -24,3 +24,5 @@ server/navi-creds.txt
 server/navidrome-data/
 # Machine-specific music path (points MIMIC_MUSIC_DIR at your local music folder)
 server/.env
+# Local DB/config backups (machine-specific, can be large)
+server/backups/
