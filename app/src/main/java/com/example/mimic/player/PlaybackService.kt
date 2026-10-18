@@ -22,6 +22,13 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.map
+import android.os.Bundle
+import androidx.media3.session.SessionCommand
+import androidx.media3.session.SessionError
+import androidx.media3.session.SessionResult
+import com.google.common.util.concurrent.Futures
+import com.google.common.util.concurrent.ListenableFuture
 
 /**
  * Hosts the ExoPlayer instance and a MediaSession so playback survives in the background
@@ -36,6 +43,7 @@ class PlaybackService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var positionTicker: Job? = null
+    private var effects: PlaybackEffects? = null
 
     /** The item whose play hasn't been recorded yet (it was loaded but hasn't started playing). */
     private var unrecordedMediaId: String? = null
@@ -62,7 +70,44 @@ class PlaybackService : MediaSessionService() {
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .build()
         player.addListener(playerListener(player))
-        mediaSession = MediaSession.Builder(this, player).build()
+        effects = PlaybackEffects(this, player, scope, container.settingsRepository.settings.map { it.audio })
+        mediaSession = MediaSession.Builder(this, player)
+            .setCallback(sessionCallback())
+            .setSessionActivity(
+                android.app.PendingIntent.getActivity(
+                    this, 0, android.content.Intent(this, com.example.mimic.MainActivity::class.java),
+                    android.app.PendingIntent.FLAG_IMMUTABLE,
+                ),
+            )
+            .build()
+    }
+
+    /** MImic's own commands from the UI: sleep timer (lives here so it fires with the UI closed), EQ layout. */
+    private fun sessionCallback() = object : MediaSession.Callback {
+        override fun onConnect(session: MediaSession, controller: MediaSession.ControllerInfo): MediaSession.ConnectionResult {
+            val commands = MediaSession.ConnectionResult.DEFAULT_SESSION_COMMANDS.buildUpon()
+                .add(SessionCommand(CMD_SLEEP, Bundle.EMPTY))
+                .add(SessionCommand(CMD_EQ_INFO, Bundle.EMPTY))
+                .build()
+            return MediaSession.ConnectionResult.AcceptedResultBuilder(session).setAvailableSessionCommands(commands).build()
+        }
+
+        override fun onCustomCommand(
+            session: MediaSession,
+            controller: MediaSession.ControllerInfo,
+            customCommand: SessionCommand,
+            args: Bundle,
+        ): ListenableFuture<SessionResult> {
+            val fx = effects ?: return Futures.immediateFuture(SessionResult(SessionError.ERROR_UNKNOWN))
+            return when (customCommand.customAction) {
+                CMD_SLEEP -> {
+                    if (args.containsKey(ARG_MINUTES)) fx.setSleepTimer(args.getInt(ARG_MINUTES))
+                    Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putLong(ARG_ENDS_AT, fx.sleepEndsAt) }))
+                }
+                CMD_EQ_INFO -> Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS, fx.eqInfo()))
+                else -> Futures.immediateFuture(SessionResult(SessionError.ERROR_NOT_SUPPORTED))
+            }
+        }
     }
 
     private val container get() = (application as MimicApplication).container
@@ -70,6 +115,7 @@ class PlaybackService : MediaSessionService() {
     private fun playerListener(player: Player) = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             unrecordedMediaId = mediaItem?.mediaId
+            effects?.onMediaItemTransition(mediaItem)
             // A queue replaced by the app (play / restore) is "loaded", not yet "played": record it
             // once it actually starts. Auto-advance and skips while playing count right away.
             if (player.isPlaying) recordPendingPlay()
@@ -143,6 +189,8 @@ class PlaybackService : MediaSessionService() {
         mediaSession
 
     override fun onDestroy() {
+        effects?.release()
+        effects = null
         mediaSession?.run {
             // The service scope dies with the service; this last write must outlive it.
             persistPosition(player, on = CoroutineScope(SupervisorJob()))
@@ -154,8 +202,12 @@ class PlaybackService : MediaSessionService() {
         super.onDestroy()
     }
 
-    private companion object {
-        const val MAX_SKIPS_ON_ERROR = 3
-        const val RESUME_NOT_A_PLAY_MS = 5_000L
+    companion object {
+        const val CMD_SLEEP = "com.example.mimic.SLEEP_TIMER"
+        const val CMD_EQ_INFO = "com.example.mimic.EQ_INFO"
+        const val ARG_MINUTES = "minutes"
+        const val ARG_ENDS_AT = "endsAt"
+        private const val MAX_SKIPS_ON_ERROR = 3
+        private const val RESUME_NOT_A_PLAY_MS = 5_000L
     }
 }

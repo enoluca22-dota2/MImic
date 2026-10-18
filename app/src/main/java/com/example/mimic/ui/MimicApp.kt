@@ -160,6 +160,9 @@ fun MimicApp(viewModel: PlayerViewModel) {
     var nowPlayingOpen by remember { mutableStateOf(false) }
     var queueOpen by remember { mutableStateOf(false) }
     var sleepOpen by remember { mutableStateOf(false) }
+    var lyricsOpen by remember { mutableStateOf(false) }
+    var speedOpen by remember { mutableStateOf(false) }
+    val sleepEndsAt by viewModel.sleepEndsAt.collectAsStateWithLifecycle()
     var menuSong by remember { mutableStateOf<Song?>(null) }
     var addSongs by remember { mutableStateOf<List<Song>?>(null) }
     var createDialog by remember { mutableStateOf(false) }
@@ -298,6 +301,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenHomeCustomize = { navController.navigate("homecustomize") },
                     onOpenMusicServer = { navController.navigate("musicserver") },
                     onOpenMusicSources = { navController.navigate("sources") },
+                    onOpenPlayback = { navController.navigate("playback") },
                 )
             }
 
@@ -362,6 +366,9 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     )
                 }
             }
+            composable("playback") {
+                InsetScreen(innerPadding, padBottom = true) { com.example.mimic.ui.player.PlaybackSettingsScreen(viewModel, onBack = back) }
+            }
             composable("smartcollections") {
                 InsetScreen(innerPadding) { SmartCollectionsScreen(viewModel, onBack = back, onSongMenu = onSongMenu, rowEnv = rowEnv) }
             }
@@ -411,19 +418,18 @@ fun MimicApp(viewModel: PlayerViewModel) {
             onOpenQueue = { queueOpen = true },
             onOpenSleep = { sleepOpen = true },
             onStop = { viewModel.stopPlayback(); nowPlayingOpen = false },
+            onOpenLyrics = { lyricsOpen = true },
+            onOpenSpeed = { speedOpen = true },
+            speed = settings.audio.speed,
+            sleepActive = sleepEndsAt != 0L,
+            hapticSeek = settings.audio.hapticSeek,
         )
     }
 
-    if (queueOpen) QueueSheet(viewModel, onDismiss = { queueOpen = false })
-
-    if (sleepOpen) {
-        SleepTimerDialog(
-            current = settings.sleepTimerMinutes,
-            onDismiss = { sleepOpen = false },
-            onSet = { viewModel.startSleepTimer(it) },
-            onCancel = { viewModel.cancelSleepTimer() },
-        )
-    }
+    if (queueOpen) com.example.mimic.ui.player.QueueSheet(viewModel, onDismiss = { queueOpen = false })
+    if (sleepOpen) com.example.mimic.ui.player.SleepTimerSheet(viewModel, onDismiss = { sleepOpen = false })
+    if (lyricsOpen) com.example.mimic.ui.player.LyricsSheet(viewModel, onDismiss = { lyricsOpen = false })
+    if (speedOpen) com.example.mimic.ui.player.SpeedSheet(viewModel, onDismiss = { speedOpen = false })
 
     menuSong?.let { song ->
         val canDownload = song.isFromServer && (!song.isDownloaded || song.fileMissing)

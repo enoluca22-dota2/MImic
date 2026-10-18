@@ -19,6 +19,13 @@ import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material.icons.filled.Speed
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -92,6 +99,12 @@ fun NowPlayingScreen(
     onOpenQueue: () -> Unit,
     onOpenSleep: () -> Unit,
     onStop: () -> Unit = {},
+    onOpenLyrics: () -> Unit = {},
+    onOpenSpeed: () -> Unit = {},
+    /** Current playback speed (shown on the Speed action). */
+    speed: Float = 1f,
+    sleepActive: Boolean = false,
+    hapticSeek: Boolean = true,
 ) {
     val song = state.currentSong
     // System back collapses (minimizes) the full-screen player — it never gets stuck open.
@@ -160,20 +173,35 @@ fun NowPlayingScreen(
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
             )
-            if (config.showSecondaryActions) {
-                TopAction(controls, Icons.Default.Bedtime, "Sleep timer", onOpenSleep)
-                Spacer(Modifier.width(if (controls == ControlStyle.GLASS) 8.dp else 0.dp))
-                TopAction(controls, Icons.AutoMirrored.Filled.QueueMusic, "Queue", onOpenQueue)
-            } else {
-                Spacer(Modifier.size(48.dp))
-            }
+            // Balances Minimize + Stop so the title stays centered.
+            Spacer(Modifier.size(if (controls == ControlStyle.GLASS) 104.dp else 96.dp))
         }
 
         if (config.layout == PlayerLayout.COMPACT) Spacer(Modifier.height(12.dp)) else Spacer(Modifier.height(24.dp))
 
+        // Swipe the artwork sideways to skip (left = next, right = previous); it follows the finger.
+        var dragX by remember { mutableStateOf(0f) }
+        val threshold = with(androidx.compose.ui.platform.LocalDensity.current) { 72.dp.toPx() }
         AlbumArt(
             song,
-            modifier = Modifier.fillMaxWidth(artworkFraction).aspectRatio(1f),
+            modifier = Modifier
+                .fillMaxWidth(artworkFraction)
+                .aspectRatio(1f)
+                .graphicsLayer {
+                    translationX = dragX * 0.6f
+                    alpha = 1f - (kotlin.math.abs(dragX) / (threshold * 4)).coerceAtMost(0.4f)
+                }
+                .pointerInput(onNext, onPrevious) {
+                    detectHorizontalDragGestures(
+                        onDragEnd = {
+                            if (dragX <= -threshold) onNext() else if (dragX >= threshold) onPrevious()
+                            dragX = 0f
+                        },
+                        onDragCancel = { dragX = 0f },
+                        onHorizontalDrag = { change, dx -> change.consume(); dragX += dx },
+                    )
+                }
+                .semantics { contentDescription = "Album artwork. Swipe left for next song, right for previous." },
             corner = corner,
             shape = artShape,
         )
@@ -199,6 +227,20 @@ fun NowPlayingScreen(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
+                // Clear status: a failed song says why; buffering is shown, never a silent freeze.
+                when {
+                    state.playbackError != null -> Text(
+                        state.playbackError,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                        maxLines = 3,
+                    )
+                    state.isBuffering -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(12.dp), strokeWidth = 2.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text("Buffering…", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
             }
             IconButton(onClick = onToggleFavorite, enabled = song != null) {
                 Icon(
@@ -219,14 +261,24 @@ fun NowPlayingScreen(
                     .glassSurface(env.style.surfaceShape(1.1f), fallback = MaterialTheme.colorScheme.surfaceVariant)
                     .padding(horizontal = 14.dp, vertical = 12.dp),
             ) {
-                SeekBar(state, onSeek)
+                SeekBar(state, onSeek, hapticSeek)
                 Spacer(Modifier.height(4.dp))
                 Controls(state, config, controls, onPlayPause, onNext, onPrevious, onShuffle, onRepeat)
             }
         } else {
-            SeekBar(state, onSeek)
+            SeekBar(state, onSeek, hapticSeek)
             Spacer(Modifier.height(8.dp))
             Controls(state, config, controls, onPlayPause, onNext, onPrevious, onShuffle, onRepeat)
+        }
+
+        if (config.showSecondaryActions) {
+            Spacer(Modifier.height(if (config.layout == PlayerLayout.COMPACT) 8.dp else 16.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
+                BottomAction(Icons.Default.Lyrics, "Lyrics", onOpenLyrics)
+                BottomAction(Icons.Default.Speed, com.example.mimic.ui.player.formatSpeed(speed), onOpenSpeed, highlighted = speed != 1f, description = "Playback speed")
+                BottomAction(Icons.Default.Bedtime, if (sleepActive) "Sleep on" else "Sleep", onOpenSleep, highlighted = sleepActive, description = "Sleep timer")
+                BottomAction(Icons.AutoMirrored.Filled.QueueMusic, "Queue", onOpenQueue)
+            }
         }
 
         if (config.layout == PlayerLayout.IMMERSIVE) Spacer(Modifier.height(24.dp))
@@ -361,8 +413,24 @@ private fun Controls(
     }
 }
 
+/** Labeled icon action under the controls. */
 @Composable
-private fun SeekBar(state: PlayerUiState, onSeek: (Long) -> Unit) {
+private fun BottomAction(icon: ImageVector, label: String, onClick: () -> Unit, highlighted: Boolean = false, description: String = label) {
+    val tint = if (highlighted) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    Column(
+        Modifier.clip(androidx.compose.foundation.shape.RoundedCornerShape(12.dp)).clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .semantics(mergeDescendants = true) { contentDescription = description },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = tint)
+    }
+}
+
+@Composable
+private fun SeekBar(state: PlayerUiState, onSeek: (Long) -> Unit, haptic: Boolean = true) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     var dragging by remember { mutableStateOf(false) }
     var dragValue by remember { mutableStateOf(0f) }
     val duration = state.durationMs.coerceAtLeast(1L).toFloat()
@@ -372,7 +440,11 @@ private fun SeekBar(state: PlayerUiState, onSeek: (Long) -> Unit) {
         Slider(
             value = position,
             onValueChange = { dragging = true; dragValue = it },
-            onValueChangeFinished = { onSeek(dragValue.toLong()); dragging = false },
+            onValueChangeFinished = {
+                onSeek(dragValue.toLong())
+                dragging = false
+                if (haptic) haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.TextHandleMove)
+            },
             valueRange = 0f..duration,
             colors = SliderDefaults.colors(
                 thumbColor = MaterialTheme.colorScheme.onBackground,

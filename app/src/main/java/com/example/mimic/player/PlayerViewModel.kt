@@ -44,6 +44,15 @@ import kotlinx.coroutines.launch
 
 data class NowPlaying(val song: Song?, val isPlaying: Boolean)
 
+/** The phone's equalizer: band centers (Hz) and level range (millibels). */
+data class EqualizerInfo(val frequenciesHz: List<Int>, val minLevel: Int, val maxLevel: Int, val bassBoost: Boolean)
+
+sealed interface LyricsState {
+    data object Loading : LyricsState
+    data class Found(val lyrics: com.example.mimic.data.audio.Lyrics) : LyricsState
+    data class None(val reason: String) : LyricsState
+}
+
 /** Loading state of the server song catalog. */
 sealed interface CatalogState {
     data object Idle : CatalogState
@@ -108,6 +117,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
+
+    /** Index of the playing item in [queue] (the queue may hold the same song twice). */
+    private val _currentIndex = MutableStateFlow(0)
+    val currentIndex: StateFlow<Int> = _currentIndex.asStateFlow()
 
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue.asStateFlow()
@@ -234,7 +247,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var controller: MediaController? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var songsById: Map<Long, Song> = emptyMap()
-    private var sleepJob: Job? = null
 
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
@@ -308,6 +320,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             rebuildQueue(controller!!)
             startPositionUpdates()
             restoreQueueIfIdle()
+            refreshSleepState()
         }, MoreExecutors.directExecutor())
     }
 
@@ -1033,23 +1046,105 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    // ---- Sleep timer ----
+    // ---- Sleep timer (runs in PlaybackService, so it fires with the app closed) ----
 
-    fun startSleepTimer(minutes: Int) {
-        sleepJob?.cancel()
-        viewModelScope.launch { settingsRepo.setSleepTimerMinutes(minutes) }
-        if (minutes <= 0) return
-        sleepJob = viewModelScope.launch {
-            delay(minutes * 60_000L)
-            controller?.pause()
-            settingsRepo.setSleepTimerMinutes(0)
+    /** Wall-clock end of the sleep timer; -1 = end of the current song; 0 = off. */
+    private val _sleepEndsAt = MutableStateFlow(0L)
+    val sleepEndsAt: StateFlow<Long> = _sleepEndsAt.asStateFlow()
+
+    private fun sleepCommand(args: android.os.Bundle) {
+        val c = controller ?: return
+        val future = c.sendCustomCommand(androidx.media3.session.SessionCommand(PlaybackService.CMD_SLEEP, android.os.Bundle.EMPTY), args)
+        future.addListener({
+            runCatching { future.get() }.getOrNull()?.extras?.let { _sleepEndsAt.value = it.getLong(PlaybackService.ARG_ENDS_AT) }
+        }, MoreExecutors.directExecutor())
+    }
+
+    /** minutes > 0, or [PlaybackEffects.SLEEP_END_OF_SONG]. The last 20 s fade out. */
+    fun startSleepTimer(minutes: Int) = sleepCommand(android.os.Bundle().apply { putInt(PlaybackService.ARG_MINUTES, minutes) })
+
+    fun cancelSleepTimer() = sleepCommand(android.os.Bundle().apply { putInt(PlaybackService.ARG_MINUTES, 0) })
+
+    /** Ask the service for the timer state (after reconnecting, e.g. app reopened). */
+    private fun refreshSleepState() = sleepCommand(android.os.Bundle.EMPTY)
+
+    // ---- Playback & audio settings (applied by PlaybackService) ----
+
+    fun setAudio(prefs: com.example.mimic.data.AudioPrefs) {
+        viewModelScope.launch { settingsRepo.setAudio(prefs) }
+    }
+
+    fun setSpeed(speed: Float) = setAudio(settings.value.audio.copy(speed = speed.coerceIn(0.5f, 2f)))
+
+    /** The phone's equalizer layout (bands in Hz, level range in millibels), or null if it has none. */
+    suspend fun equalizerInfo(): EqualizerInfo? {
+        val c = controller ?: return null
+        val future = c.sendCustomCommand(androidx.media3.session.SessionCommand(PlaybackService.CMD_EQ_INFO, android.os.Bundle.EMPTY), android.os.Bundle.EMPTY)
+        val result = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { future.get(3, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() }
+        val b = result?.extras ?: return null
+        if (!b.getBoolean(PlaybackEffects.KEY_AVAILABLE)) return null
+        return EqualizerInfo(
+            frequenciesHz = b.getIntArray(PlaybackEffects.KEY_FREQS)?.toList().orEmpty(),
+            minLevel = b.getInt(PlaybackEffects.KEY_MIN),
+            maxLevel = b.getInt(PlaybackEffects.KEY_MAX),
+            bassBoost = b.getBoolean(PlaybackEffects.KEY_BASS),
+        )
+    }
+
+    // ---- Lyrics (owned / local audio only; nothing is fetched from the internet) ----
+
+    private val lyricsDir get() = java.io.File(getApplication<Application>().filesDir, "lyrics")
+    private val lyricsReload = MutableStateFlow(0)
+
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val lyrics: StateFlow<LyricsState> =
+        combine(uiState.map { it.currentSong }.distinctUntilChanged { a, b -> a?.id == b?.id && a?.uri == b?.uri }, lyricsReload) { s, _ -> s }
+            .mapLatest { song -> if (song == null) LyricsState.None("Nothing playing") else loadLyrics(song) }
+            .flowOn(kotlinx.coroutines.Dispatchers.IO)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LyricsState.Loading)
+
+    private fun loadLyrics(song: Song): LyricsState {
+        // 1. A .lrc file the user added for this song.
+        val imported = java.io.File(lyricsDir, "${song.id}.lrc")
+        if (imported.isFile) {
+            com.example.mimic.data.audio.Lyrics.parse(imported.readText(), "Your .lrc file")?.let { return LyricsState.Found(it) }
+        }
+        // 2. Lyrics embedded in the audio file (on-device or downloaded songs).
+        val uri = android.net.Uri.parse(song.uri)
+        if (uri.scheme == "content" || uri.scheme == "file") {
+            val tags = runCatching {
+                getApplication<Application>().contentResolver.openInputStream(uri)?.use {
+                    com.example.mimic.data.audio.AudioTags.parse(PlaybackEffects.readHead(it, com.example.mimic.data.audio.AudioTags.HEAD_BYTES))
+                }
+            }.getOrNull()
+            tags?.lyrics?.let { text -> com.example.mimic.data.audio.Lyrics.parse(text, "Embedded in the file")?.let { return LyricsState.Found(it) } }
+            return LyricsState.None("No lyrics in this file. Add a .lrc file to show them.")
+        }
+        return LyricsState.None("Lyrics are read from files on this phone. Download the song, or add a .lrc file.")
+    }
+
+    /** Attach a user-picked .lrc / .txt file to the current song (copied into app storage). */
+    fun importLyrics(uri: android.net.Uri) {
+        val song = _uiState.value.currentSong ?: return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            val text = runCatching { getApplication<Application>().contentResolver.openInputStream(uri)?.use { it.readBytes().decodeToString() } }.getOrNull()
+            if (text == null || com.example.mimic.data.audio.Lyrics.parse(text, "") == null) {
+                _messages.tryEmit("That file has no readable lyrics")
+                return@launch
+            }
+            lyricsDir.mkdirs()
+            java.io.File(lyricsDir, "${song.id}.lrc").writeText(text)
+            lyricsReload.update { it + 1 }
+            _messages.tryEmit("Lyrics added to \"${song.title}\"")
         }
     }
 
-    fun cancelSleepTimer() {
-        sleepJob?.cancel()
-        sleepJob = null
-        viewModelScope.launch { settingsRepo.setSleepTimerMinutes(0) }
+    fun removeImportedLyrics() {
+        val song = _uiState.value.currentSong ?: return
+        viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            java.io.File(lyricsDir, "${song.id}.lrc").delete()
+            lyricsReload.update { it + 1 }
+        }
     }
 
     // ---- Internals ----
@@ -1084,6 +1179,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val current = player.currentMediaItem?.mediaId?.toLongOrNull()?.let { songsById[it] }
         val fav = current?.let { favoriteIds.value.contains(it.id) } ?: false
         val buffering = player.playbackState == Player.STATE_BUFFERING
+        // A sleep timer that just fired paused the player: pick up its new (off) state.
+        if (!player.isPlaying && _uiState.value.isPlaying && _sleepEndsAt.value != 0L) refreshSleepState()
+        _currentIndex.value = player.currentMediaItemIndex
         _uiState.update {
             it.copy(
                 currentSong = current,

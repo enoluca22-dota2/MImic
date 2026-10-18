@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.example.mimic.ui.designsystem.ThemeRegistry
@@ -26,6 +27,8 @@ data class AppSettings(
     val libraryConfig: LibraryConfig = LibraryConfig(),
     /** Recent searches, newest first (MImic 3.2). Stays on the phone. */
     val recentSearches: List<String> = emptyList(),
+    /** Playback speed, crossfade, EQ, ReplayGain ... (MImic 3.2). */
+    val audio: AudioPrefs = AudioPrefs(),
 )
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -55,6 +58,16 @@ class SettingsRepository(private val context: Context) {
         val CELLULAR_TAGS = booleanPreferencesKey("cellular_tag_reading")
         val BACKGROUND_SYNC = booleanPreferencesKey("background_cloud_sync")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
+        val SPEED = floatPreferencesKey("audio_speed")
+        val KEEP_PITCH = booleanPreferencesKey("audio_keep_pitch")
+        val CROSSFADE = intPreferencesKey("audio_crossfade_sec")
+        val SKIP_SILENCE = booleanPreferencesKey("audio_skip_silence")
+        val REPLAY_GAIN = stringPreferencesKey("audio_replay_gain")
+        val EQ_ON = booleanPreferencesKey("audio_eq_enabled")
+        val EQ_BANDS = stringPreferencesKey("audio_eq_bands")
+        val BASS = intPreferencesKey("audio_bass_boost")
+        val HAPTIC_SEEK = booleanPreferencesKey("audio_haptic_seek")
+        val RESUME_ON_CONNECT = booleanPreferencesKey("audio_resume_on_connect")
         val LIB_ORDER = stringPreferencesKey("library_tab_order")
         val LIB_HIDDEN = stringPreferencesKey("library_hidden_tabs")
         val LIB_ALBUMS_GRID = booleanPreferencesKey("library_albums_grid")
@@ -103,6 +116,18 @@ class SettingsRepository(private val context: Context) {
                 groupSort = decode(prefs[Keys.LIB_GROUP_SORT], GroupSort.NAME),
                 groupsReversed = prefs[Keys.LIB_GROUPS_REVERSED] ?: false,
             ),
+            audio = AudioPrefs(
+                speed = (prefs[Keys.SPEED] ?: 1f).coerceIn(0.5f, 2f),
+                keepPitch = prefs[Keys.KEEP_PITCH] ?: true,
+                crossfadeSec = (prefs[Keys.CROSSFADE] ?: 0).coerceIn(0, AudioPrefs.MAX_CROSSFADE_SEC),
+                skipSilence = prefs[Keys.SKIP_SILENCE] ?: false,
+                replayGain = decode(prefs[Keys.REPLAY_GAIN], ReplayGainMode.OFF),
+                eqEnabled = prefs[Keys.EQ_ON] ?: false,
+                eqBands = AudioPrefs.decodeBands(prefs[Keys.EQ_BANDS]),
+                bassBoost = (prefs[Keys.BASS] ?: 0).coerceIn(0, 1000),
+                hapticSeek = prefs[Keys.HAPTIC_SEEK] ?: true,
+                resumeOnConnect = prefs[Keys.RESUME_ON_CONNECT] ?: false,
+            ),
             recentSearches = prefs[Keys.RECENT_SEARCHES]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList(),
         )
     }
@@ -132,6 +157,21 @@ class SettingsRepository(private val context: Context) {
             it[Keys.HOME_ORDER] = config.sectionOrder.joinToString(",") { s -> s.name }
             it[Keys.HOME_HIDDEN] = config.hidden.joinToString(",") { s -> s.name }
             it[Keys.NAV_STYLE] = config.navStyle.name
+        }
+    }
+
+    suspend fun setAudio(a: AudioPrefs) {
+        context.dataStore.edit {
+            it[Keys.SPEED] = a.speed
+            it[Keys.KEEP_PITCH] = a.keepPitch
+            it[Keys.CROSSFADE] = a.crossfadeSec
+            it[Keys.SKIP_SILENCE] = a.skipSilence
+            it[Keys.REPLAY_GAIN] = a.replayGain.name
+            it[Keys.EQ_ON] = a.eqEnabled
+            it[Keys.EQ_BANDS] = AudioPrefs.encodeBands(a.eqBands)
+            it[Keys.BASS] = a.bassBoost
+            it[Keys.HAPTIC_SEEK] = a.hapticSeek
+            it[Keys.RESUME_ON_CONNECT] = a.resumeOnConnect
         }
     }
 

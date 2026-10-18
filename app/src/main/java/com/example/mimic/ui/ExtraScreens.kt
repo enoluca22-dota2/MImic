@@ -21,6 +21,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
@@ -100,6 +102,7 @@ fun SettingsScreen(
     onOpenHomeCustomize: () -> Unit,
     onOpenMusicServer: () -> Unit,
     onOpenMusicSources: () -> Unit = {},
+    onOpenPlayback: () -> Unit = {},
 ) {
     val cloudAccounts by vm.cloudAccounts.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -185,6 +188,30 @@ fun SettingsScreen(
             color = MaterialTheme.colorScheme.onBackground,
             modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
         )
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenPlayback).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Default.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Playback & audio", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                val a = settings.audio
+                Text(
+                    listOfNotNull(
+                        if (a.crossfadeSec > 0) "Crossfade ${a.crossfadeSec} s" else "Gapless",
+                        "EQ".takeIf { a.eqEnabled },
+                        "ReplayGain ${a.replayGain.label.lowercase()}".takeIf { a.replayGain != com.example.mimic.data.ReplayGainMode.OFF },
+                        com.example.mimic.ui.player.formatSpeed(a.speed).takeIf { a.speed != 1f },
+                    ).joinToString(" · ") + " · equalizer, sleep fade, headphones",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Row(
             Modifier.fillMaxWidth().clickable(onClick = onOpenMusicSources).padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -320,20 +347,58 @@ fun PlaylistDetailScreen(
 ) {
     val songsFlow = remember(playlistId) { vm.songsInPlaylist(playlistId) }
     val songs by songsFlow.collectAsStateWithLifecycle(emptyList())
+    var renaming by remember { mutableStateOf(false) }
+    var confirmDelete by remember { mutableStateOf(false) }
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(playlistName, onBack, trailing = {
-            IconButton(onClick = { vm.deletePlaylist(playlistId); onBack() }) {
+            IconButton(onClick = { renaming = true }) {
+                Icon(Icons.Default.Edit, contentDescription = "Rename playlist")
+            }
+            IconButton(onClick = { confirmDelete = true }) {
                 Icon(Icons.Default.Delete, contentDescription = "Delete playlist")
             }
         })
+        if (renaming) {
+            var name by remember { mutableStateOf(playlistName) }
+            AlertDialog(
+                onDismissRequest = { renaming = false },
+                title = { Text("Rename playlist") },
+                text = { OutlinedTextField(value = name, onValueChange = { name = it }, singleLine = true) },
+                confirmButton = { TextButton(onClick = { vm.renamePlaylist(playlistId, name.trim()); renaming = false }, enabled = name.isNotBlank()) { Text("Rename") } },
+                dismissButton = { TextButton(onClick = { renaming = false }) { Text("Cancel") } },
+            )
+        }
+        if (confirmDelete) {
+            AlertDialog(
+                onDismissRequest = { confirmDelete = false },
+                title = { Text("Delete \"$playlistName\"?") },
+                text = { Text("The playlist is removed. Its songs stay in your library.") },
+                confirmButton = { TextButton(onClick = { confirmDelete = false; vm.deletePlaylist(playlistId); onBack() }) { Text("Delete") } },
+                dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text("Cancel") } },
+            )
+        }
+        Text(
+            com.example.mimic.ui.library.countLabel(songs.size) + if (songs.isNotEmpty()) " · " + com.example.mimic.ui.components.formatDuration(songs.sumOf { it.durationMs }) else "",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
         if (songs.isEmpty()) {
             EmptyState("Empty playlist", "Use a song's menu → Add to playlist to fill it.")
         } else {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = { vm.play(songs, 0) }) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Play all")
+                }
+                androidx.compose.material3.FilledTonalButton(onClick = { vm.shufflePlay(songs) }) {
+                    Icon(Icons.Default.Shuffle, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Shuffle")
                 }
             }
             LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.example.mimic.ui.library.LocalBarPadding.current)) {
@@ -436,35 +501,6 @@ fun AddToPlaylistDialog(
     )
 }
 
-@Composable
-fun SleepTimerDialog(current: Int, onDismiss: () -> Unit, onSet: (Int) -> Unit, onCancel: () -> Unit) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Sleep timer") },
-        text = {
-            Column {
-                if (current > 0) {
-                    Text(
-                        "Active: pausing in about $current min",
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(bottom = 8.dp),
-                    )
-                }
-                listOf(15, 30, 45, 60).forEach { mins ->
-                    Row(
-                        Modifier.fillMaxWidth().clickable { onSet(mins); onDismiss() }.padding(vertical = 12.dp),
-                    ) { Text("$mins minutes") }
-                }
-            }
-        },
-        confirmButton = {
-            if (current > 0) TextButton(onClick = { onCancel(); onDismiss() }) { Text("Turn off") }
-            else TextButton(onClick = onDismiss) { Text("Close") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
-    )
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SongActionsSheet(
@@ -526,42 +562,6 @@ private fun ActionRow(icon: androidx.compose.ui.graphics.vector.ImageVector, lab
         Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurface)
         Spacer(Modifier.width(20.dp))
         Text(label, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurface)
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
-    val queue by vm.queue.collectAsStateWithLifecycle()
-    val state by vm.uiState.collectAsStateWithLifecycle()
-    val sheetState = rememberModalBottomSheetState()
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Text(
-            "Queue",
-            style = MaterialTheme.typography.titleLarge,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onSurface,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-        )
-        LazyColumn(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-            items(count = queue.size, key = { queue[it].id.toString() + "_" + it }) { index ->
-                val song = queue[index]
-                val isCurrent = song.id == state.currentSong?.id
-                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                    Box(
-                        Modifier.weight(1f).then(
-                            if (isCurrent) Modifier.background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
-                            else Modifier,
-                        ),
-                    ) {
-                        SongRow(song = song, onClick = { vm.playQueueItem(index) })
-                    }
-                    IconButton(onClick = { vm.removeFromQueue(index) }) {
-                        Icon(Icons.Default.Close, contentDescription = "Remove from queue")
-                    }
-                }
-            }
-        }
     }
 }
 
