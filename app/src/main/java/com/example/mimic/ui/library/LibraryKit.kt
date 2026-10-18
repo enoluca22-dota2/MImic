@@ -63,6 +63,8 @@ class AppNav(
     val openServerBrowse: () -> Unit,
     val createPlaylist: () -> Unit,
     val songMenu: (Song) -> Unit,
+    /** Add one or more songs to a playlist (opens the playlist picker). */
+    val addToPlaylist: (List<Song>) -> Unit,
     val back: () -> Unit,
 )
 
@@ -85,11 +87,17 @@ fun rememberRowEnv(vm: PlayerViewModel, nav: AppNav): RowEnv {
     return remember(fav, dl, currentId, vm, nav) { RowEnv(fav, dl, currentId, vm, nav) }
 }
 
+/** Multi-select state for a song list (MImic 3.2); null [selected] = not selecting. */
+class SongSelection(val selected: Set<Long>?, val toggle: (Song) -> Unit)
+
 @Composable
-fun LibrarySongRow(song: Song, queue: List<Song>, index: Int, env: RowEnv, showAlbum: Boolean = true) {
+fun LibrarySongRow(song: Song, queue: List<Song>, index: Int, env: RowEnv, showAlbum: Boolean = true, selection: SongSelection? = null) {
+    val selecting = selection?.selected != null
     SongRow(
         song = song,
-        onClick = { env.vm.play(queue, index) },
+        onClick = { if (selecting) selection!!.toggle(song) else env.vm.play(queue, index) },
+        onLongClick = selection?.let { { it.toggle(song) } },
+        selected = if (selecting) song.id in selection!!.selected!! else null,
         isFavorite = song.id in env.favoriteIds,
         onToggleFavorite = { env.vm.toggleFavorite(song) },
         onMenu = { env.nav.songMenu(song) },
@@ -100,9 +108,9 @@ fun LibrarySongRow(song: Song, queue: List<Song>, index: Int, env: RowEnv, showA
 }
 
 /** Song rows for a LazyColumn; keys are the stable song ids (one row per logical song). */
-fun LazyListScope.songItems(songs: List<Song>, env: RowEnv, showAlbum: Boolean = true, keyPrefix: String = "s") {
+fun LazyListScope.songItems(songs: List<Song>, env: RowEnv, showAlbum: Boolean = true, keyPrefix: String = "s", selection: SongSelection? = null) {
     items(count = songs.size, key = { "$keyPrefix${songs[it].id}" }, contentType = { "song" }) { i ->
-        LibrarySongRow(songs[i], songs, i, env, showAlbum)
+        LibrarySongRow(songs[i], songs, i, env, showAlbum, selection)
     }
 }
 

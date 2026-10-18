@@ -22,6 +22,19 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.automirrored.filled.ViewList
+import androidx.compose.material.icons.filled.ArrowDownward
+import androidx.compose.material.icons.filled.ArrowUpward
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.GridView
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.Tune
+import com.example.mimic.data.GroupSort
+import com.example.mimic.data.GroupSorting
+import com.example.mimic.data.movedTab
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.Sort
@@ -75,12 +88,8 @@ import com.example.mimic.ui.designsystem.LocalGlass
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
-/** Library categories (MImic 3.0). GENRES / FOLDERS / SMART open their own browsers. */
-enum class LibraryCategory(val label: String) {
-    SONGS("Songs"), ALBUMS("Albums"), ARTISTS("Artists"), PLAYLISTS("Playlists"),
-    FAVORITES("Favorites"), DOWNLOADS("Downloads"),
-    GENRES("Genres"), FOLDERS("Folders"), SMART("Smart Collections"),
-}
+/** Library categories; kept as an alias so existing references keep compiling (3.2 moved it to data). */
+typealias LibraryCategory = com.example.mimic.data.LibraryTab
 
 /** Grouping / sorting runs off the main thread so a large library never stalls scrolling. */
 @Composable
@@ -113,20 +122,41 @@ fun DetailTopBar(title: String, onBack: () -> Unit, trailing: @Composable () -> 
 fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNav) {
     val all by vm.songs.collectAsStateWithLifecycle()
     val filter by vm.sourceFilter.collectAsStateWithLifecycle()
-    val sort by vm.songSort.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
+    val config = settings.libraryConfig
     val lastPlayed by vm.lastPlayed.collectAsStateWithLifecycle()
     val catalog by vm.catalogState.collectAsStateWithLifecycle()
-    var category by rememberSaveable { mutableStateOf(LibraryCategory.SONGS) }
+    val visibleTabs = config.visibleTabs()
+    var categoryState by rememberSaveable { mutableStateOf(LibraryCategory.SONGS) }
+    // A tab the user just hid falls back to the first visible list tab.
+    val category = categoryState.takeIf { it in visibleTabs } ?: visibleTabs.firstOrNull { it.opensInPlace() } ?: LibraryCategory.SONGS
     val env = rememberRowEnv(vm, nav)
+    var editTabs by remember { mutableStateOf(false) }
 
     val filtered = rememberComputed(emptyList(), all, filter) { UnifiedLibrary.filter(all, filter) }
-    val sorted = rememberComputed(emptyList(), filtered, sort, lastPlayed) { UnifiedLibrary.sort(filtered, sort, lastPlayed) }
-    val albums = rememberComputed(emptyList(), filtered) { UnifiedLibrary.albums(filtered) }
-    val artists = rememberComputed(emptyList(), filtered) { UnifiedLibrary.artists(filtered) }
+    val sorted = rememberComputed(emptyList(), filtered, config.songSort, config.songsReversed, lastPlayed) {
+        UnifiedLibrary.sort(filtered, config.songSort, lastPlayed).let { if (config.songsReversed) it.asReversed() else it }
+    }
+    val albums = rememberComputed(emptyList(), filtered, config.groupSort, config.groupsReversed) {
+        GroupSorting.albums(UnifiedLibrary.albums(filtered), config.groupSort, config.groupsReversed)
+    }
+    val artists = rememberComputed(emptyList(), filtered, config.groupSort, config.groupsReversed) {
+        GroupSorting.artists(UnifiedLibrary.artists(filtered), config.groupSort, config.groupsReversed)
+    }
     val downloads by vm.downloads.collectAsStateWithLifecycle()
     val favData = rememberFavoritesData(vm)
     var favKind by rememberSaveable { mutableStateOf(FavKind.SONGS) }
     var dlGrouping by rememberSaveable { mutableStateOf(DownloadGrouping.ALL) }
+
+    // Multi-select (Songs tab): long-press a song to start; the selection survives scrolling.
+    var selectedIds by rememberSaveable { mutableStateOf<List<Long>?>(null) }
+    val selection = SongSelection(selectedIds?.toSet()) { s ->
+        val cur = selectedIds.orEmpty()
+        selectedIds = if (s.id in cur) cur - s.id else cur + s.id
+    }
+    if (selectedIds != null) androidx.activity.compose.BackHandler { selectedIds = null }
+    if (category != LibraryCategory.SONGS && selectedIds != null) selectedIds = null
+
     // Opening the library picks up songs uploaded to the cloud since the last check.
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshIfStale() }
 
@@ -155,8 +185,9 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
                 Modifier.fillMaxWidth().horizontalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                LibraryCategory.entries.forEach { c ->
+                visibleTabs.forEach { c ->
                     FilterChip(
                         selected = c == category,
                         onClick = {
@@ -164,7 +195,7 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
                                 LibraryCategory.GENRES -> nav.openBrowse(BrowseType.GENRES)
                                 LibraryCategory.FOLDERS -> nav.openBrowse(BrowseType.FOLDERS)
                                 LibraryCategory.SMART -> nav.openSmart()
-                                else -> category = c
+                                else -> categoryState = c
                             }
                         },
                         label = { Text(c.label) },
@@ -176,21 +207,80 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
                         },
                     )
                 }
+                IconButton(onClick = { editTabs = true }) {
+                    Icon(Icons.Default.Tune, contentDescription = "Edit library tabs")
+                }
             }
         }
         when (category) {
             LibraryCategory.SONGS -> {
-                item(key = "sortbar") { SortBar(sorted.size, sort) { vm.songSort.value = it } }
+                val sel = selectedIds
+                if (sel != null) {
+                    item(key = "selbar") {
+                        val chosen = remember(sel, sorted) { sorted.filter { it.id in sel.toSet() } }
+                        SelectionBar(
+                            count = chosen.size,
+                            allSelected = chosen.size == sorted.size && sorted.isNotEmpty(),
+                            downloadable = chosen.count { it.isFromServer && (!it.isDownloaded || it.fileMissing) },
+                            onSelectAll = { selectedIds = if (chosen.size == sorted.size) emptyList() else sorted.map { it.id } },
+                            onPlay = { vm.play(chosen, 0); selectedIds = null },
+                            onQueue = { vm.addAllToQueue(chosen); selectedIds = null },
+                            onPlaylist = { nav.addToPlaylist(chosen); selectedIds = null },
+                            onFavorite = { vm.favoriteAll(chosen); selectedIds = null },
+                            onDownload = { vm.downloadAll(chosen); selectedIds = null },
+                            onClose = { selectedIds = null },
+                        )
+                    }
+                } else {
+                    item(key = "sortbar") {
+                        SortBar(
+                            count = sorted.size,
+                            label = config.songSort.label,
+                            options = SongSort.entries.map { it.label },
+                            reversed = config.songsReversed,
+                            onSort = { i -> vm.setLibraryConfig(config.copy(songSort = SongSort.entries[i])) },
+                            onReverse = { vm.setLibraryConfig(config.copy(songsReversed = !config.songsReversed)) },
+                            trailing = {
+                                TextButton(onClick = { selectedIds = emptyList() }, enabled = sorted.isNotEmpty()) { Text("Select") }
+                            },
+                        )
+                    }
+                }
                 if (sorted.isEmpty()) item(key = "empty") { InlineEmpty(emptyText(filter.label)) }
-                songItems(sorted, env)
+                songItems(sorted, env, selection = selection)
             }
             LibraryCategory.ALBUMS -> {
+                item(key = "albumbar") {
+                    SortBar(
+                        count = albums.size, noun = "album" to "albums",
+                        label = config.groupSort.label,
+                        options = GroupSort.entries.map { it.label },
+                        reversed = config.groupsReversed,
+                        onSort = { i -> vm.setLibraryConfig(config.copy(groupSort = GroupSort.entries[i])) },
+                        onReverse = { vm.setLibraryConfig(config.copy(groupsReversed = !config.groupsReversed)) },
+                        trailing = { ViewToggle(config.albumsGrid) { vm.setLibraryConfig(config.copy(albumsGrid = !config.albumsGrid)) } },
+                    )
+                }
                 if (albums.isEmpty()) item(key = "empty") { InlineEmpty(emptyText(filter.label)) }
-                albumGrid(albums, nav)
+                if (config.albumsGrid) albumGrid(albums, nav)
+                else items(albums, key = { "all" + it.key }) { a -> AlbumListRow(a) { nav.openAlbum(a.key) } }
             }
             LibraryCategory.ARTISTS -> {
+                val artistSorts = GroupSort.entries.filter { it != GroupSort.ARTIST }
+                item(key = "artistbar") {
+                    SortBar(
+                        count = artists.size, noun = "artist" to "artists",
+                        label = (if (config.groupSort == GroupSort.ARTIST) GroupSort.NAME else config.groupSort).label,
+                        options = artistSorts.map { it.label },
+                        reversed = config.groupsReversed,
+                        onSort = { i -> vm.setLibraryConfig(config.copy(groupSort = artistSorts[i])) },
+                        onReverse = { vm.setLibraryConfig(config.copy(groupsReversed = !config.groupsReversed)) },
+                        trailing = { ViewToggle(config.artistsGrid) { vm.setLibraryConfig(config.copy(artistsGrid = !config.artistsGrid)) } },
+                    )
+                }
                 if (artists.isEmpty()) item(key = "empty") { InlineEmpty(emptyText(filter.label)) }
-                items(artists, key = { "ar" + it.key }) { a -> ArtistRow(a) { nav.openArtist(a.key) } }
+                if (config.artistsGrid) artistGrid(artists, nav)
+                else items(artists, key = { "ar" + it.key }) { a -> ArtistRow(a) { nav.openArtist(a.key) } }
             }
             LibraryCategory.PLAYLISTS -> playlistItems(vm, nav)
             LibraryCategory.FAVORITES -> favoritesSection(favData, favKind, { favKind = it }, env)
@@ -199,7 +289,14 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
         }
     }
     }
+    if (editTabs) {
+        LibraryTabsDialog(config, onChange = vm::setLibraryConfig, onDismiss = { editTabs = false })
+    }
 }
+
+/** Tabs that switch the list in place (the others open their own screen). */
+private fun LibraryCategory.opensInPlace() =
+    this != LibraryCategory.GENRES && this != LibraryCategory.FOLDERS && this != LibraryCategory.SMART
 
 private fun emptyText(filter: String) =
     if (filter == "All") "No music yet. Add audio files to your phone, or connect Google Drive / OneDrive in Settings → Music Sources."
@@ -223,25 +320,175 @@ private fun libraryCountLine(all: List<Song>, catalog: CatalogState): String {
     }
 }
 
+/** Count · sort field menu · direction toggle · optional trailing action (Select, grid/list). */
 @Composable
-private fun SortBar(count: Int, sort: SongSort, onSort: (SongSort) -> Unit) {
+private fun SortBar(
+    count: Int,
+    label: String,
+    options: List<String>,
+    reversed: Boolean,
+    onSort: (Int) -> Unit,
+    onReverse: () -> Unit,
+    noun: Pair<String, String> = "song" to "songs",
+    trailing: @Composable () -> Unit = {},
+) {
     var open by remember { mutableStateOf(false) }
     Row(
         Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp, top = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(countLabel(count), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+        Text(countLabel(count, noun.first, noun.second), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f), maxLines = 1)
         Box {
             TextButton(onClick = { open = true }) {
                 Icon(Icons.AutoMirrored.Filled.Sort, contentDescription = null, modifier = Modifier.size(18.dp))
                 Spacer(Modifier.width(6.dp))
-                Text("Sort: ${sort.label}")
+                Text(label, maxLines = 1)
             }
             DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
-                SongSort.entries.forEach { s ->
-                    DropdownMenuItem(text = { Text(s.label) }, onClick = { onSort(s); open = false })
+                options.forEachIndexed { i, o ->
+                    DropdownMenuItem(text = { Text(o) }, onClick = { onSort(i); open = false })
                 }
             }
+        }
+        IconButton(onClick = onReverse) {
+            Icon(
+                if (reversed) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                contentDescription = if (reversed) "Reversed order" else "Normal order",
+            )
+        }
+        trailing()
+    }
+}
+
+@Composable
+private fun ViewToggle(grid: Boolean, onToggle: () -> Unit) {
+    IconButton(onClick = onToggle) {
+        Icon(
+            if (grid) Icons.AutoMirrored.Filled.ViewList else Icons.Default.GridView,
+            contentDescription = if (grid) "Show as list" else "Show as grid",
+        )
+    }
+}
+
+/** Multi-select actions for the selected songs. */
+@Composable
+private fun SelectionBar(
+    count: Int,
+    allSelected: Boolean,
+    downloadable: Int,
+    onSelectAll: () -> Unit,
+    onPlay: () -> Unit,
+    onQueue: () -> Unit,
+    onPlaylist: () -> Unit,
+    onFavorite: () -> Unit,
+    onDownload: () -> Unit,
+    onClose: () -> Unit,
+) {
+    val enabled = count > 0
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(MaterialTheme.colorScheme.secondaryContainer),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(start = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onClose) { Icon(Icons.Default.Close, contentDescription = "Cancel selection") }
+            Text(
+                if (count == 0) "Tap songs to select" else "$count selected",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSecondaryContainer,
+                modifier = Modifier.weight(1f),
+            )
+            TextButton(onClick = onSelectAll) { Text(if (allSelected) "Select none" else "Select all") }
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp),
+        ) {
+            SelAction(Icons.Default.PlayArrow, "Play", enabled, onPlay)
+            SelAction(Icons.AutoMirrored.Filled.QueueMusic, "Queue", enabled, onQueue)
+            SelAction(Icons.AutoMirrored.Filled.PlaylistAdd, "Playlist", enabled, onPlaylist)
+            SelAction(Icons.Default.Favorite, "Like", enabled, onFavorite)
+            SelAction(Icons.Default.Download, if (downloadable > 0) "Download $downloadable" else "Download", downloadable > 0, onDownload)
+        }
+    }
+}
+
+@Composable
+private fun SelAction(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    TextButton(onClick = onClick, enabled = enabled) {
+        Icon(icon, contentDescription = null, modifier = Modifier.size(18.dp))
+        Spacer(Modifier.width(4.dp))
+        Text(label)
+    }
+}
+
+/** Reorder / hide Library tabs. Changes apply (and persist) immediately. */
+@Composable
+private fun LibraryTabsDialog(config: com.example.mimic.data.LibraryConfig, onChange: (com.example.mimic.data.LibraryConfig) -> Unit, onDismiss: () -> Unit) {
+    val order = config.completeOrder()
+    androidx.compose.material3.AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Library tabs") },
+        text = {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
+                Text("Choose which tabs show and their order.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                order.forEachIndexed { i, tab ->
+                    val shown = tab !in config.hiddenTabs
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Checkbox(
+                            checked = shown,
+                            onCheckedChange = {
+                                val hidden = if (shown) config.hiddenTabs + tab else config.hiddenTabs - tab
+                                // At least one tab always stays visible.
+                                if (hidden.size < LibraryCategory.entries.size) onChange(config.copy(tabOrder = order, hiddenTabs = hidden))
+                            },
+                        )
+                        Text(tab.label, modifier = Modifier.weight(1f))
+                        IconButton(onClick = { onChange(config.copy(tabOrder = order.movedTab(tab, -1))) }, enabled = i > 0) {
+                            Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Move ${tab.label} up")
+                        }
+                        IconButton(onClick = { onChange(config.copy(tabOrder = order.movedTab(tab, 1))) }, enabled = i < order.size - 1) {
+                            Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Move ${tab.label} down")
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = {
+            TextButton(onClick = { onChange(config.copy(tabOrder = LibraryCategory.entries, hiddenTabs = emptySet())) }) { Text("Reset") }
+        },
+    )
+}
+
+/** Album as a list row (list view): cover, title, artist · song count. */
+@Composable
+private fun AlbumListRow(a: AlbumGroup, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        ArtImage(a.artUri, Modifier.size(56.dp), RoundedCornerShape(8.dp))
+        Spacer(Modifier.width(14.dp))
+        Column(Modifier.weight(1f)) {
+            Text(a.title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onBackground, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text("${a.artist} · ${countLabel(a.songs.size)}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+/** Three-column artist grid (round photos) inside a LazyColumn. */
+private fun androidx.compose.foundation.lazy.LazyListScope.artistGrid(artists: List<ArtistGroup>, nav: AppNav) {
+    val rows = artists.chunked(3)
+    items(rows.size, key = { "arg" + rows[it].first().key }) { r ->
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            rows[r].forEach { a ->
+                Box(Modifier.weight(1f), contentAlignment = Alignment.TopCenter) {
+                    androidx.compose.foundation.layout.BoxWithConstraints {
+                        ArtistCard(a.name, countLabel(a.songs.size), a.songs.firstNotNullOfOrNull { it.albumArtUri }, onClick = { nav.openArtist(a.key) }, size = maxWidth)
+                    }
+                }
+            }
+            repeat(3 - rows[r].size) { Spacer(Modifier.weight(1f)) }
         }
     }
 }

@@ -9,14 +9,52 @@ import com.example.mimic.data.db.PlayCount
  */
 object LibraryQueries {
 
+    /**
+     * Ranked search (3.2): accent- and case-insensitive; every word of the query must appear in
+     * the song's title, artist or album. Best matches first — title starts with the query, then
+     * title contains it, then artist, then album — ties keep library order.
+     */
     fun search(songs: List<Song>, query: String): List<Song> {
-        val q = query.trim()
+        val q = normalize(query)
         if (q.isEmpty()) return emptyList()
-        return songs.filter {
-            it.title.contains(q, ignoreCase = true) ||
-                it.artist.contains(q, ignoreCase = true) ||
-                it.album.contains(q, ignoreCase = true)
-        }
+        val words = q.split(' ').filter { it.isNotEmpty() }
+        return songs.asSequence()
+            .mapNotNull { s ->
+                val title = normalize(s.title)
+                val artist = normalize(s.artist)
+                val album = normalize(s.album)
+                val all = "$title $artist $album"
+                if (!words.all { all.contains(it) }) return@mapNotNull null
+                val rank = when {
+                    title.startsWith(q) -> 0
+                    title.contains(q) -> 1
+                    artist.contains(q) -> 2
+                    album.contains(q) -> 3
+                    else -> 4
+                }
+                s to rank
+            }
+            .sortedBy { it.second } // stable: library order within a rank
+            .map { it.first }
+            .toList()
+    }
+
+    /** Lowercase, accents stripped, whitespace collapsed ("Beyoncé  Live" -> "beyonce live"). */
+    fun normalize(text: String): String =
+        java.text.Normalizer.normalize(text, java.text.Normalizer.Form.NFD)
+            .replace(COMBINING_MARKS, "")
+            .lowercase()
+            .replace(WHITESPACE, " ")
+            .trim()
+
+    private val COMBINING_MARKS = Regex("\\p{Mn}+")
+    private val WHITESPACE = Regex("\\s+")
+
+    /** Recent searches: newest first, de-duplicated ignoring case, at most [max]. */
+    fun pushRecent(recent: List<String>, query: String, max: Int = 8): List<String> {
+        val q = query.trim()
+        if (q.isEmpty()) return recent
+        return (listOf(q) + recent.filterNot { it.equals(q, ignoreCase = true) }).take(max)
     }
 
     fun recentlyAdded(songs: List<Song>, limit: Int): List<Song> =

@@ -1,6 +1,12 @@
 package com.example.mimic
 
+import com.example.mimic.data.GroupSort
+import com.example.mimic.data.GroupSorting
+import com.example.mimic.data.LibraryConfig
 import com.example.mimic.data.LibraryQueries
+import com.example.mimic.data.LibraryTab
+import com.example.mimic.data.UnifiedLibrary
+import com.example.mimic.data.movedTab
 import com.example.mimic.data.QueueSnapshot
 import com.example.mimic.data.SmartCollections
 import com.example.mimic.data.Song
@@ -93,5 +99,42 @@ class SmartMixTest {
         var rareHits = 0
         for (seed in 1L..20L) rareHits += SmartCollections.shuffleDiscovery(lib, heavy, seed, 10).count { it.id > 20 }
         assertTrue("rarely played songs should dominate, got $rareHits/200", rareHits > 180)
+    }
+}
+
+class SearchAndLibraryConfigTest {
+    private fun t(id: Long, title: String, artist: String = "x", album: String = "y") =
+        Song(id, title, artist, album, 1, "u$id", null, id)
+
+    @Test fun search_ranks_title_prefix_first_and_ignores_accents() {
+        val lib = listOf(t(1, "Love Song", artist = "Beyoncé"), t(2, "Beyonce Live"), t(3, "Intro", album = "Beyoncé Hits"))
+        assertEquals(listOf(2L, 1L, 3L), LibraryQueries.search(lib, "beyonce").map { it.id })
+    }
+
+    @Test fun search_requires_every_word_across_fields() {
+        val lib = listOf(t(1, "Aerials", artist = "System Of A Down"), t(2, "Aerials (cover)", artist = "Someone"))
+        assertEquals(listOf(1L), LibraryQueries.search(lib, "aerials system").map { it.id })
+        assertTrue(LibraryQueries.search(lib, "   ").isEmpty())
+    }
+
+    @Test fun recent_searches_dedupe_newest_first_capped() {
+        var r = emptyList<String>()
+        for (q in listOf("a", "b", "A", " ", "c")) r = LibraryQueries.pushRecent(r, q, max = 2)
+        assertEquals(listOf("c", "A"), r)
+    }
+
+    @Test fun library_tabs_complete_hide_and_never_empty() {
+        val cfg = LibraryConfig(tabOrder = listOf(LibraryTab.DOWNLOADS, LibraryTab.SONGS), hiddenTabs = setOf(LibraryTab.SONGS))
+        assertEquals(LibraryTab.DOWNLOADS, cfg.visibleTabs().first())
+        assertEquals(LibraryTab.entries.size - 1, cfg.visibleTabs().size)
+        assertEquals(listOf(LibraryTab.SONGS), LibraryConfig(hiddenTabs = LibraryTab.entries.toSet()).visibleTabs())
+        assertEquals(LibraryTab.ALBUMS, LibraryTab.entries.movedTab(LibraryTab.ALBUMS, -1).first())
+    }
+
+    @Test fun album_sort_by_size_and_reversed() {
+        val lib = listOf(t(1, "a", album = "Big"), t(2, "b", album = "Big"), t(3, "c", album = "Small"))
+        val albums = UnifiedLibrary.albums(lib)
+        assertEquals(listOf("Big", "Small"), GroupSorting.albums(albums, GroupSort.SIZE, false).map { it.title })
+        assertEquals(listOf("Small", "Big"), GroupSorting.albums(albums, GroupSort.SIZE, true).map { it.title })
     }
 }

@@ -161,9 +161,9 @@ fun MimicApp(viewModel: PlayerViewModel) {
     var queueOpen by remember { mutableStateOf(false) }
     var sleepOpen by remember { mutableStateOf(false) }
     var menuSong by remember { mutableStateOf<Song?>(null) }
-    var addSong by remember { mutableStateOf<Song?>(null) }
+    var addSongs by remember { mutableStateOf<List<Song>?>(null) }
     var createDialog by remember { mutableStateOf(false) }
-    var createForSong by remember { mutableStateOf<Song?>(null) }
+    var createForSongs by remember { mutableStateOf<List<Song>?>(null) }
     var editingTheme by remember { mutableStateOf<ThemeDefinition?>(null) }
     var pendingExportTheme by remember { mutableStateOf<ThemeDefinition?>(null) }
 
@@ -183,6 +183,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
             openServerBrowse = { navController.navigate("serverbrowse") },
             createPlaylist = { createDialog = true },
             songMenu = { menuSong = it },
+            addToPlaylist = { addSongs = it },
             back = { navController.popBackStack() },
         )
     }
@@ -433,7 +434,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
             onDismiss = { menuSong = null },
             onPlayNext = { viewModel.playNext(song) },
             onAddToQueue = { viewModel.addToQueue(song) },
-            onAddToPlaylist = { addSong = song; menuSong = null },
+            onAddToPlaylist = { addSongs = listOf(song); menuSong = null },
             onToggleFavorite = { viewModel.toggleFavorite(song) },
             onDownload = if (canDownload) ({ viewModel.downloadSong(song) }) else null,
             onRemoveDownload = if (song.isDownloaded) ({ viewModel.removeDownload(song) }) else null,
@@ -444,20 +445,20 @@ fun MimicApp(viewModel: PlayerViewModel) {
         )
     }
 
-    addSong?.let { song ->
+    addSongs?.let { songs ->
         AddToPlaylistDialog(
             playlists = playlists,
-            onDismiss = { addSong = null },
-            onPick = { viewModel.addSongToPlaylist(it, song.id) },
-            onCreateNew = { createForSong = song; addSong = null },
+            onDismiss = { addSongs = null },
+            onPick = { viewModel.addSongsToPlaylist(it, songs) },
+            onCreateNew = { createForSongs = songs; addSongs = null },
         )
     }
 
-    if (createDialog || createForSong != null) {
-        val song = createForSong
+    if (createDialog || createForSongs != null) {
+        val songs = createForSongs.orEmpty()
         CreatePlaylistDialog(
-            onDismiss = { createDialog = false; createForSong = null },
-            onCreate = { viewModel.createPlaylist(it, song) },
+            onDismiss = { createDialog = false; createForSongs = null },
+            onCreate = { viewModel.createPlaylist(it, songs) },
         )
     }
 

@@ -127,7 +127,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Library browsing state (kept here so it survives navigation) ----
 
     val sourceFilter = MutableStateFlow(com.example.mimic.data.SourceFilter.ALL)
-    val songSort = MutableStateFlow(com.example.mimic.data.SongSort.NAME)
 
     /** songId -> last played time, for "Recently played" sorting. */
     val lastPlayed: StateFlow<Map<Long, Long>> = historyDao.lastPlayedAll()
@@ -392,6 +391,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         controller?.addMediaItem(s.toMediaItem())
     }
 
+    fun addAllToQueue(list: List<Song>) {
+        val c = controller ?: return
+        if (list.isEmpty()) return
+        if (c.mediaItemCount == 0) { play(list, 0); return }
+        val resolved = list.map(::preferOffline)
+        songsById = songsById + resolved.associateBy { it.id }
+        c.addMediaItems(resolved.map { it.toMediaItem() })
+        _messages.tryEmit("Added ${list.size} songs to the queue")
+    }
+
     fun playNext(song: Song) {
         val c = controller ?: return
         val s = preferOffline(song)
@@ -431,6 +440,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** Multi-select ♡: likes every selected song that isn't liked yet (never un-likes). */
+    fun favoriteAll(list: List<Song>) {
+        val favs = favoriteIds.value
+        val todo = list.filter { it.id !in favs }
+        todo.forEach(::toggleFavorite)
+        _messages.tryEmit(if (todo.isEmpty()) "Already in Liked Songs" else "Added ${todo.size} to Liked Songs")
+    }
+
     fun toggleFavoriteAlbum(album: com.example.mimic.data.AlbumGroup) {
         viewModelScope.launch {
             favoritesRepo.toggleGroup(
@@ -450,10 +467,22 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Playlists ----
 
-    fun createPlaylist(name: String, firstSong: Song? = null) {
+    fun createPlaylist(name: String, firstSong: Song? = null) = createPlaylist(name, listOfNotNull(firstSong))
+
+    fun createPlaylist(name: String, songs: List<Song>) {
         viewModelScope.launch {
             val id = playlistDao.create(PlaylistEntity(name = name, createdAt = System.currentTimeMillis()))
-            if (firstSong != null) addToPlaylistInternal(id, firstSong.id)
+            songs.forEach { addToPlaylistInternal(id, it.id) }
+        }
+    }
+
+    /** Multi-select "Add to playlist": appends in the given order, skipping songs already in it. */
+    fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) {
+        viewModelScope.launch {
+            val existing = playlistDao.songIdsIn(playlistId).first().toSet()
+            val added = songs.filter { it.id !in existing }
+            added.forEach { addToPlaylistInternal(playlistId, it.id) }
+            if (songs.size > 1) _messages.tryEmit("Added ${added.size} songs" + if (added.size < songs.size) " (${songs.size - added.size} already there)" else "")
         }
     }
 
@@ -500,6 +529,23 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setPlayerLayout(config: com.example.mimic.data.PlayerLayoutConfig) {
         viewModelScope.launch { settingsRepo.setPlayerLayout(config) }
+    }
+
+    fun recordSearch(query: String) {
+        val next = com.example.mimic.data.LibraryQueries.pushRecent(settings.value.recentSearches, query)
+        if (next != settings.value.recentSearches) viewModelScope.launch { settingsRepo.setRecentSearches(next) }
+    }
+
+    fun removeRecentSearch(query: String) {
+        viewModelScope.launch { settingsRepo.setRecentSearches(settings.value.recentSearches - query) }
+    }
+
+    fun clearRecentSearches() {
+        viewModelScope.launch { settingsRepo.setRecentSearches(emptyList()) }
+    }
+
+    fun setLibraryConfig(config: com.example.mimic.data.LibraryConfig) {
+        viewModelScope.launch { settingsRepo.setLibraryConfig(config) }
     }
 
     fun setHomeConfig(config: com.example.mimic.data.HomeConfig) {

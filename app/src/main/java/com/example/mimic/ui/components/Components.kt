@@ -2,6 +2,7 @@ package com.example.mimic.ui.components
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.heightIn
@@ -14,6 +15,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.RadioButtonUnchecked
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.DownloadDone
@@ -90,6 +93,7 @@ fun ArtImage(uri: String?, modifier: Modifier = Modifier, shape: Shape = Rounded
  * (downloaded / streamed from server / file missing), duration, a tappable heart and the overflow
  * menu. Nothing overlaps the title; all targets are >= 48dp; text follows the system font scale.
  */
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 fun SongRow(
     song: Song,
@@ -101,6 +105,10 @@ fun SongRow(
     isDownloading: Boolean = false,
     isCurrent: Boolean = false,
     showAlbum: Boolean = true,
+    /** Long-press (3.2: starts multi-select in Library). */
+    onLongClick: (() -> Unit)? = null,
+    /** Non-null while multi-selecting: whether this row is selected. */
+    selected: Boolean? = null,
 ) {
     // Rows stay flat (no glass) by design: glass is reserved for a few large surfaces.
     val env = LocalGlass.current
@@ -109,11 +117,27 @@ fun SongRow(
         modifier = modifier
             .fillMaxWidth()
             .heightIn(min = 68.dp)
-            .clickable(onClick = onClick)
+            .then(if (selected == true) Modifier.background(scheme.primary.copy(alpha = 0.16f)) else Modifier)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick)
             .padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        AlbumArt(song, modifier = Modifier.size(52.dp), corner = (env.style.cornerRadius / 3).coerceAtLeast(4))
+        Box {
+            AlbumArt(song, modifier = Modifier.size(52.dp), corner = (env.style.cornerRadius / 3).coerceAtLeast(4))
+            if (selected != null) {
+                Box(
+                    Modifier.size(52.dp).clip(RoundedCornerShape((env.style.cornerRadius / 3).coerceAtLeast(4).dp))
+                        .background(if (selected) scheme.primary.copy(alpha = 0.75f) else scheme.scrim.copy(alpha = 0.35f)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        if (selected) Icons.Default.CheckCircle else Icons.Default.RadioButtonUnchecked,
+                        contentDescription = if (selected) "Selected" else "Not selected",
+                        tint = if (selected) scheme.onPrimary else androidx.compose.ui.graphics.Color.White,
+                    )
+                }
+            }
+        }
         Spacer(Modifier.width(12.dp))
         Column(modifier = Modifier.weight(1f)) {
             Text(

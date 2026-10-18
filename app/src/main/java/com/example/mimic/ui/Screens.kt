@@ -19,6 +19,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Album
@@ -66,10 +68,14 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier) {
     )
 }
 
+/** Which result types Search shows (3.2 filter chips). */
+private enum class ResultKind(val label: String) { ALL("All"), SONGS("Songs"), ALBUMS("Albums"), ARTISTS("Artists") }
+
 /**
- * Search across the unified library (device + server + downloads), respecting the shared source
- * filter. Results are grouped into songs, albums and artists; matching is pure and runs off the
- * main thread so typing stays smooth on large libraries.
+ * Search across the unified library (device + server + cloud + downloads), respecting the shared
+ * source filter. Results are grouped into artists, albums and songs (best matches first,
+ * accent-insensitive); matching is pure and runs off the main thread so typing stays smooth.
+ * With an empty field it shows the user's recent searches (kept on the phone only).
  */
 @Composable
 fun SearchScreen(
@@ -79,23 +85,33 @@ fun SearchScreen(
 ) {
     val songs by vm.songs.collectAsStateWithLifecycle()
     val filter by vm.sourceFilter.collectAsStateWithLifecycle()
+    val settings by vm.settings.collectAsStateWithLifecycle()
     var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    var kind by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(ResultKind.ALL) }
     val env = com.example.mimic.ui.library.rememberRowEnv(vm, nav)
     val results by androidx.compose.runtime.produceState(SearchResults(), query, songs, filter) {
         kotlinx.coroutines.delay(120) // debounce keystrokes
         value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
             val pool = com.example.mimic.data.UnifiedLibrary.filter(songs, filter)
             val hits = com.example.mimic.data.UnifiedLibrary.search(pool, query)
-            val q = query.trim()
+            val q = com.example.mimic.data.LibraryQueries.normalize(query)
+            fun has(text: String) = com.example.mimic.data.LibraryQueries.normalize(text).contains(q)
             SearchResults(
                 songs = hits,
                 albums = if (q.isEmpty()) emptyList() else com.example.mimic.data.UnifiedLibrary.albums(pool)
-                    .filter { it.title.contains(q, true) || it.artist.contains(q, true) }.take(20),
+                    .filter { has(it.title) || has(it.artist) }.take(20),
                 artists = if (q.isEmpty()) emptyList() else com.example.mimic.data.UnifiedLibrary.artists(pool)
-                    .filter { it.name.contains(q, true) }.take(20),
+                    .filter { has(it.name) }.take(20),
             )
         }
     }
+    // A search the user acted on (opened a result, pressed Search, or left with results showing)
+    // is remembered for next time; half-typed queries are not.
+    val saveQuery = { if (query.isNotBlank() && !results.isEmpty()) vm.recordSearch(query) }
+    val latestRemember by androidx.compose.runtime.rememberUpdatedState(saveQuery)
+    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { latestRemember() } }
+    val focus = androidx.compose.ui.platform.LocalFocusManager.current
+
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     com.example.mimic.ui.navigation.ScrollToTopOnReselect(com.example.mimic.ui.navigation.TopLevel.SEARCH, listState)
     LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
@@ -108,7 +124,14 @@ fun SearchScreen(
                 onValueChange = { query = it },
                 placeholder = { Text("Songs, artists, albums") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                trailingIcon = if (query.isNotEmpty()) ({
+                    androidx.compose.material3.IconButton(onClick = { query = "" }) {
+                        Icon(Icons.Default.Close, contentDescription = "Clear search")
+                    }
+                }) else null,
                 singleLine = true,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { saveQuery(); focus.clearFocus() }),
                 shape = searchShape,
                 colors = androidx.compose.material3.TextFieldDefaults.colors(
                     focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
@@ -120,10 +143,47 @@ fun SearchScreen(
             )
         }
         item(key = "filters") { com.example.mimic.ui.library.SourceFilterRow(vm) }
+        if (query.isNotBlank()) {
+            item(key = "kinds") {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    ResultKind.entries.forEach { k ->
+                        androidx.compose.material3.FilterChip(
+                            selected = k == kind,
+                            onClick = { kind = k },
+                            label = { Text(k.label) },
+                        )
+                    }
+                }
+            }
+        }
         when {
+            query.isBlank() && settings.recentSearches.isNotEmpty() -> {
+                item(key = "recent_h") {
+                    Row(Modifier.fillMaxWidth().padding(end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.weight(1f)) { com.example.mimic.ui.library.SectionTitle("Recent searches") }
+                        androidx.compose.material3.TextButton(onClick = vm::clearRecentSearches, modifier = Modifier.padding(top = 16.dp)) { Text("Clear") }
+                    }
+                }
+                items(settings.recentSearches, key = { "rs_$it" }) { q ->
+                    Row(
+                        Modifier.fillMaxWidth().clickable { query = q }.padding(start = 16.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Icon(Icons.Default.History, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(16.dp))
+                        Text(q, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground, modifier = Modifier.weight(1f), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        androidx.compose.material3.IconButton(onClick = { vm.removeRecentSearch(q) }) {
+                            Icon(Icons.Default.Close, contentDescription = "Remove $q from recent searches", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
+            }
             query.isBlank() -> item(key = "hint") {
                 Box(Modifier.fillParentMaxHeight(0.5f)) {
-                    EmptyState("Find your music", "Search every song, artist and album — on this phone, on your server and in your downloads.")
+                    EmptyState("Find your music", "Search every song, artist and album — on this phone, on your server, in your cloud folders and in your downloads.")
                 }
             }
             results.isEmpty() -> item(key = "none") {
@@ -132,32 +192,41 @@ fun SearchScreen(
                 }
             }
             else -> {
-                if (results.artists.isNotEmpty()) {
+                val showArtists = kind == ResultKind.ALL || kind == ResultKind.ARTISTS
+                val showAlbums = kind == ResultKind.ALL || kind == ResultKind.ALBUMS
+                val showSongs = kind == ResultKind.ALL || kind == ResultKind.SONGS
+                if (showArtists && results.artists.isNotEmpty()) {
                     item(key = "ar_h") { com.example.mimic.ui.library.SectionTitle("Artists") }
                     item(key = "ar_r") {
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             items(results.artists, key = { it.key }) { a ->
                                 com.example.mimic.ui.library.ArtistCard(
                                     a.name, com.example.mimic.ui.library.countLabel(a.songs.size),
-                                    a.songs.firstNotNullOfOrNull { it.albumArtUri }, onClick = { nav.openArtist(a.key) }, size = 96.dp,
+                                    a.songs.firstNotNullOfOrNull { it.albumArtUri }, onClick = { saveQuery(); nav.openArtist(a.key) }, size = 96.dp,
                                 )
                             }
                         }
                     }
                 }
-                if (results.albums.isNotEmpty()) {
+                if (showAlbums && results.albums.isNotEmpty()) {
                     item(key = "al_h") { com.example.mimic.ui.library.SectionTitle("Albums") }
                     item(key = "al_r") {
                         LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(results.albums, key = { it.key }) { a ->
-                                com.example.mimic.ui.library.AlbumCard(a.title, a.artist, a.artUri, onClick = { nav.openAlbum(a.key) }, width = 128.dp)
+                                com.example.mimic.ui.library.AlbumCard(a.title, a.artist, a.artUri, onClick = { saveQuery(); nav.openAlbum(a.key) }, width = 128.dp)
                             }
                         }
                     }
                 }
-                if (results.songs.isNotEmpty()) {
+                if (showSongs && results.songs.isNotEmpty()) {
                     item(key = "so_h") { com.example.mimic.ui.library.SectionTitle("Songs") }
                     songItems(results.songs, env)
+                }
+                val nothingOfKind = (kind == ResultKind.SONGS && results.songs.isEmpty()) ||
+                    (kind == ResultKind.ALBUMS && results.albums.isEmpty()) ||
+                    (kind == ResultKind.ARTISTS && results.artists.isEmpty())
+                if (nothingOfKind) item(key = "none_kind") {
+                    com.example.mimic.ui.library.InlineEmpty("No ${kind.label.lowercase()} match \"$query\".")
                 }
             }
         }

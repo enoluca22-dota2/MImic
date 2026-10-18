@@ -22,6 +22,10 @@ data class AppSettings(
     val cellularTagReading: Boolean = false,
     /** Periodic background library refresh (WorkManager, at most every few hours). */
     val backgroundCloudSync: Boolean = true,
+    /** Library tabs / views / sorting (MImic 3.2). */
+    val libraryConfig: LibraryConfig = LibraryConfig(),
+    /** Recent searches, newest first (MImic 3.2). Stays on the phone. */
+    val recentSearches: List<String> = emptyList(),
 )
 
 private val Context.dataStore by preferencesDataStore(name = "settings")
@@ -50,7 +54,19 @@ class SettingsRepository(private val context: Context) {
         val WIFI_ONLY_DOWNLOADS = booleanPreferencesKey("wifi_only_downloads")
         val CELLULAR_TAGS = booleanPreferencesKey("cellular_tag_reading")
         val BACKGROUND_SYNC = booleanPreferencesKey("background_cloud_sync")
+        val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
+        val LIB_ORDER = stringPreferencesKey("library_tab_order")
+        val LIB_HIDDEN = stringPreferencesKey("library_hidden_tabs")
+        val LIB_ALBUMS_GRID = booleanPreferencesKey("library_albums_grid")
+        val LIB_ARTISTS_GRID = booleanPreferencesKey("library_artists_grid")
+        val LIB_SONG_SORT = stringPreferencesKey("library_song_sort")
+        val LIB_SONGS_REVERSED = booleanPreferencesKey("library_songs_reversed")
+        val LIB_GROUP_SORT = stringPreferencesKey("library_group_sort")
+        val LIB_GROUPS_REVERSED = booleanPreferencesKey("library_groups_reversed")
     }
+
+    private fun decodeTabs(csv: String?): List<LibraryTab> =
+        csv?.split(",")?.mapNotNull { runCatching { LibraryTab.valueOf(it) }.getOrNull() } ?: emptyList()
 
     private fun decodeSections(csv: String?): List<HomeSection> =
         csv?.split(",")?.mapNotNull { runCatching { HomeSection.valueOf(it) }.getOrNull() } ?: emptyList()
@@ -77,6 +93,17 @@ class SettingsRepository(private val context: Context) {
             wifiOnlyDownloads = prefs[Keys.WIFI_ONLY_DOWNLOADS] ?: false,
             cellularTagReading = prefs[Keys.CELLULAR_TAGS] ?: false,
             backgroundCloudSync = prefs[Keys.BACKGROUND_SYNC] ?: true,
+            libraryConfig = LibraryConfig(
+                tabOrder = decodeTabs(prefs[Keys.LIB_ORDER]).ifEmpty { LibraryTab.entries },
+                hiddenTabs = decodeTabs(prefs[Keys.LIB_HIDDEN]).toSet(),
+                albumsGrid = prefs[Keys.LIB_ALBUMS_GRID] ?: true,
+                artistsGrid = prefs[Keys.LIB_ARTISTS_GRID] ?: false,
+                songSort = decode(prefs[Keys.LIB_SONG_SORT], SongSort.NAME),
+                songsReversed = prefs[Keys.LIB_SONGS_REVERSED] ?: false,
+                groupSort = decode(prefs[Keys.LIB_GROUP_SORT], GroupSort.NAME),
+                groupsReversed = prefs[Keys.LIB_GROUPS_REVERSED] ?: false,
+            ),
+            recentSearches = prefs[Keys.RECENT_SEARCHES]?.split('\n')?.filter { it.isNotBlank() } ?: emptyList(),
         )
     }
 
@@ -105,6 +132,23 @@ class SettingsRepository(private val context: Context) {
             it[Keys.HOME_ORDER] = config.sectionOrder.joinToString(",") { s -> s.name }
             it[Keys.HOME_HIDDEN] = config.hidden.joinToString(",") { s -> s.name }
             it[Keys.NAV_STYLE] = config.navStyle.name
+        }
+    }
+
+    suspend fun setRecentSearches(list: List<String>) {
+        context.dataStore.edit { it[Keys.RECENT_SEARCHES] = list.joinToString("\n") { q -> q.replace('\n', ' ') } }
+    }
+
+    suspend fun setLibraryConfig(config: LibraryConfig) {
+        context.dataStore.edit {
+            it[Keys.LIB_ORDER] = config.tabOrder.joinToString(",") { t -> t.name }
+            it[Keys.LIB_HIDDEN] = config.hiddenTabs.joinToString(",") { t -> t.name }
+            it[Keys.LIB_ALBUMS_GRID] = config.albumsGrid
+            it[Keys.LIB_ARTISTS_GRID] = config.artistsGrid
+            it[Keys.LIB_SONG_SORT] = config.songSort.name
+            it[Keys.LIB_SONGS_REVERSED] = config.songsReversed
+            it[Keys.LIB_GROUP_SORT] = config.groupSort.name
+            it[Keys.LIB_GROUPS_REVERSED] = config.groupsReversed
         }
     }
 
