@@ -15,8 +15,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PlaylistSongEntity::class,
         CustomThemeEntity::class,
         DownloadEntity::class,
+        FavoriteGroupEntity::class,
+        PendingStarEntity::class,
     ],
-    version = 4,
+    version = 5,
     exportSchema = false,
 )
 abstract class MimicDatabase : RoomDatabase() {
@@ -25,6 +27,8 @@ abstract class MimicDatabase : RoomDatabase() {
     abstract fun playlistDao(): PlaylistDao
     abstract fun customThemeDao(): CustomThemeDao
     abstract fun downloadDao(): DownloadDao
+    abstract fun favoriteGroupDao(): FavoriteGroupDao
+    abstract fun pendingStarDao(): PendingStarDao
 
     companion object {
         @Volatile
@@ -64,6 +68,30 @@ abstract class MimicDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v4 → v5 (MImic 3.0): downloads gain album/account/size columns (nullable/defaulted, so
+         * every existing download row is kept as-is); new favorite_groups and pending_server_ops
+         * tables. Purely additive — no table is dropped or rewritten.
+         */
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE `downloads` ADD COLUMN `albumId` TEXT")
+                db.execSQL("ALTER TABLE `downloads` ADD COLUMN `accountKey` TEXT")
+                db.execSQL("ALTER TABLE `downloads` ADD COLUMN `sizeBytes` INTEGER NOT NULL DEFAULT 0")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `favorite_groups` (" +
+                        "`kind` TEXT NOT NULL, `groupKey` TEXT NOT NULL, `name` TEXT NOT NULL, " +
+                        "`subtitle` TEXT NOT NULL, `addedAt` INTEGER NOT NULL, " +
+                        "PRIMARY KEY(`kind`, `groupKey`))",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `pending_server_ops` (" +
+                        "`remoteId` TEXT NOT NULL, `accountKey` TEXT NOT NULL, `star` INTEGER NOT NULL, " +
+                        "`createdAt` INTEGER NOT NULL, PRIMARY KEY(`remoteId`, `accountKey`))",
+                )
+            }
+        }
+
         fun get(context: Context): MimicDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -71,7 +99,7 @@ abstract class MimicDatabase : RoomDatabase() {
                     MimicDatabase::class.java,
                     "mimic.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                     .build()
                     .also { instance = it }
             }

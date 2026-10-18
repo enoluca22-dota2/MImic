@@ -53,6 +53,7 @@ import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.components.AlbumArt
 import com.example.mimic.ui.components.SongRow
 import com.example.mimic.ui.designsystem.LocalGlass
+import com.example.mimic.ui.library.songItems
 
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
@@ -65,315 +66,108 @@ fun SectionHeader(text: String, modifier: Modifier = Modifier) {
     )
 }
 
-@Composable
-private fun SongCard(song: Song, onClick: () -> Unit) {
-    val env = LocalGlass.current
-    Column(modifier = Modifier.width(144.dp).clickable(onClick = onClick)) {
-        AlbumArt(song, modifier = Modifier.size(144.dp), corner = (env.style.cornerRadius * 0.45f).toInt())
-        Spacer(Modifier.height(6.dp))
-        Text(
-            song.title,
-            style = MaterialTheme.typography.bodyMedium,
-            fontWeight = env.titleFontWeight,
-            color = MaterialTheme.colorScheme.onBackground,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        Text(
-            song.artist,
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
-
-/** A titled horizontal carousel; renders nothing when [songs] is empty. */
-private fun androidx.compose.foundation.lazy.LazyListScope.carousel(
-    title: String,
-    songs: List<Song>,
-    onPlay: (List<Song>, Int) -> Unit,
-) {
-    if (songs.isEmpty()) return
-    item(key = "h_$title") { SectionHeader(title) }
-    item(key = "r_$title") {
-        LazyRow(
-            contentPadding = PaddingValues(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            items(songs, key = { it.id }) { song ->
-                SongCard(song, onClick = { onPlay(songs, songs.indexOf(song)) })
-            }
-        }
-    }
-}
-
-@Composable
-fun HomeScreen(
-    vm: PlayerViewModel,
-    contentPadding: PaddingValues,
-    onOpenSettings: () -> Unit,
-    onSongMenu: (Song) -> Unit,
-) {
-    val loading by vm.loading.collectAsStateWithLifecycle()
-    val songs by vm.songs.collectAsStateWithLifecycle()
-    val recentlyPlayed by vm.recentlyPlayed.collectAsStateWithLifecycle()
-    val recentlyAdded by vm.recentlyAdded.collectAsStateWithLifecycle()
-    val mostPlayed by vm.mostPlayed.collectAsStateWithLifecycle()
-    val favorites by vm.favoriteSongs.collectAsStateWithLifecycle()
-    val suggested by vm.suggested.collectAsStateWithLifecycle()
-    val homeConfig by vm.settings.collectAsStateWithLifecycle()
-
-    if (loading) {
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-        return
-    }
-    if (songs.isEmpty()) {
-        EmptyState("No music found", "Add audio files to your device, then pull to rescan from Library.")
-        return
-    }
-
-    LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
-        item {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Good evening",
-                    style = MaterialTheme.typography.headlineMedium,
-                    fontWeight = LocalGlass.current.headerFontWeight,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onOpenSettings) {
-                    Icon(Icons.Default.Settings, contentDescription = "Settings")
-                }
-            }
-        }
-        homeConfig.homeConfig.visibleOrdered().forEach { section ->
-            val (title, list) = when (section) {
-                com.example.mimic.data.HomeSection.RECENTLY_PLAYED -> "Recently played" to recentlyPlayed
-                com.example.mimic.data.HomeSection.MOST_PLAYED -> "Jump back in" to mostPlayed
-                com.example.mimic.data.HomeSection.FAVORITES -> "Your favorites" to favorites
-                com.example.mimic.data.HomeSection.RECENTLY_ADDED -> "Recently added" to recentlyAdded
-                com.example.mimic.data.HomeSection.SUGGESTED -> "Suggested for you" to suggested
-            }
-            carousel(title, list, vm::play)
-        }
-
-        item { SectionHeader("All songs") }
-        items(count = songs.size, key = { songs[it].id }) { index ->
-            SongRow(
-                song = songs[index],
-                onClick = { vm.play(songs, index) },
-                isFavorite = favorites.any { it.id == songs[index].id },
-                onMenu = { onSongMenu(songs[index]) },
-            )
-        }
-    }
-}
-
+/**
+ * Search across the unified library (device + server + downloads), respecting the shared source
+ * filter. Results are grouped into songs, albums and artists; matching is pure and runs off the
+ * main thread so typing stays smooth on large libraries.
+ */
 @Composable
 fun SearchScreen(
     vm: PlayerViewModel,
     contentPadding: PaddingValues,
-    onSongMenu: (Song) -> Unit,
+    nav: com.example.mimic.ui.library.AppNav,
 ) {
     val songs by vm.songs.collectAsStateWithLifecycle()
-    var query by remember { mutableStateOf("") }
-    val results = remember(query, songs) {
-        com.example.mimic.data.LibraryQueries.search(songs, query)
+    val filter by vm.sourceFilter.collectAsStateWithLifecycle()
+    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
+    val env = com.example.mimic.ui.library.rememberRowEnv(vm, nav)
+    val results by androidx.compose.runtime.produceState(SearchResults(), query, songs, filter) {
+        kotlinx.coroutines.delay(120) // debounce keystrokes
+        value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            val pool = com.example.mimic.data.UnifiedLibrary.filter(songs, filter)
+            val hits = com.example.mimic.data.UnifiedLibrary.search(pool, query)
+            val q = query.trim()
+            SearchResults(
+                songs = hits,
+                albums = if (q.isEmpty()) emptyList() else com.example.mimic.data.UnifiedLibrary.albums(pool)
+                    .filter { it.title.contains(q, true) || it.artist.contains(q, true) }.take(20),
+                artists = if (q.isEmpty()) emptyList() else com.example.mimic.data.UnifiedLibrary.artists(pool)
+                    .filter { it.name.contains(q, true) }.take(20),
+            )
+        }
     }
-    Column(modifier = Modifier.fillMaxSize().padding(contentPadding)) {
-        SectionHeader("Search")
-        // Pill-shaped search field; flat (no live glass) so typing/scrolling costs nothing extra.
-        val searchShape = if (LocalGlass.current.style.glass) com.kyant.shapes.Capsule() else RoundedCornerShape(12.dp)
-        androidx.compose.material3.TextField(
-            value = query,
-            onValueChange = { query = it },
-            placeholder = { Text("Songs, artists, albums") },
-            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-            singleLine = true,
-            shape = searchShape,
-            colors = androidx.compose.material3.TextFieldDefaults.colors(
-                focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
-                unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
-                focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-                unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
-            ),
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        )
+    LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+        item(key = "title") { SectionHeader("Search") }
+        item(key = "field") {
+            // Pill-shaped search field; flat (no live glass) so typing/scrolling costs nothing extra.
+            val searchShape = if (LocalGlass.current.style.glass) com.kyant.shapes.Capsule() else RoundedCornerShape(12.dp)
+            androidx.compose.material3.TextField(
+                value = query,
+                onValueChange = { query = it },
+                placeholder = { Text("Songs, artists, albums") },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                singleLine = true,
+                shape = searchShape,
+                colors = androidx.compose.material3.TextFieldDefaults.colors(
+                    focusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.85f),
+                    unfocusedContainerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.7f),
+                    focusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                    unfocusedIndicatorColor = androidx.compose.ui.graphics.Color.Transparent,
+                ),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+            )
+        }
+        item(key = "filters") { com.example.mimic.ui.library.SourceFilterRow(vm) }
         when {
-            query.isBlank() ->
-                EmptyState("Find your music", "Search across every song, artist and album on your device.")
-            results.isEmpty() ->
-                EmptyState("No matches", "Nothing found for \"$query\". Try a different spelling.")
-            else -> LazyColumn {
-                items(results, key = { it.id }) { song ->
-                    val index = songs.indexOf(song)
-                    SongRow(song = song, onClick = { vm.play(songs, index) }, onMenu = { onSongMenu(song) })
+            query.isBlank() -> item(key = "hint") {
+                Box(Modifier.fillParentMaxHeight(0.5f)) {
+                    EmptyState("Find your music", "Search every song, artist and album — on this phone, on your server and in your downloads.")
+                }
+            }
+            results.isEmpty() -> item(key = "none") {
+                Box(Modifier.fillParentMaxHeight(0.5f)) {
+                    EmptyState("No matches", "Nothing found for \"$query\" with the ${filter.label} filter.")
+                }
+            }
+            else -> {
+                if (results.artists.isNotEmpty()) {
+                    item(key = "ar_h") { com.example.mimic.ui.library.SectionTitle("Artists") }
+                    item(key = "ar_r") {
+                        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            items(results.artists, key = { it.key }) { a ->
+                                com.example.mimic.ui.library.ArtistCard(
+                                    a.name, com.example.mimic.ui.library.countLabel(a.songs.size),
+                                    a.songs.firstNotNullOfOrNull { it.albumArtUri }, onClick = { nav.openArtist(a.key) }, size = 96.dp,
+                                )
+                            }
+                        }
+                    }
+                }
+                if (results.albums.isNotEmpty()) {
+                    item(key = "al_h") { com.example.mimic.ui.library.SectionTitle("Albums") }
+                    item(key = "al_r") {
+                        LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                            items(results.albums, key = { it.key }) { a ->
+                                com.example.mimic.ui.library.AlbumCard(a.title, a.artist, a.artUri, onClick = { nav.openAlbum(a.key) }, width = 128.dp)
+                            }
+                        }
+                    }
+                }
+                if (results.songs.isNotEmpty()) {
+                    item(key = "so_h") { com.example.mimic.ui.library.SectionTitle("Songs") }
+                    songItems(results.songs, env)
                 }
             }
         }
     }
 }
 
-@Composable
-fun LibraryScreen(
-    vm: PlayerViewModel,
-    contentPadding: PaddingValues,
-    onOpenPlaylist: (Long) -> Unit,
-    onOpenFavorites: () -> Unit,
-    onOpenDownloads: () -> Unit,
-    onOpenSmart: () -> Unit,
-    onCreatePlaylist: () -> Unit,
-    onBrowse: (BrowseType) -> Unit,
-    onSongMenu: (Song) -> Unit,
+private data class SearchResults(
+    val songs: List<Song> = emptyList(),
+    val albums: List<com.example.mimic.data.AlbumGroup> = emptyList(),
+    val artists: List<com.example.mimic.data.ArtistGroup> = emptyList(),
 ) {
-    val songs by vm.songs.collectAsStateWithLifecycle()
-    val playlists by vm.playlists.collectAsStateWithLifecycle()
-    val favorites by vm.favoriteSongs.collectAsStateWithLifecycle()
-    val downloads by vm.downloads.collectAsStateWithLifecycle()
-
-    LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
-        item { SectionHeader("Your Library") }
-        item {
-            LibraryEntry(
-                leading = {
-                    Box(
-                        Modifier.size(52.dp).clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.primary),
-                        contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Default.Favorite, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary) }
-                },
-                title = "Liked Songs",
-                subtitle = "${favorites.size} songs",
-                onClick = onOpenFavorites,
-            )
-        }
-        item {
-            LibraryEntry(
-                leading = {
-                    Box(
-                        Modifier.size(52.dp).clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Default.Download, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                },
-                title = "Downloads",
-                subtitle = "${downloads.size} offline",
-                onClick = onOpenDownloads,
-            )
-        }
-        item {
-            LibraryEntry(
-                leading = {
-                    Box(
-                        Modifier.size(52.dp).clip(RoundedCornerShape(6.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) { Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                },
-                title = "Smart Collections",
-                subtitle = "Never played, forgotten favorites & more",
-                onClick = onOpenSmart,
-            )
-        }
-        item {
-            val browse = listOf(
-                BrowseType.ALBUMS to Icons.Default.Album,
-                BrowseType.ARTISTS to Icons.Default.Person,
-                BrowseType.FOLDERS to Icons.Default.Folder,
-                BrowseType.GENRES to Icons.Default.Label,
-            )
-            Column {
-                browse.forEach { (type, icon) ->
-                    LibraryEntry(
-                        leading = {
-                            Box(
-                                Modifier.size(52.dp).clip(RoundedCornerShape(6.dp))
-                                    .background(MaterialTheme.colorScheme.surfaceVariant),
-                                contentAlignment = Alignment.Center,
-                            ) { Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        },
-                        title = type.name.lowercase().replaceFirstChar { it.uppercase() },
-                        subtitle = "Browse by ${type.name.lowercase()}",
-                        onClick = { onBrowse(type) },
-                    )
-                }
-            }
-        }
-        item {
-            Row(
-                Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "Playlists",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onCreatePlaylist) {
-                    Icon(
-                        androidx.compose.material.icons.Icons.Default.Add,
-                        contentDescription = "New playlist",
-                    )
-                }
-            }
-        }
-        if (playlists.isEmpty()) {
-            item {
-                Text(
-                    "No playlists yet. Tap + to create one.",
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                )
-            }
-        } else {
-            items(playlists, key = { it.id }) { pl ->
-                LibraryEntry(
-                    leading = {
-                        Box(
-                            Modifier.size(52.dp).clip(RoundedCornerShape(6.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(
-                                androidx.compose.material.icons.Icons.AutoMirrored.Filled.QueueMusic,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    },
-                    title = pl.name,
-                    subtitle = "Playlist",
-                    onClick = { onOpenPlaylist(pl.id) },
-                )
-            }
-        }
-        item { SectionHeader("Songs") }
-        item {
-            Text(
-                "${songs.size} on this device",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 16.dp, bottom = 4.dp),
-            )
-        }
-        items(count = songs.size, key = { songs[it].id }) { index ->
-            SongRow(
-                song = songs[index],
-                onClick = { vm.play(songs, index) },
-                isFavorite = favorites.any { it.id == songs[index].id },
-                onMenu = { onSongMenu(songs[index]) },
-            )
-        }
-    }
+    fun isEmpty() = songs.isEmpty() && albums.isEmpty() && artists.isEmpty()
 }
 
 @Composable

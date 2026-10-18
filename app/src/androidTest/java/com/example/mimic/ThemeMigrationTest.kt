@@ -44,7 +44,7 @@ class ThemeMigrationTest {
         }
 
         val room = Room.databaseBuilder(context, MimicDatabase::class.java, name)
-            .addMigrations(MimicDatabase.MIGRATION_1_2, MimicDatabase.MIGRATION_2_3, MimicDatabase.MIGRATION_3_4)
+            .addMigrations(MimicDatabase.MIGRATION_1_2, MimicDatabase.MIGRATION_2_3, MimicDatabase.MIGRATION_3_4, MimicDatabase.MIGRATION_4_5)
             .build()
         try {
             val themes = room.customThemeDao().all().first()
@@ -60,7 +60,7 @@ class ThemeMigrationTest {
         }
     }
 
-    private companion object {
+    internal companion object {
         /** Exactly what Room created for schema version 3 (taken from a real 2.8.4 install). */
         val V3_SCHEMA = listOf(
             "CREATE TABLE `custom_themes` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `isDark` INTEGER NOT NULL, `primary` INTEGER NOT NULL, `secondary` INTEGER NOT NULL, `background` INTEGER NOT NULL, `surface` INTEGER NOT NULL, `surfaceElevated` INTEGER NOT NULL, `textPrimary` INTEGER NOT NULL, `textSecondary` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",

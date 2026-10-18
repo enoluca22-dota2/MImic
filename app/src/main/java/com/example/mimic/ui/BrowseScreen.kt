@@ -59,6 +59,7 @@ fun BrowseScreen(
     type: BrowseType,
     onBack: () -> Unit,
     onSongMenu: (Song) -> Unit,
+    rowEnv: com.example.mimic.ui.library.RowEnv? = null,
 ) {
     val songs by vm.songs.collectAsStateWithLifecycle()
     val groups = remember(songs, type) {
@@ -89,7 +90,7 @@ fun BrowseScreen(
             if (groups.isEmpty()) {
                 EmptyState("Nothing to show", "No ${type.title().lowercase()} found in your library.")
             } else {
-                LazyColumn(Modifier.fillMaxSize()) {
+                LazyColumn(Modifier.fillMaxSize(), contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.example.mimic.ui.library.LocalBarPadding.current)) {
                     items(groups, key = { it.name }) { group ->
                         LibraryEntry(
                             leading = {
@@ -114,6 +115,9 @@ fun BrowseScreen(
             onBack = { selected = null },
             onPlay = vm::play,
             onSongMenu = onSongMenu,
+            rowEnv = rowEnv,
         )
+        // System Back returns to the folder/genre list, not out of the whole browser.
+        androidx.activity.compose.BackHandler { selected = null }
     }
 }

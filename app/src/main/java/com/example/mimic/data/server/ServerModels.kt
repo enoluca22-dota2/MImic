@@ -23,6 +23,11 @@ data class RemoteSong(
     val durationMs: Long,
     val coverArtId: String?,
     val suffix: String?,
+    val albumId: String? = null,
+    val artistId: String? = null,
+    /** When the server first saw the file (epoch seconds), for "Recently added". 0 = unknown. */
+    val createdSec: Long = 0L,
+    val genre: String? = null,
 )
 
 sealed interface ServerStatus {

@@ -144,7 +144,9 @@ class ThemeStyleTest {
         assertFalse(GlassEnv(ThemeStyle(), GlassQuality.HIGH).enabled)
         assertEquals(0f, GlassEnv(glassTheme, GlassQuality.HIGH, reducedMotion = true).motionScale)
         assertEquals(0f, GlassEnv(glassTheme.copy(motion = false), GlassQuality.HIGH).motionScale)
-        assertTrue(GlassQuality.HIGH.allowsRefraction && !GlassQuality.BALANCED.allowsRefraction)
+        // 3.0: BALANCED keeps the (cheap) lens so glass still reads as glass; PERFORMANCE drops all shaders.
+        assertTrue(GlassQuality.HIGH.allowsRefraction && GlassQuality.BALANCED.allowsRefraction)
+        assertFalse(GlassQuality.PERFORMANCE.allowsRefraction)
         assertEquals(0f, GlassQuality.PERFORMANCE.blurFactor)
     }
 }

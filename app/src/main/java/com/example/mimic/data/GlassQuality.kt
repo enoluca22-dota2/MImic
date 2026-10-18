@@ -12,16 +12,16 @@ import android.os.Build
  * surfaces entirely in favour of plain opaque surfaces (the pre-2.9 look).
  */
 enum class GlassQuality {
-    HIGH,        // blur + lens refraction (refraction needs API 33+, blur API 31+)
-    BALANCED,    // blur at reduced radius, no refraction (safe default on capable devices)
-    PERFORMANCE, // translucent frosted surfaces only, no blur
+    HIGH,        // full blur + full lens refraction (refraction needs API 33+, blur API 31+)
+    BALANCED,    // slightly lighter blur + lens refraction (default on capable devices)
+    PERFORMANCE, // translucent tinted surfaces only: no blur, no shaders
     OFF;         // no glass — plain opaque surfaces
 
     /** Fraction of a theme's configured blur radius to actually apply. */
     val blurFactor: Float
         get() = when (this) {
             HIGH -> 1f
-            BALANCED -> 0.6f
+            BALANCED -> 0.75f
             PERFORMANCE -> 0f
             OFF -> 0f
         }
@@ -29,8 +29,20 @@ enum class GlassQuality {
     /** Whether glass surfaces are drawn at all (translucent tint + edge highlight). */
     val allowsGlass: Boolean get() = this != OFF
 
-    /** Whether the lens refraction shader may run (still also gated on API 33 at draw time). */
-    val allowsRefraction: Boolean get() = this == HIGH
+    /**
+     * Whether the lens refraction shader may run (still also gated on API 33 at draw time). The
+     * lens is what makes glass read as *glass* (the edges bend what is behind them), and it is a
+     * single cheap pass over a small surface, so BALANCED keeps it too (MImic 3.0).
+     */
+    val allowsRefraction: Boolean get() = this == HIGH || this == BALANCED
+
+    /** Lens strength multiplier. */
+    val refractionFactor: Float
+        get() = when (this) {
+            HIGH -> 1f
+            BALANCED -> 0.8f
+            else -> 0f
+        }
 
     companion object {
         /**

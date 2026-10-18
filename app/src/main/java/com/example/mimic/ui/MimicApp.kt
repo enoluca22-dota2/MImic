@@ -1,99 +1,98 @@
 package com.example.mimic.ui
 
+import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.LibraryMusic
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Icon
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import com.example.mimic.ui.designsystem.ThemeDefinition
-import com.example.mimic.ui.designsystem.ThemeRegistry
-import androidx.navigation.NavDestination.Companion.hierarchy
-import androidx.navigation.NavGraph.Companion.findStartDestination
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import com.example.mimic.data.Song
-import com.example.mimic.player.PlayerViewModel
-import com.example.mimic.ui.components.GlassNavBar
-import com.example.mimic.ui.components.GlassNavItem
-import com.example.mimic.ui.components.MiniPlayer
-import com.example.mimic.data.resolve
-import com.example.mimic.ui.designsystem.GlassEnv
-import com.example.mimic.ui.designsystem.LocalGlass
-import com.example.mimic.ui.designsystem.LocalGlassBackdrop
-import com.example.mimic.ui.designsystem.blockTouchesBehind
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import com.kyant.backdrop.backdrops.layerBackdrop
-import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.currentBackStackEntryAsState
+import androidx.navigation.compose.rememberNavController
+import com.example.mimic.data.NavStyle
+import com.example.mimic.data.Song
+import com.example.mimic.data.resolve
+import com.example.mimic.player.PlayerViewModel
+import com.example.mimic.ui.components.GlassNavBar
+import com.example.mimic.ui.components.GlassNavItem
+import com.example.mimic.ui.components.MiniPlayer
+import com.example.mimic.ui.designsystem.GlassEnv
+import com.example.mimic.ui.designsystem.LocalGlass
+import com.example.mimic.ui.designsystem.LocalGlassBackdrop
+import com.example.mimic.ui.designsystem.ThemeDefinition
+import com.example.mimic.ui.designsystem.ThemeRegistry
+import com.example.mimic.ui.designsystem.blockTouchesBehind
+import com.example.mimic.ui.home.HomeScreen
+import com.example.mimic.ui.library.AlbumDetailScreen
+import com.example.mimic.ui.library.AppNav
+import com.example.mimic.ui.library.ArtistDetailScreen
+import com.example.mimic.ui.library.DownloadsScreen
+import com.example.mimic.ui.library.FavoritesScreen
+import com.example.mimic.ui.library.LibraryScreen
+import com.example.mimic.ui.library.LocalBarPadding
+import com.example.mimic.ui.library.rememberRowEnv
+import com.example.mimic.ui.navigation.TopLevel
+import com.example.mimic.ui.navigation.TopLevelNavigation
+import com.kyant.backdrop.backdrops.layerBackdrop
+import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
-@androidx.compose.runtime.Composable
-private fun BottomBar(
-    navController: androidx.navigation.NavHostController,
-    navStyle: com.example.mimic.data.NavStyle,
-) {
-    val backStack by navController.currentBackStackEntryAsState()
-    val currentDest = backStack?.destination
-    val compact = navStyle == com.example.mimic.data.NavStyle.COMPACT
-    val goTo: (Tab) -> Unit = { tab ->
-        navController.navigate(tab.route) {
-            popUpTo(navController.graph.findStartDestination().id) { saveState = true }
-            launchSingleTop = true
-            restoreState = true
-        }
-    }
-    if (navStyle == com.example.mimic.data.NavStyle.GLASS) {
-        // -1 on pushed sub-screens (Settings, Theme Studio, ...) so no tab looks selected there.
-        val selectedIndex = tabs.indexOfFirst { tab -> currentDest?.hierarchy?.any { it.route == tab.route } == true }
+@Composable
+private fun BottomBar(navController: NavHostController, navStyle: NavStyle) {
+    // Recompose on every back-stack change; the owning tab is derived from the whole stack, so a
+    // pushed screen (Album, Account, ...) keeps its tab highlighted.
+    val entry by navController.currentBackStackEntryAsState()
+    val routes = remember(entry) { navController.currentBackStack.value.map { it.destination.route } }
+    val owner = TopLevelNavigation.owningTab(routes)
+    val goTo: (TopLevel) -> Unit = { TopLevelNavigation.navigate(navController, it) }
+    val compact = navStyle == NavStyle.COMPACT
+    if (navStyle == NavStyle.GLASS) {
         GlassNavBar(
             items = glassTabs,
-            selectedIndex = selectedIndex,
-            onSelect = { goTo(tabs[it]) },
+            selectedIndex = TopLevel.entries.indexOf(owner),
+            onSelect = { goTo(TopLevel.entries[it]) },
             modifier = Modifier.navigationBarsPadding(),
         )
         return
     }
-    val content: @androidx.compose.runtime.Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
-        tabs.forEach { tab ->
-            val selected = currentDest?.hierarchy?.any { it.route == tab.route } == true
+    val content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
+        TopLevel.entries.forEach { tab ->
             NavigationBarItem(
-                selected = selected,
+                selected = tab == owner,
                 onClick = { goTo(tab) },
                 icon = { Icon(tab.icon, contentDescription = tab.label) },
                 label = if (compact) null else ({ Text(tab.label) }),
@@ -101,7 +100,7 @@ private fun BottomBar(
             )
         }
     }
-    if (navStyle == com.example.mimic.data.NavStyle.FLOATING) {
+    if (navStyle == NavStyle.FLOATING) {
         NavigationBar(
             modifier = Modifier
                 .padding(horizontal = 12.dp, vertical = 8.dp)
@@ -113,26 +112,28 @@ private fun BottomBar(
     }
 }
 
-private data class Tab(val route: String, val label: String, val icon: ImageVector)
-
-private val tabs = listOf(
-    Tab("home", "Home", Icons.Default.Home),
-    Tab("search", "Search", Icons.Default.Search),
-    Tab("library", "Your Library", Icons.Default.LibraryMusic),
-)
-
-private val glassTabs = tabs.map { GlassNavItem(it.label, it.icon) }
+private val glassTabs = TopLevel.entries.map { GlassNavItem(it.label, it.icon) }
 
 /**
- * Insets full-screen sub-screens (Settings, Player Layout, Account, etc.) by the Scaffold's
- * [padding]: the top keeps their header below the status-bar clock, the bottom keeps their last
- * rows above the mini-player + navigation bar. The three tab screens consume innerPadding
- * themselves (as LazyColumn contentPadding), so they are not wrapped here.
+ * Hosts a pushed sub-screen. The top is inset below the status bar; the bottom is NOT padded:
+ * lists scroll on under the floating mini-player / navigation (so glass has real content behind
+ * it) and add [LocalBarPadding] as their own bottom contentPadding. [padBottom] keeps the old
+ * fully-inset behavior for editor-style screens that aren't simple lists.
  */
 @Composable
-private fun InsetScreen(padding: PaddingValues, content: @Composable () -> Unit) {
-    Box(Modifier.fillMaxSize().padding(padding)) { content() }
+private fun InsetScreen(padding: PaddingValues, padBottom: Boolean = false, content: @Composable () -> Unit) {
+    val bottom = padding.calculateBottomPadding()
+    Box(
+        Modifier.fillMaxSize().padding(
+            top = padding.calculateTopPadding(),
+            bottom = if (padBottom) bottom else 0.dp,
+        ),
+    ) {
+        CompositionLocalProvider(LocalBarPadding provides if (padBottom) 0.dp else bottom) { content() }
+    }
 }
+
+private fun enc(s: String): String = Uri.encode(s)
 
 @Composable
 fun MimicApp(viewModel: PlayerViewModel) {
@@ -164,6 +165,28 @@ fun MimicApp(viewModel: PlayerViewModel) {
 
     val context = LocalContext.current
     val onSongMenu: (Song) -> Unit = { menuSong = it }
+    val back: () -> Unit = { navController.popBackStack() }
+    val nav = remember(navController) {
+        AppNav(
+            openAlbum = { navController.navigate("album/${enc(it)}") },
+            openArtist = { navController.navigate("artist/${enc(it)}") },
+            openPlaylist = { navController.navigate("playlist/$it") },
+            openDownloads = { navController.navigate("downloads") },
+            openFavorites = { navController.navigate("favorites") },
+            openSmart = { navController.navigate("smartcollections") },
+            openBrowse = { navController.navigate("browse/${it.name}") },
+            openServerBrowse = { navController.navigate("serverbrowse") },
+            createPlaylist = { createDialog = true },
+            songMenu = { menuSong = it },
+            back = { navController.popBackStack() },
+        )
+    }
+
+    // Download results etc. — short, non-blocking confirmations.
+    LaunchedEffect(Unit) {
+        viewModel.messages.collect { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_SHORT).show() }
+    }
+
     val shareTheme: (ThemeDefinition) -> Unit = { theme ->
         val send = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
             type = "text/plain"
@@ -225,7 +248,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         onPlayPause = viewModel::togglePlayPause,
                         onClick = { nowPlayingOpen = true },
                         modifier = Modifier.padding(
-                            horizontal = if (navStyle == com.example.mimic.data.NavStyle.GLASS) 14.dp else 8.dp,
+                            horizontal = if (navStyle == NavStyle.GLASS) 14.dp else 8.dp,
                             vertical = 4.dp,
                         ),
                         isBuffering = uiState.isBuffering,
@@ -237,76 +260,70 @@ fun MimicApp(viewModel: PlayerViewModel) {
         },
     ) { innerPadding ->
         // The content (and the theme backdrop gradient) is recorded into the backdrop layer; the
-        // nav bar / mini-player sample it. Lists still scroll edge-to-edge behind them.
+        // nav bar / mini-player sample it. Lists scroll edge-to-edge behind them.
         Box(
             Modifier
                 .fillMaxSize()
                 .then(if (liveGlass) Modifier.layerBackdrop(backdrop) else Modifier)
                 .themeBackground(),
         ) {
+        val rowEnv = rememberRowEnv(viewModel, nav)
         NavHost(
             navController = navController,
-            startDestination = "home",
+            startDestination = TopLevel.HOME.route,
             enterTransition = { navMotion.first },
             exitTransition = { navMotion.second },
             popEnterTransition = { navMotion.first },
             popExitTransition = { navMotion.second },
         ) {
-            composable("home") {
-                HomeScreen(viewModel, innerPadding, onOpenSettings = { navController.navigate("settings") }, onSongMenu)
-            }
-            composable("search") { SearchScreen(viewModel, innerPadding, onSongMenu) }
-            composable("library") {
-                LibraryScreen(
-                    vm = viewModel,
+            // ---- The four top-level tabs ----
+            composable(TopLevel.HOME.route) { HomeScreen(viewModel, innerPadding, nav) }
+            composable(TopLevel.SEARCH.route) { SearchScreen(viewModel, innerPadding, nav) }
+            composable(TopLevel.LIBRARY.route) { LibraryScreen(viewModel, innerPadding, nav) }
+            composable(TopLevel.SETTINGS.route) {
+                SettingsScreen(
+                    viewModel,
                     contentPadding = innerPadding,
-                    onOpenPlaylist = { navController.navigate("playlist/$it") },
-                    onOpenFavorites = { navController.navigate("favorites") },
-                    onOpenDownloads = { navController.navigate("downloads") },
-                    onOpenSmart = { navController.navigate("smartcollections") },
-                    onCreatePlaylist = { createDialog = true },
-                    onBrowse = { navController.navigate("browse/${it.name}") },
-                    onSongMenu = onSongMenu,
+                    onOpenThemeStudio = { navController.navigate("themestudio") },
+                    onOpenPlayerStudio = { navController.navigate("playerstudio") },
+                    onOpenHomeCustomize = { navController.navigate("homecustomize") },
+                    onOpenMusicServer = { navController.navigate("musicserver") },
                 )
             }
-            composable("settings") {
-                InsetScreen(innerPadding) {
-                    SettingsScreen(
-                        viewModel,
-                        onBack = { navController.popBackStack() },
-                        onOpenThemeStudio = { navController.navigate("themestudio") },
-                        onOpenPlayerStudio = { navController.navigate("playerstudio") },
-                        onOpenHomeCustomize = { navController.navigate("homecustomize") },
-                        onOpenMusicServer = { navController.navigate("musicserver") },
-                    )
-                }
+
+            // ---- Pushed screens (Back pops them; the owning tab stays highlighted) ----
+            composable("album/{key}") { entry ->
+                val key = entry.arguments?.getString("key")?.let(Uri::decode) ?: return@composable
+                InsetScreen(innerPadding) { AlbumDetailScreen(viewModel, key, nav) }
             }
-            composable("playerstudio") { InsetScreen(innerPadding) { PlayerLayoutStudioScreen(viewModel, onBack = { navController.popBackStack() }) } }
-            composable("homecustomize") { InsetScreen(innerPadding) { HomeCustomizeScreen(viewModel, onBack = { navController.popBackStack() }) } }
+            composable("artist/{key}") { entry ->
+                val key = entry.arguments?.getString("key")?.let(Uri::decode) ?: return@composable
+                InsetScreen(innerPadding) { ArtistDetailScreen(viewModel, key, nav) }
+            }
+            composable("downloads") { InsetScreen(innerPadding) { DownloadsScreen(viewModel, nav) } }
+            composable("favorites") { InsetScreen(innerPadding) { FavoritesScreen(viewModel, nav) } }
+            composable("playerstudio") { InsetScreen(innerPadding, padBottom = true) { PlayerLayoutStudioScreen(viewModel, onBack = back) } }
+            composable("homecustomize") { InsetScreen(innerPadding, padBottom = true) { HomeCustomizeScreen(viewModel, onBack = back) } }
             composable("musicserver") {
                 InsetScreen(innerPadding) {
                     MusicServerScreen(
                         viewModel,
-                        onBack = { navController.popBackStack() },
+                        onBack = back,
                         onOpenBrowse = { navController.navigate("serverbrowse") },
                     )
                 }
             }
-            composable("serverbrowse") { InsetScreen(innerPadding) { ServerBrowseScreen(viewModel, onBack = { navController.popBackStack() }) } }
-            composable("downloads") {
-                val downloads by viewModel.downloads.collectAsStateWithLifecycle()
+            composable("serverbrowse") {
                 InsetScreen(innerPadding) {
-                    SongListScreen(
-                        title = "Downloads",
-                        songs = downloads,
-                        onBack = { navController.popBackStack() },
-                        onPlay = viewModel::play,
-                        onSongMenu = onSongMenu,
-                    )
+                    ServerBrowseScreen(viewModel, onBack = back, onOpenAlbum = { navController.navigate("serveralbum/${enc(it)}") })
                 }
             }
+            composable("serveralbum/{id}") { entry ->
+                val id = entry.arguments?.getString("id")?.let(Uri::decode) ?: return@composable
+                InsetScreen(innerPadding) { ServerAlbumScreen(viewModel, id, onBack = back) }
+            }
             composable("themestudio") {
-                InsetScreen(innerPadding) {
+                InsetScreen(innerPadding, padBottom = true) {
                     ThemeStudioScreen(
                         vm = viewModel,
                         onEdit = { editingTheme = it },
@@ -317,26 +334,23 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         onImport = { importLauncher.launch(arrayOf("application/json", "text/plain", "text/*")) },
                         onExportFile = { pendingExportTheme = it; exportLauncher.launch("mimic-theme-${it.name}.json") },
                         onShare = shareTheme,
-                        onBack = { navController.popBackStack() },
+                        onBack = back,
                     )
                 }
             }
-            composable("favorites") {
-                InsetScreen(innerPadding) { FavoritesScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu) }
-            }
             composable("smartcollections") {
-                InsetScreen(innerPadding) { SmartCollectionsScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu) }
+                InsetScreen(innerPadding) { SmartCollectionsScreen(viewModel, onBack = back, onSongMenu = onSongMenu, rowEnv = rowEnv) }
             }
             composable("browse/{type}") { entry ->
                 val type = entry.arguments?.getString("type")
                     ?.let { runCatching { BrowseType.valueOf(it) }.getOrNull() }
                     ?: BrowseType.ALBUMS
-                InsetScreen(innerPadding) { BrowseScreen(viewModel, type, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu) }
+                InsetScreen(innerPadding) { BrowseScreen(viewModel, type, onBack = back, onSongMenu = onSongMenu, rowEnv = rowEnv) }
             }
             composable("playlist/{id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
                 val name = playlists.firstOrNull { it.id == id }?.name ?: "Playlist"
-                InsetScreen(innerPadding) { PlaylistDetailScreen(viewModel, id, name, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu) }
+                InsetScreen(innerPadding) { PlaylistDetailScreen(viewModel, id, name, onBack = back, onSongMenu = onSongMenu) }
             }
         }
         }
@@ -375,6 +389,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
     }
 
     menuSong?.let { song ->
+        val canDownload = song.isFromServer && (!song.isDownloaded || song.fileMissing)
         SongActionsSheet(
             song = song,
             isFavorite = viewModel.favoriteIds.collectAsStateWithLifecycle().value.contains(song.id),
@@ -383,6 +398,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
             onAddToQueue = { viewModel.addToQueue(song) },
             onAddToPlaylist = { addSong = song; menuSong = null },
             onToggleFavorite = { viewModel.toggleFavorite(song) },
+            onDownload = if (canDownload) ({ viewModel.downloadSong(song) }) else null,
+            onRemoveDownload = if (song.isDownloaded) ({ viewModel.removeDownload(song) }) else null,
+            onGoToAlbum = { nowPlayingOpen = false; nav.openAlbum(song.albumKey) },
+            onGoToArtist = { nowPlayingOpen = false; nav.openArtist(song.artistKey) },
         )
     }
 

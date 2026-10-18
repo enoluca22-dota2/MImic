@@ -24,6 +24,9 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Album
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
@@ -61,6 +64,8 @@ import com.example.mimic.data.Song
 import com.example.mimic.data.db.PlaylistEntity
 import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.components.SongRow
+import com.example.mimic.ui.library.songItems
+import androidx.compose.foundation.verticalScroll
 import com.example.mimic.ui.designsystem.ThemeDefinition
 
 @Composable
@@ -86,7 +91,7 @@ private fun ScreenHeader(title: String, onBack: () -> Unit, trailing: @Composabl
 @Composable
 fun SettingsScreen(
     vm: PlayerViewModel,
-    onBack: () -> Unit,
+    contentPadding: androidx.compose.foundation.layout.PaddingValues,
     onOpenThemeStudio: () -> Unit,
     onOpenPlayerStudio: () -> Unit,
     onOpenHomeCustomize: () -> Unit,
@@ -94,8 +99,21 @@ fun SettingsScreen(
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val current by vm.activeTheme.collectAsStateWithLifecycle()
-    Column(Modifier.fillMaxSize()) {
-        ScreenHeader("Settings", onBack)
+    val status by vm.serverStatus.collectAsStateWithLifecycle()
+    val creds by vm.serverCredentials.collectAsStateWithLifecycle()
+    // Settings is a top-level tab (MImic 3.0): no Back arrow, scrolls under the glass nav.
+    Column(
+        Modifier.fillMaxSize()
+            .verticalScroll(androidx.compose.foundation.rememberScrollState())
+            .padding(contentPadding),
+    ) {
+        Text(
+            "Settings",
+            style = MaterialTheme.typography.headlineMedium,
+            fontWeight = com.example.mimic.ui.designsystem.LocalGlass.current.headerFontWeight,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp),
+        )
         Text(
             "Appearance",
             style = MaterialTheme.typography.titleMedium,
@@ -167,7 +185,11 @@ fun SettingsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Account", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                 Text(
-                    "Sign in & connect your music server",
+                    if (status == com.example.mimic.data.server.ServerStatus.Connected && creds != null) {
+                        "Signed in as ${creds!!.username} · server library & downloads"
+                    } else {
+                        "Sign in & connect your music server"
+                    },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -175,8 +197,8 @@ fun SettingsScreen(
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "MImic — a personal, offline music player. Plays audio stored on this device. " +
-                "No account, no telemetry, nothing leaves your phone.",
+            "MImic — a personal music player for the audio on this phone and your own music server. " +
+                "No telemetry; nothing is sent anywhere except to the server you sign in to.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(16.dp),
@@ -208,6 +230,7 @@ fun SongListScreen(
     onPlay: (List<Song>, Int) -> Unit,
     onSongMenu: (Song) -> Unit,
     favoriteIds: Set<Long> = emptySet(),
+    rowEnv: com.example.mimic.ui.library.RowEnv? = null,
 ) {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(title, onBack)
@@ -221,25 +244,22 @@ fun SongListScreen(
                     Text("Play all")
                 }
             }
-            LazyColumn {
-                items(count = songs.size, key = { songs[it].id }) { index ->
-                    SongRow(
-                        song = songs[index],
-                        onClick = { onPlay(songs, index) },
-                        isFavorite = favoriteIds.contains(songs[index].id),
-                        onMenu = { onSongMenu(songs[index]) },
-                    )
+            LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.example.mimic.ui.library.LocalBarPadding.current)) {
+                if (rowEnv != null) {
+                    songItems(songs, rowEnv)
+                } else {
+                    items(count = songs.size, key = { songs[it].id }) { index ->
+                        SongRow(
+                            song = songs[index],
+                            onClick = { onPlay(songs, index) },
+                            isFavorite = favoriteIds.contains(songs[index].id),
+                            onMenu = { onSongMenu(songs[index]) },
+                        )
+                    }
                 }
             }
         }
     }
-}
-
-@Composable
-fun FavoritesScreen(vm: PlayerViewModel, onBack: () -> Unit, onSongMenu: (Song) -> Unit) {
-    val favorites by vm.favoriteSongs.collectAsStateWithLifecycle()
-    val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
-    SongListScreen("Liked Songs", favorites, onBack, vm::play, onSongMenu, favoriteIds)
 }
 
 @Composable
@@ -268,12 +288,12 @@ fun PlaylistDetailScreen(
                     Text("Play all")
                 }
             }
-            LazyColumn {
+            LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.example.mimic.ui.library.LocalBarPadding.current)) {
                 items(count = songs.size, key = { songs[it].id }) { index ->
                     val song = songs[index]
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         Box(Modifier.weight(1f)) {
-                            SongRow(song = song, onClick = { vm.play(songs, index) })
+                            SongRow(song = song, onClick = { vm.play(songs, index) }, onMenu = { onSongMenu(song) })
                         }
                         // Manual ordering via up/down keeps reorder reliable without drag gestures.
                         IconButton(
@@ -407,6 +427,10 @@ fun SongActionsSheet(
     onAddToQueue: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onToggleFavorite: () -> Unit,
+    onDownload: (() -> Unit)? = null,
+    onRemoveDownload: (() -> Unit)? = null,
+    onGoToAlbum: (() -> Unit)? = null,
+    onGoToArtist: (() -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState()
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -418,11 +442,21 @@ fun SongActionsSheet(
                 color = MaterialTheme.colorScheme.onSurface,
                 modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
             )
+            Text(
+                "${song.artist} · ${song.album}",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
+            )
             ActionRow(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 if (isFavorite) "Remove from Liked Songs" else "Add to Liked Songs") { onToggleFavorite(); onDismiss() }
             ActionRow(Icons.Default.PlayArrow, "Play next") { onPlayNext(); onDismiss() }
             ActionRow(Icons.AutoMirrored.Filled.QueueMusic, "Add to queue") { onAddToQueue(); onDismiss() }
             ActionRow(Icons.AutoMirrored.Filled.PlaylistAdd, "Add to playlist") { onAddToPlaylist() }
+            if (onDownload != null) ActionRow(androidx.compose.material.icons.Icons.Default.Download, if (song.fileMissing) "Download again (file missing)" else "Download for offline") { onDownload(); onDismiss() }
+            if (onRemoveDownload != null) ActionRow(Icons.Default.Delete, "Remove download (keeps it on the server)") { onRemoveDownload(); onDismiss() }
+            if (onGoToAlbum != null) ActionRow(androidx.compose.material.icons.Icons.Default.Album, "Go to album") { onGoToAlbum(); onDismiss() }
+            if (onGoToArtist != null) ActionRow(androidx.compose.material.icons.Icons.Default.Person, "Go to artist") { onGoToArtist(); onDismiss() }
         }
     }
 }
@@ -481,7 +515,12 @@ fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
  * These never alter the user's manual playlists.
  */
 @Composable
-fun SmartCollectionsScreen(vm: PlayerViewModel, onBack: () -> Unit, onSongMenu: (Song) -> Unit) {
+fun SmartCollectionsScreen(
+    vm: PlayerViewModel,
+    onBack: () -> Unit,
+    onSongMenu: (Song) -> Unit,
+    rowEnv: com.example.mimic.ui.library.RowEnv? = null,
+) {
     val never by vm.neverPlayed.collectAsStateWithLifecycle()
     val least by vm.leastPlayed.collectAsStateWithLifecycle()
     val forgotten by vm.forgottenFavorites.collectAsStateWithLifecycle()
@@ -533,6 +572,8 @@ fun SmartCollectionsScreen(vm: PlayerViewModel, onBack: () -> Unit, onSongMenu: 
             onPlay = vm::play,
             onSongMenu = onSongMenu,
             favoriteIds = favoriteIds,
+            rowEnv = rowEnv,
         )
+        androidx.activity.compose.BackHandler { selected = null }
     }
 }

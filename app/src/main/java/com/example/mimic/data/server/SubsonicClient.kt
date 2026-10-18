@@ -1,12 +1,15 @@
 package com.example.mimic.data.server
 
+import com.example.mimic.data.MetadataFallback
 import com.example.mimic.data.Song
+import com.example.mimic.data.SongSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.File
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 /**
@@ -27,6 +30,9 @@ class SubsonicClient(private val creds: ServerCredentials) {
     // every image on each scroll/tick — invisible on localhost, a network storm over Tailscale
     // that janked scrolling and starved the audio stream. See MImic 2.8.1.
     private val salt: String = SubsonicAuth.randomSalt()
+
+    /** "user@server" — scopes downloads and pending favorite syncs to the account that made them. */
+    val accountKey: String = accountKeyOf(creds)
 
     private fun url(endpoint: String, extra: Map<String, String> = emptyMap()): String =
         SubsonicAuth.buildUrl(
@@ -64,8 +70,8 @@ class SubsonicClient(private val creds: ServerCredentials) {
                 add(
                     RemoteAlbum(
                         id = a.getString("id"),
-                        name = a.optString("name", "Unknown album"),
-                        artist = a.optString("artist", "Unknown artist"),
+                        name = MetadataFallback.album(a.optString("name")),
+                        artist = MetadataFallback.artist(a.optString("artist")),
                         coverArtId = a.optString("coverArt").ifBlank { null },
                         songCount = a.optInt("songCount", 0),
                     ),
@@ -77,23 +83,41 @@ class SubsonicClient(private val creds: ServerCredentials) {
     suspend fun albumSongs(albumId: String): Result<List<RemoteSong>> = io {
         val arr = call("getAlbum", mapOf("id" to albumId))
             .optJSONObject("album")?.optJSONArray("song")
-        buildList {
-            if (arr != null) for (i in 0 until arr.length()) {
-                val s = arr.getJSONObject(i)
-                add(
-                    RemoteSong(
-                        id = s.getString("id"),
-                        title = s.optString("title", "Unknown title"),
-                        artist = s.optString("artist", "Unknown artist"),
-                        album = s.optString("album", "Unknown album"),
-                        durationMs = s.optLong("duration", 0L) * 1000L,
-                        coverArtId = s.optString("coverArt").ifBlank { null },
-                        suffix = s.optString("suffix").ifBlank { null },
-                    ),
-                )
-            }
-        }
+        buildList { if (arr != null) for (i in 0 until arr.length()) add(parseSong(arr.getJSONObject(i))) }
     }
+
+    /**
+     * The whole song catalog's *metadata* (no audio), paged through search3 with an empty query —
+     * the documented OpenSubsonic way to enumerate songs, supported by Navidrome. Used for the
+     * Songs / Albums / Artists views; audio is only fetched when the user plays or downloads.
+     */
+    suspend fun allSongs(pageSize: Int = 500, maxSongs: Int = 20_000): Result<List<RemoteSong>> = io {
+        val out = ArrayList<RemoteSong>()
+        var offset = 0
+        while (offset < maxSongs) {
+            val arr = call(
+                "search3",
+                mapOf(
+                    "query" to "", "songCount" to "$pageSize", "songOffset" to "$offset",
+                    "artistCount" to "0", "albumCount" to "0",
+                ),
+            ).optJSONObject("searchResult3")?.optJSONArray("song")
+            val n = arr?.length() ?: 0
+            for (i in 0 until n) out += parseSong(arr!!.getJSONObject(i))
+            if (n < pageSize) break
+            offset += pageSize
+        }
+        out.distinctBy { it.id }
+    }
+
+    /** Server-side favorites (Subsonic "starred") — song ids only. */
+    suspend fun starredSongIds(): Result<List<String>> = io {
+        val arr = call("getStarred2").optJSONObject("starred2")?.optJSONArray("song")
+        buildList { if (arr != null) for (i in 0 until arr.length()) add(arr.getJSONObject(i).getString("id")) }
+    }
+
+    suspend fun star(songId: String): Result<Unit> = io { call("star", mapOf("id" to songId)); Unit }
+    suspend fun unstar(songId: String): Result<Unit> = io { call("unstar", mapOf("id" to songId)); Unit }
 
     fun streamUrl(songId: String): String = url("stream", mapOf("id" to songId))
     fun downloadUrl(songId: String): String = url("download", mapOf("id" to songId))
@@ -109,23 +133,96 @@ class SubsonicClient(private val creds: ServerCredentials) {
         durationMs = remote.durationMs,
         uri = streamUrl(remote.id),
         albumArtUri = coverArtUrl(remote.coverArtId),
-        dateAddedSec = 0L,
+        dateAddedSec = remote.createdSec,
         folder = "Server",
-        genre = null,
+        genre = remote.genre,
+        source = SongSource.SERVER,
+        remoteId = remote.id,
+        albumKey = serverAlbumKey(remote.albumId, remote.album),
+        artistKey = MetadataFallback.artistKey(remote.artist),
     )
 
-    /** Downloads a track's original file to [target]. */
+    /**
+     * Downloads a track's original file to [target] atomically: bytes go to a ".part" file, the
+     * size is checked against Content-Length when the server sends one, and only a complete,
+     * non-empty, readable file is renamed into place. A failed or interrupted download never
+     * leaves a half-written file where a finished one is expected.
+     */
     suspend fun download(remote: RemoteSong, target: File): Result<Unit> = io {
-        val resp = http.newCall(Request.Builder().url(downloadUrl(remote.id)).build()).execute()
-        resp.use {
-            if (!it.isSuccessful) error("HTTP ${it.code}")
-            val sink = it.body ?: error("Empty body")
-            target.parentFile?.mkdirs()
-            target.outputStream().use { out -> sink.byteStream().copyTo(out) }
+        val part = File(target.parentFile, target.name + ".part")
+        try {
+            val resp = http.newCall(Request.Builder().url(downloadUrl(remote.id)).build()).execute()
+            resp.use {
+                if (!it.isSuccessful) error("HTTP ${it.code}")
+                val body = it.body ?: error("Empty body")
+                // Navidrome reports a missing file as 200 + a JSON error document, not audio.
+                val type = body.contentType()?.toString().orEmpty()
+                if (type.contains("json") || type.contains("xml")) error("Server returned an error instead of audio")
+                target.parentFile?.mkdirs()
+                part.outputStream().use { out ->
+                    body.byteStream().copyTo(out)
+                    out.fd.sync()
+                }
+                val expected = body.contentLength()
+                if (expected > 0 && part.length() != expected) {
+                    throw IOException("Incomplete download: ${part.length()} of $expected bytes")
+                }
+            }
+            if (part.length() == 0L || !part.canRead()) throw IOException("Downloaded file is empty or unreadable")
+            if (target.exists()) target.delete()
+            if (!part.renameTo(target)) throw IOException("Could not finalize download")
+        } finally {
+            part.delete()
         }
         Unit
     }
 
+    /** Saves the cover image locally so downloaded songs keep their artwork offline. */
+    suspend fun downloadCover(coverArtId: String, target: File): Result<Unit> = io {
+        val url = coverArtUrl(coverArtId) ?: error("No cover")
+        http.newCall(Request.Builder().url(url).build()).execute().use {
+            if (!it.isSuccessful) error("HTTP ${it.code}")
+            val body = it.body ?: error("Empty body")
+            if (body.contentType()?.type != "image") error("Not an image")
+            target.parentFile?.mkdirs()
+            target.outputStream().use { out -> body.byteStream().copyTo(out) }
+        }
+        Unit
+    }
+
+    private fun parseSong(s: JSONObject): RemoteSong = RemoteSong(
+        id = s.getString("id"),
+        title = MetadataFallback.title(s.optString("title"), s.optString("path").ifBlank { null }),
+        artist = MetadataFallback.artist(s.optString("artist")),
+        album = MetadataFallback.album(s.optString("album")),
+        durationMs = s.optLong("duration", 0L) * 1000L,
+        coverArtId = s.optString("coverArt").ifBlank { null },
+        suffix = s.optString("suffix").ifBlank { null },
+        albumId = s.optString("albumId").ifBlank { null },
+        artistId = s.optString("artistId").ifBlank { null },
+        createdSec = parseIsoSeconds(s.optString("created")),
+        genre = s.optString("genre").ifBlank { null },
+    )
+
     private suspend inline fun <T> io(crossinline block: () -> T): Result<T> =
         withContext(Dispatchers.IO) { runCatching { block() } }
+
+    companion object {
+        fun accountKeyOf(creds: ServerCredentials): String =
+            creds.username.trim() + "@" + SubsonicAuth.normalizeBaseUrl(creds.baseUrl).lowercase()
+
+        /** Server albums are grouped by the server's album id (never by title alone). */
+        fun serverAlbumKey(albumId: String?, albumName: String): String =
+            if (albumId != null) "server:album:$albumId" else "server:album-name:" + MetadataFallback.album(albumName).lowercase()
+
+        /** "2024-05-01T12:00:00.123Z" -> epoch seconds; 0 when absent or unparseable. */
+        fun parseIsoSeconds(value: String?): Long {
+            if (value.isNullOrBlank()) return 0L
+            return runCatching {
+                val fmt = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss", java.util.Locale.US)
+                fmt.timeZone = java.util.TimeZone.getTimeZone("UTC")
+                fmt.parse(value.take(19))!!.time / 1000L
+            }.getOrDefault(0L)
+        }
+    }
 }

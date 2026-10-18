@@ -1,6 +1,8 @@
 package com.example.mimic
 
 import android.app.Application
+import com.example.mimic.data.DownloadRepository
+import com.example.mimic.data.FavoritesRepository
 import com.example.mimic.data.MusicRepository
 import com.example.mimic.data.SettingsRepository
 import com.example.mimic.data.db.MimicDatabase
@@ -22,6 +24,13 @@ class AppContainer(application: Application) {
     val playlistDao get() = database.playlistDao()
     val customThemeDao get() = database.customThemeDao()
     val downloadDao get() = database.downloadDao()
+    val favoriteGroupDao get() = database.favoriteGroupDao()
+    val pendingStarDao get() = database.pendingStarDao()
+
+    val downloadRepository: DownloadRepository by lazy { DownloadRepository(application, downloadDao) }
+    val favoritesRepository: FavoritesRepository by lazy {
+        FavoritesRepository(favoriteDao, favoriteGroupDao, pendingStarDao)
+    }
 }
 
 class MimicApplication : Application() {

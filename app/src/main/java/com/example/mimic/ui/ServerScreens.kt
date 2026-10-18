@@ -54,6 +54,10 @@ import com.example.mimic.data.server.RemoteSong
 import com.example.mimic.data.server.ServerStatus
 import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.components.formatDuration
+import com.example.mimic.ui.library.LocalBarPadding
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.text.style.TextOverflow
 
 @Composable
 private fun Header(title: String, onBack: () -> Unit) {
@@ -71,7 +75,12 @@ fun MusicServerScreen(vm: PlayerViewModel, onBack: () -> Unit, onOpenBrowse: () 
     val status by vm.serverStatus.collectAsStateWithLifecycle()
     val creds by vm.serverCredentials.collectAsStateWithLifecycle()
 
-    Column(Modifier.fillMaxSize()) {
+    val catalog by vm.catalogState.collectAsStateWithLifecycle()
+    Column(
+        Modifier.fillMaxSize()
+            .verticalScroll(androidx.compose.foundation.rememberScrollState())
+            .padding(bottom = LocalBarPadding.current),
+    ) {
         Header("Account", onBack)
         val current = creds
         if (status == ServerStatus.Connected && current != null) {
@@ -82,6 +91,17 @@ fun MusicServerScreen(vm: PlayerViewModel, onBack: () -> Unit, onOpenBrowse: () 
                 onSignOut = { vm.disconnectServer() },
                 onSwitchAccount = { vm.switchAccount() },
             )
+            // The server's songs also appear in Home, Search and Library (Server filter).
+            val (line, retry) = when (val c = catalog) {
+                com.example.mimic.player.CatalogState.Loading -> "Loading your server library…" to false
+                is com.example.mimic.player.CatalogState.Loaded -> "${c.count} server songs are in your Library (Server filter)" to true
+                is com.example.mimic.player.CatalogState.Error -> "Couldn't load the server library: ${c.message}" to true
+                com.example.mimic.player.CatalogState.Idle -> "Server library not loaded yet" to true
+            }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(line, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                if (retry) androidx.compose.material3.TextButton(onClick = { vm.refreshServerCatalog() }) { Text("Refresh") }
+            }
         } else {
             SignInForm(vm = vm, status = status, onContinueOffline = onBack)
         }
@@ -251,67 +271,81 @@ private fun StatusLine(status: ServerStatus) {
     Text(text, color = color, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
 }
 
+/**
+ * Server Library: the server's albums. Opening an album is a real navigation destination
+ * ([onOpenAlbum] -> "serveralbum/{id}"), so Back and the one-tap Home button behave like every
+ * other screen instead of depending on hidden in-screen state.
+ */
 @Composable
-fun ServerBrowseScreen(vm: PlayerViewModel, onBack: () -> Unit) {
+fun ServerBrowseScreen(vm: PlayerViewModel, onBack: () -> Unit, onOpenAlbum: (String) -> Unit) {
     val albums by vm.remoteAlbums.collectAsStateWithLifecycle()
-    var selected by remember { mutableStateOf<RemoteAlbum?>(null) }
-
     LaunchedEffect(Unit) { if (albums.isEmpty()) vm.loadRemoteAlbums() }
 
-    val current = selected
-    if (current == null) {
-        Column(Modifier.fillMaxSize()) {
-            Header("Server Library", onBack)
-            if (albums.isEmpty()) {
-                EmptyState("No albums", "Connect to the server, or check that it has scanned your music.")
-            } else {
-                LazyColumn(Modifier.fillMaxSize()) {
-                    items(albums, key = { it.id }) { album ->
-                        val coverUrl = remember(album.coverArtId) { vm.remoteCoverUrl(album.coverArtId) }
-                        Row(
-                            Modifier.fillMaxWidth().clickable { selected = album }.padding(horizontal = 16.dp, vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RemoteArt(coverUrl, Modifier.size(52.dp))
-                            Spacer(Modifier.width(12.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(album.name, color = MaterialTheme.colorScheme.onBackground, maxLines = 1)
-                                Text("${album.artist} · ${album.songCount} songs", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-                            }
+    Column(Modifier.fillMaxSize()) {
+        Header("Server Library", onBack)
+        if (albums.isEmpty()) {
+            EmptyState("No albums", "Connect to the server, or check that it has scanned your music.")
+        } else {
+            LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = LocalBarPadding.current)) {
+                items(albums, key = { it.id }) { album ->
+                    val coverUrl = remember(album.coverArtId) { vm.remoteCoverUrl(album.coverArtId) }
+                    Row(
+                        Modifier.fillMaxWidth().clickable { onOpenAlbum(album.id) }.padding(horizontal = 16.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        RemoteArt(coverUrl, Modifier.size(56.dp))
+                        Spacer(Modifier.width(12.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(album.name, color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                            Text("${album.artist} · ${album.songCount} songs", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
                     }
                 }
             }
         }
-    } else {
-        AlbumSongsScreen(vm, current, onBack = { selected = null })
     }
 }
 
 @Composable
-private fun AlbumSongsScreen(vm: PlayerViewModel, album: RemoteAlbum, onBack: () -> Unit) {
+fun ServerAlbumScreen(vm: PlayerViewModel, albumId: String, onBack: () -> Unit) {
+    val albums by vm.remoteAlbums.collectAsStateWithLifecycle()
+    val album = albums.firstOrNull { it.id == albumId }
     var songs by remember { mutableStateOf<List<RemoteSong>?>(null) }
-    LaunchedEffect(album.id) { songs = vm.remoteAlbumSongs(album.id) }
+    LaunchedEffect(albumId) { songs = vm.remoteAlbumSongs(albumId) }
+    val downloading by vm.downloading.collectAsStateWithLifecycle()
+    val downloads by vm.downloads.collectAsStateWithLifecycle()
+    val downloadedIds = remember(downloads) { downloads.filter { !it.fileMissing }.mapNotNull { it.remoteId }.toSet() }
 
     Column(Modifier.fillMaxSize()) {
-        Header(album.name, onBack)
+        Header(album?.name ?: "Album", onBack)
         val list = songs
         when {
             list == null -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-            list.isEmpty() -> EmptyState("No songs", "This album returned no tracks.")
+            list.isEmpty() -> EmptyState("No songs", "This album returned no tracks (or the server is unreachable).")
             else -> {
-                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+                Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                     Button(onClick = { vm.playRemote(list, 0) }) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(4.dp))
                         Text("Play all")
                     }
+                    val remaining = list.count { it.id !in downloadedIds }
+                    OutlinedButton(
+                        onClick = { list.filter { it.id !in downloadedIds }.forEach(vm::downloadRemote) },
+                        enabled = remaining > 0,
+                    ) {
+                        Icon(Icons.Default.Download, contentDescription = null)
+                        Spacer(Modifier.width(4.dp))
+                        Text(if (remaining > 0) "Download ($remaining)" else "All downloaded")
+                    }
                 }
-                LazyColumn(Modifier.weight(1f).fillMaxWidth()) {
+                LazyColumn(Modifier.weight(1f).fillMaxWidth(), contentPadding = PaddingValues(bottom = LocalBarPadding.current)) {
                     items(list, key = { it.id }) { song ->
                         RemoteSongRow(
                             vm = vm,
                             song = song,
+                            downloaded = song.id in downloadedIds,
+                            downloading = song.id in downloading,
                             onPlay = { vm.playRemote(list, list.indexOf(song)) },
                         )
                     }
@@ -321,31 +355,29 @@ private fun AlbumSongsScreen(vm: PlayerViewModel, album: RemoteAlbum, onBack: ()
     }
 }
 
+/**
+ * Download state comes from the observed downloads table + in-progress set, so a finished
+ * download flips to ✓ here and appears on Home at the same moment, from one source of truth.
+ */
 @Composable
-private fun RemoteSongRow(vm: PlayerViewModel, song: RemoteSong, onPlay: () -> Unit) {
-    var downloaded by remember(song.id) { mutableStateOf(false) }
-    var downloading by remember(song.id) { mutableStateOf(false) }
-    LaunchedEffect(song.id) { downloaded = vm.isDownloaded(song.id) }
+private fun RemoteSongRow(vm: PlayerViewModel, song: RemoteSong, downloaded: Boolean, downloading: Boolean, onPlay: () -> Unit) {
     val coverUrl = remember(song.coverArtId) { vm.remoteCoverUrl(song.coverArtId) }
 
     Row(
         Modifier.fillMaxWidth().clickable(onClick = onPlay).padding(start = 16.dp, end = 4.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RemoteArt(coverUrl, Modifier.size(48.dp))
+        RemoteArt(coverUrl, Modifier.size(52.dp))
         Spacer(Modifier.width(12.dp))
         Column(Modifier.weight(1f)) {
-            Text(song.title, color = MaterialTheme.colorScheme.onBackground, maxLines = 1)
-            Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1)
+            Text(song.title, color = MaterialTheme.colorScheme.onBackground, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Medium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(song.artist, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         Text(formatDuration(song.durationMs), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
         when {
-            downloaded -> Icon(Icons.Default.CheckCircle, contentDescription = "Downloaded", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 8.dp).size(24.dp))
-            downloading -> CircularProgressIndicator(modifier = Modifier.padding(start = 8.dp).size(24.dp), strokeWidth = 2.dp)
-            else -> IconButton(onClick = {
-                downloading = true
-                vm.downloadRemote(song) { ok -> downloading = false; downloaded = ok }
-            }) { Icon(Icons.Default.Download, contentDescription = "Download") }
+            downloaded -> Icon(Icons.Default.CheckCircle, contentDescription = "Downloaded", tint = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(horizontal = 12.dp).size(24.dp))
+            downloading -> CircularProgressIndicator(modifier = Modifier.padding(horizontal = 12.dp).size(24.dp), strokeWidth = 2.dp)
+            else -> IconButton(onClick = { vm.downloadRemote(song) }) { Icon(Icons.Default.Download, contentDescription = "Download") }
         }
     }
 }

@@ -55,6 +55,9 @@ interface HistoryDao {
     )
     fun leastPlayed(limit: Int): Flow<List<PlayCount>>
 
+    @Query("SELECT songId, MAX(playedAt) AS playedAt FROM play_history GROUP BY songId")
+    fun lastPlayedAll(): Flow<List<LastPlayed>>
+
     @Query("DELETE FROM play_history WHERE playedAt < :cutoff")
     suspend fun pruneOlderThan(cutoff: Long)
 }
@@ -72,6 +75,45 @@ interface DownloadDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM downloads WHERE remoteId = :remoteId)")
     suspend fun isDownloaded(remoteId: String): Boolean
+
+    @Query("SELECT * FROM downloads WHERE remoteId = :remoteId")
+    suspend fun get(remoteId: String): DownloadEntity?
+
+    @Query("SELECT * FROM downloads")
+    suspend fun allOnce(): List<DownloadEntity>
+
+    @Query("SELECT remoteId FROM downloads")
+    fun downloadedIds(): Flow<List<String>>
+}
+
+@Dao
+interface FavoriteGroupDao {
+    @Query("SELECT * FROM favorite_groups ORDER BY addedAt DESC")
+    fun all(): Flow<List<FavoriteGroupEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun add(group: FavoriteGroupEntity)
+
+    @Query("DELETE FROM favorite_groups WHERE kind = :kind AND groupKey = :groupKey")
+    suspend fun remove(kind: String, groupKey: String)
+
+    @Query("SELECT EXISTS(SELECT 1 FROM favorite_groups WHERE kind = :kind AND groupKey = :groupKey)")
+    suspend fun isFavorite(kind: String, groupKey: String): Boolean
+}
+
+@Dao
+interface PendingStarDao {
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(op: PendingStarEntity)
+
+    @Query("SELECT * FROM pending_server_ops WHERE accountKey = :accountKey ORDER BY createdAt ASC")
+    suspend fun forAccount(accountKey: String): List<PendingStarEntity>
+
+    @Query("SELECT COUNT(*) FROM pending_server_ops")
+    fun count(): Flow<Int>
+
+    @Query("DELETE FROM pending_server_ops WHERE remoteId = :remoteId AND accountKey = :accountKey")
+    suspend fun remove(remoteId: String, accountKey: String)
 }
 
 @Dao

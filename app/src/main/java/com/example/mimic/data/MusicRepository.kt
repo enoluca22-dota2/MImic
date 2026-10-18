@@ -32,6 +32,7 @@ class MusicRepository(private val context: Context) {
             add(MediaStore.Audio.Media.ALBUM_ID)
             add(MediaStore.Audio.Media.DURATION)
             add(MediaStore.Audio.Media.DATE_ADDED)
+            add(MediaStore.Audio.Media.DISPLAY_NAME) // file name, for the missing-title fallback
             if (isQ) add(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME) // folder name
             if (isR) add(MediaStore.Audio.Media.GENRE) // genre, where available
         }.toTypedArray()
@@ -49,6 +50,7 @@ class MusicRepository(private val context: Context) {
             val albumIdCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val dateAddedCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val nameCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
             // These may be absent on older OS versions; -1 means "not present".
             val folderCol = if (isQ) c.getColumnIndex(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME) else -1
             val genreCol = if (isR) c.getColumnIndex(MediaStore.Audio.Media.GENRE) else -1
@@ -56,17 +58,22 @@ class MusicRepository(private val context: Context) {
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
                 val albumId = c.getLong(albumIdCol)
+                val artist = MetadataFallback.artist(c.getString(artistCol))
                 songs += Song(
                     id = id,
-                    title = c.getString(titleCol) ?: "Unknown title",
-                    artist = c.getString(artistCol)?.takeIf { it != "<unknown>" } ?: "Unknown artist",
-                    album = c.getString(albumCol) ?: "Unknown album",
+                    title = MetadataFallback.title(c.getString(titleCol), c.getString(nameCol)),
+                    artist = artist,
+                    album = MetadataFallback.album(c.getString(albumCol)),
                     durationMs = c.getLong(durationCol),
                     uri = ContentUris.withAppendedId(collection, id).toString(),
                     albumArtUri = ContentUris.withAppendedId(albumArtBase, albumId).toString(),
                     dateAddedSec = c.getLong(dateAddedCol),
                     folder = folderCol.takeIf { it >= 0 }?.let { c.getString(it) } ?: "Unknown folder",
                     genre = genreCol.takeIf { it >= 0 }?.let { c.getString(it) },
+                    source = SongSource.LOCAL,
+                    // MediaStore's album id, not the title: two "Greatest Hits" stay two albums.
+                    albumKey = "local:album:$albumId",
+                    artistKey = MetadataFallback.artistKey(artist),
                 )
             }
         }

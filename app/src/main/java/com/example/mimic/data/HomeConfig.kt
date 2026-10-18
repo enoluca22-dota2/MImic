@@ -1,7 +1,20 @@
 package com.example.mimic.data
 
-/** Home carousels the user can reorder or hide. "All songs" is always shown. */
-enum class HomeSection { RECENTLY_PLAYED, MOST_PLAYED, FAVORITES, RECENTLY_ADDED, SUGGESTED }
+/**
+ * Home sections the user can reorder or hide. Declaration order is the default order (MImic 3.0
+ * dashboard). Names are persisted — never rename one; RECENTLY_PLAYED is "Continue Listening".
+ */
+enum class HomeSection(val label: String) {
+    RECENTLY_PLAYED("Continue Listening"),
+    DOWNLOADS("Downloaded Music"),
+    RECENTLY_ADDED("Recently Added"),
+    FAVORITES("Favorite Songs"),
+    FAVORITE_ARTISTS("Favorite Artists"),
+    PLAYLISTS("My Playlists"),
+    SMART_COLLECTIONS("Smart Collections"),
+    MOST_PLAYED("Jump Back In"),
+    SUGGESTED("Suggested For You"),
+}
 
 /**
  * Bottom navigation styles. AUTO (the default) follows the theme: glass themes get the floating
@@ -26,11 +39,25 @@ data class HomeConfig(
     val hidden: Set<HomeSection> = emptySet(),
     val navStyle: NavStyle = NavStyle.AUTO,
 ) {
-    /** Visible sections, in the user's chosen order; always complete and de-duplicated. */
-    fun visibleOrdered(): List<HomeSection> {
-        val ordered = (sectionOrder + HomeSection.entries).distinct()
-        return ordered.filter { it !in hidden }
+    /**
+     * The user's order, completed with any section they have never seen (e.g. added in a newer
+     * version): each missing section goes right after its nearest default-order predecessor that
+     * the user has, so a saved 2.x order gains "Downloaded Music" after "Continue Listening"
+     * instead of at the very bottom. Sections with no such predecessor are appended.
+     */
+    fun completeOrder(): List<HomeSection> {
+        val order = sectionOrder.distinct().toMutableList()
+        val defaults = HomeSection.entries
+        for ((i, section) in defaults.withIndex()) {
+            if (section in order) continue
+            val anchor = defaults.subList(0, i).lastOrNull { it in order }
+            if (anchor == null) order.add(section) else order.add(order.indexOf(anchor) + 1, section)
+        }
+        return order
     }
+
+    /** Visible sections, in the user's chosen order; always complete and de-duplicated. */
+    fun visibleOrdered(): List<HomeSection> = completeOrder().filter { it !in hidden }
 }
 
 /** Move a section one step up/down in the order (pure, unit-testable). */

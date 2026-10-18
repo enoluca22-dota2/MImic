@@ -59,6 +59,46 @@ data class DownloadEntity(
     val fileUri: String,
     val coverArtUri: String?,
     val downloadedAt: Long,
+    // ---- MImic 3.0 (v5); nullable/defaulted so rows from older versions stay valid ----
+    /** Server album id, so a download groups with the same album streamed from the server. */
+    val albumId: String? = null,
+    /** "user@server" that downloaded it (null = downloaded before 3.0). */
+    val accountKey: String? = null,
+    /** Verified size on disk when the download completed (0 = unknown, pre-3.0). */
+    val sizeBytes: Long = 0L,
+)
+
+/** A favorited album or artist (MImic 3.0). [groupKey] is the source-aware Song.albumKey / artistKey. */
+@Entity(tableName = "favorite_groups", primaryKeys = ["kind", "groupKey"])
+data class FavoriteGroupEntity(
+    val kind: String, // KIND_ALBUM / KIND_ARTIST
+    val groupKey: String,
+    val name: String,
+    val subtitle: String,
+    val addedAt: Long,
+) {
+    companion object {
+        const val KIND_ALBUM = "ALBUM"
+        const val KIND_ARTIST = "ARTIST"
+    }
+}
+
+/**
+ * A favorite change that still has to reach the server (star/unstar failed, e.g. offline). The
+ * latest intent per (song, account) wins; it is flushed when that account is connected again.
+ */
+@Entity(tableName = "pending_server_ops", primaryKeys = ["remoteId", "accountKey"])
+data class PendingStarEntity(
+    val remoteId: String,
+    val accountKey: String,
+    val star: Boolean,
+    val createdAt: Long,
+)
+
+/** Last time each song was played (projection). */
+data class LastPlayed(
+    val songId: Long,
+    val playedAt: Long,
 )
 
 /** A user-created/edited theme. Built-in presets live in code; these are editable. */

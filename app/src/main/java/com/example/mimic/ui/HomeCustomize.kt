@@ -31,9 +31,6 @@ import com.example.mimic.data.NavStyle
 import com.example.mimic.data.movedBy
 import com.example.mimic.player.PlayerViewModel
 
-private fun HomeSection.label() = name.split("_")
-    .joinToString(" ") { it.lowercase().replaceFirstChar { c -> c.uppercase() } }
-
 @Composable
 fun HomeCustomizeScreen(vm: PlayerViewModel, onBack: () -> Unit) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -79,7 +76,7 @@ fun HomeCustomizeScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 8.dp),
         )
 
-        val order = config.sectionOrder.distinct().let { it + HomeSection.entries.filter { s -> s !in it } }
+        val order = config.completeOrder()
         order.forEachIndexed { index, section ->
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
@@ -93,7 +90,7 @@ fun HomeCustomizeScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                     },
                 )
                 Spacer(Modifier.width(12.dp))
-                Text(section.label(), Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
+                Text(section.label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
                 IconButton(
                     onClick = { vm.setHomeConfig(config.copy(sectionOrder = order.movedBy(section, -1))) },
                     enabled = index > 0,

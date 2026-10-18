@@ -1,5 +1,52 @@
 # Changelog
 
+## 3.0 — Music app restructure: one-tap Home, downloads on Home, organized library, real glass
+- **Fixed: Home needed several Back presses** (Settings → Account → Server Library → Home). Root
+  cause: every tab tap used `popUpTo(start){saveState}` + `restoreState`; Settings sub-screens were
+  pushed on top of Home, and a non-inclusive popUpTo(home) files them under Home's own id, so tapping
+  Home *restored* them. New `ui/navigation/TopLevelNavigation` (pure, unit-tested): Home and Settings
+  always open at their root; Search/Library restore their own stack; re-tapping a tab pops to its
+  root; `launchSingleTop` everywhere. The server album is now a real route (`serveralbum/{id}`), and
+  folder/genre/smart sub-lists handle system Back.
+- **Four primary destinations**: Home · Search · Library · Settings (Settings is a tab; Theme Studio
+  and Account live under it). Pushed screens keep their tab highlighted.
+- **Unified library** (`UnifiedLibrary`, single source of truth): on-device + server catalog
+  (metadata via `search3`, audio only on play/download) + downloads, one identity per recording — a
+  download *replaces* its streamed entry, on-device files are never merged with server tracks.
+  Source filters **All / On device / Server / Downloaded** on Home, Search and Library.
+- **Home dashboard**: Continue Listening (real history + now-playing resume card), Downloaded Music,
+  Recently Added (with source), Favorite Songs, Favorite Artists, My Playlists, Smart Collections,
+  plus the existing Jump Back In / Suggested. Honest empty states; the existing reorder/hide
+  customization is kept and a saved 2.x order gains the new sections at their default positions.
+- **Downloads appear on Home immediately**: the downloads table is observed as a Flow; a download is
+  recorded only after the file is complete (`.part` → size check vs Content-Length → readable →
+  rename). Artwork is saved locally for offline. Offline copies are preferred for playback; a
+  missing file shows a recoverable state (streams if the server is reachable, re-download in ⋮).
+  "Remove download" deletes only the local copy. Album "Download" is user-initiated only.
+- **Library**: Songs (sort by name / artist / album / recently added / recently played), Albums
+  (2-column grid, source-aware album ids — equal titles are never merged), Artists, Playlists,
+  Favorites (songs / albums / artists), Downloads (all / by album / by artist), plus Genres,
+  Folders and Smart Collections. **Album pages** (header, Play all, Shuffle, ♡, Download album) and
+  **Artist pages** (albums, all songs, Play all, Shuffle, ♡). Grouping runs off the main thread.
+- **Readable song rows**: one shared `SongRow` — 52dp art, titles wrap to two lines (min Medium
+  weight), "artist · album", source icon (downloaded / server / missing), tappable ♡, ⋮; ≥48dp
+  targets; follows font scaling. Missing-tag policy (`MetadataFallback`): real tags → file name →
+  "Unknown Artist/Album"; "<unknown>"/"[Unknown Album]" placeholders normalized; tags never rewritten.
+- **Favorites**: Room-first (Home/Library update instantly); server tracks are also starred on
+  Navidrome; failures (offline) are queued per account in `pending_server_ops` and flushed on
+  reconnect; server stars are imported additively. Favorite albums & artists (`favorite_groups`).
+- **Liquid Glass is actually transparent now**: 2.9's readability floor forced ≥25–92% tint and the
+  presets used 42–64% tint over 24–30dp blur, so glass looked like solid cards. New tuning — Clear
+  (12% tint, 4dp blur, full lens), Frosted (30%, 20dp), Dark (36% dark tint, 8dp), MImic flagship
+  (20%, 10dp); floor capped at 20%. Balanced keeps the lens shader. Sub-screens now scroll *under*
+  the floating bars so there is real content behind the glass. Performance = tinted see-through
+  (84%, no shaders). Theme Studio shows **"Rendering now: …"** — the mode really in use.
+- Lists/Home observe a tick-free `nowPlaying` flow (no 500 ms recomposition during playback).
+- Room **v4 → v5** (additive: 3 nullable/defaulted download columns + 2 tables), tested on a real v4
+  database. versionCode 16 / versionName 3.0; applicationId and signing unchanged.
+- Tests: 74 JVM unit tests (+21) and 10 instrumented tests (+2), all passing; emulator acceptance
+  scripts for navigation (14/14), player (15/15), downloads, offline and glass.
+
 ## 2.9 — MImic Liquid Glass + full Theme Studio customization
 Resumed from an interrupted session (laptop shutdown): the uncommitted `ThemeStyle` model, 14-preset
 registry and `GlassQuality` enum were recovered intact and finished, not rewritten.

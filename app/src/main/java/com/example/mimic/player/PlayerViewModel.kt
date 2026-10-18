@@ -18,12 +18,8 @@ import com.example.mimic.data.server.RemoteSong
 import com.example.mimic.data.server.ServerCredentials
 import com.example.mimic.data.server.ServerStatus
 import com.example.mimic.data.server.SubsonicClient
-import com.example.mimic.data.server.remoteStableId
 import com.example.mimic.data.toDefinition
 import com.example.mimic.data.toEntity
-import com.example.mimic.data.db.DownloadEntity
-import java.io.File
-import com.example.mimic.data.db.FavoriteEntity
 import com.example.mimic.data.db.PlaylistEntity
 import com.example.mimic.data.db.PlaylistSongEntity
 import com.google.common.util.concurrent.ListenableFuture
@@ -39,11 +35,22 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+
+data class NowPlaying(val song: Song?, val isPlaying: Boolean)
+
+/** Loading state of the server song catalog. */
+sealed interface CatalogState {
+    data object Idle : CatalogState
+    data object Loading : CatalogState
+    data class Loaded(val count: Int) : CatalogState
+    data class Error(val message: String) : CatalogState
+}
 
 data class PlayerUiState(
     val currentSong: Song? = null,
@@ -67,8 +74,35 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val playlistDao = container.playlistDao
     private val settingsRepo = container.settingsRepository
 
-    private val _songs = MutableStateFlow<List<Song>>(emptyList())
-    val songs: StateFlow<List<Song>> = _songs.asStateFlow()
+    private val downloadRepo = container.downloadRepository
+    private val favoritesRepo = container.favoritesRepository
+
+    /** On-device (MediaStore) songs only. */
+    private val _localSongs = MutableStateFlow<List<Song>>(emptyList())
+    val localSongs: StateFlow<List<Song>> = _localSongs.asStateFlow()
+
+    /** The signed-in server's song catalog (metadata only, streamed on play). */
+    private val _serverSongs = MutableStateFlow<List<Song>>(emptyList())
+    private var remoteById: Map<String, RemoteSong> = emptyMap()
+
+    private val _catalogState = MutableStateFlow<CatalogState>(CatalogState.Idle)
+    val catalogState: StateFlow<CatalogState> = _catalogState.asStateFlow()
+
+    /** Offline downloads as songs (reactive: a finished download appears here immediately). */
+    val downloads: StateFlow<List<Song>> = downloadRepo.songs
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * THE library: on-device + server + downloaded songs merged into one list with one identity
+     * per recording (MImic 3.0). Every screen — Home, Search, Library, album/artist pages, smart
+     * collections — derives from this single source of truth.
+     */
+    val songs: StateFlow<List<Song>> =
+        combine(_localSongs, _serverSongs, downloads) { local, server, dl ->
+            com.example.mimic.data.UnifiedLibrary.merge(local, server, dl)
+        }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
@@ -76,62 +110,90 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val _queue = MutableStateFlow<List<Song>>(emptyList())
     val queue: StateFlow<List<Song>> = _queue.asStateFlow()
 
+    /**
+     * Just the loaded song + play state, without the 500 ms position ticks. Lists and Home observe
+     * this instead of [uiState] so they don't recompose twice a second during playback.
+     */
+    val nowPlaying: StateFlow<NowPlaying> = _uiState
+        .map { NowPlaying(it.currentSong, it.isPlaying) }
+        .distinctUntilChanged()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, NowPlaying(null, false))
+
     private val _loading = MutableStateFlow(true)
     val loading: StateFlow<Boolean> = _loading.asStateFlow()
 
-    // ---- Derived library views, backed by Room + the scanned song list ----
+    // ---- Library browsing state (kept here so it survives navigation) ----
 
-    val favoriteIds: StateFlow<Set<Long>> = favoriteDao.favoriteIds()
+    val sourceFilter = MutableStateFlow(com.example.mimic.data.SourceFilter.ALL)
+    val songSort = MutableStateFlow(com.example.mimic.data.SongSort.NAME)
+
+    /** songId -> last played time, for "Recently played" sorting. */
+    val lastPlayed: StateFlow<Map<Long, Long>> = historyDao.lastPlayedAll()
+        .map { rows -> rows.associate { it.songId to it.playedAt } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    // ---- Derived library views, backed by Room + the unified library ----
+
+    val favoriteIds: StateFlow<Set<Long>> = favoritesRepo.favoriteIds
         .map { it.toSet() }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     val favoriteSongs: StateFlow<List<Song>> =
-        combine(favoriteDao.favoriteIds(), _songs) { ids, songs ->
+        combine(favoritesRepo.favoriteIds, songs) { ids, songs ->
             val byId = songs.associateBy { it.id }
             ids.mapNotNull { byId[it] }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** Favorited albums / artists (MImic 3.0). */
+    val favoriteGroups: StateFlow<List<com.example.mimic.data.db.FavoriteGroupEntity>> = favoritesRepo.groups
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Server favorite changes still waiting to be sent (offline). */
+    val pendingFavoriteSyncs: StateFlow<Int> = favoritesRepo.pendingCount
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
+    /** Continue Listening: the user's real play history, newest first, across every source. */
     val recentlyPlayed: StateFlow<List<Song>> =
-        combine(historyDao.recentlyPlayedIds(20), _songs) { ids, songs ->
+        combine(historyDao.recentlyPlayedIds(20), songs) { ids, songs ->
             val byId = songs.associateBy { it.id }
             ids.mapNotNull { byId[it] }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val mostPlayed: StateFlow<List<Song>> =
-        combine(historyDao.mostPlayed(20), _songs) { counts, songs ->
+        combine(historyDao.mostPlayed(20), songs) { counts, songs ->
             val byId = songs.associateBy { it.id }
             counts.mapNotNull { byId[it.songId] }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    val recentlyAdded: StateFlow<List<Song>> = _songs
+    val recentlyAdded: StateFlow<List<Song>> = songs
         .map { com.example.mimic.data.LibraryQueries.recentlyAdded(it, 20) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** "Suggested": songs sharing an artist with the user's most-played, excluding those. */
     val suggested: StateFlow<List<Song>> =
-        combine(historyDao.mostPlayed(30), _songs) { counts, songs ->
+        combine(historyDao.mostPlayed(30), songs) { counts, songs ->
             com.example.mimic.data.LibraryQueries.suggested(songs, counts, 20)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     // ---- Smart collections (generated from local library + play history; no server) ----
 
     val neverPlayed: StateFlow<List<Song>> =
-        combine(historyDao.playedSongIds(), _songs) { playedIds, songs ->
+        combine(historyDao.playedSongIds(), songs) { playedIds, songs ->
             com.example.mimic.data.SmartCollections.neverPlayed(songs, playedIds.toSet(), 50)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val leastPlayed: StateFlow<List<Song>> =
-        combine(historyDao.leastPlayed(50), _songs) { counts, songs ->
+        combine(historyDao.leastPlayed(50), songs) { counts, songs ->
             com.example.mimic.data.SmartCollections.leastPlayed(songs, counts, 50)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val forgottenFavorites: StateFlow<List<Song>> =
-        combine(favoriteDao.favoriteIds(), historyDao.recentlyPlayedIds(30), _songs) { favs, recent, songs ->
+        combine(favoriteDao.favoriteIds(), historyDao.recentlyPlayedIds(30), songs) { favs, recent, songs ->
             com.example.mimic.data.SmartCollections.forgottenFavorites(songs, favs.toSet(), recent.toSet(), 50)
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** Reproducible for the calendar day so it doesn't reshuffle on every recomposition. */
-    val randomDiscovery: StateFlow<List<Song>> = _songs
+    val randomDiscovery: StateFlow<List<Song>> = songs
         .map { com.example.mimic.data.SmartCollections.randomDiscovery(it, daySeed(), 50) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -201,9 +263,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun loadLibrary() {
         viewModelScope.launch {
             _loading.value = true
-            val list = repository.loadSongs()
-            _songs.value = list
-            songsById = list.associateBy { it.id }
+            _localSongs.value = repository.loadSongs()
             _loading.value = false
         }
     }
@@ -212,13 +272,26 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun play(queue: List<Song>, index: Int) {
         val c = controller ?: return
-        // Remote/downloaded songs aren't in the scanned library, so register them for
-        // current-song/queue resolution.
-        songsById = songsById + queue.associateBy { it.id }
+        if (queue.isEmpty()) return
+        // Prefer the offline copy of any server track that has a verified download.
+        val resolved = queue.map(::preferOffline)
+        songsById = songsById + resolved.associateBy { it.id }
         _uiState.update { it.copy(playbackError = null) }
-        c.setMediaItems(queue.map { it.toMediaItem() }, index, 0L)
+        c.setMediaItems(resolved.map { it.toMediaItem() }, index.coerceIn(0, resolved.size - 1), 0L)
         c.prepare()
         c.play()
+    }
+
+    /** Shuffle-play a list (album / artist "Shuffle" buttons). */
+    fun shufflePlay(queue: List<Song>) {
+        if (queue.isEmpty()) return
+        play(queue.shuffled(), 0)
+        controller?.shuffleModeEnabled = false // already shuffled; keep Next/Previous predictable
+    }
+
+    private fun preferOffline(song: Song): Song {
+        val lib = libraryById[song.id] ?: return song
+        return if (lib.isDownloaded && !lib.fileMissing) lib else song
     }
 
     fun togglePlayPause() {
@@ -261,12 +334,18 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Queue editing ----
 
-    fun addToQueue(song: Song) = controller?.addMediaItem(song.toMediaItem())
+    fun addToQueue(song: Song) {
+        val s = preferOffline(song)
+        songsById = songsById + (s.id to s)
+        controller?.addMediaItem(s.toMediaItem())
+    }
 
     fun playNext(song: Song) {
         val c = controller ?: return
+        val s = preferOffline(song)
+        songsById = songsById + (s.id to s)
         val insertAt = (c.currentMediaItemIndex + 1).coerceAtMost(c.mediaItemCount)
-        c.addMediaItem(insertAt, song.toMediaItem())
+        c.addMediaItem(insertAt, s.toMediaItem())
     }
 
     fun removeFromQueue(index: Int) = controller?.removeMediaItem(index)
@@ -274,13 +353,28 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Favorites ----
 
+    /** Heart a song. Room updates first (Home/Library react at once); server tracks also star. */
     fun toggleFavorite(song: Song) {
         viewModelScope.launch {
-            if (favoriteDao.isFavorite(song.id)) {
-                favoriteDao.remove(song.id)
-            } else {
-                favoriteDao.add(FavoriteEntity(song.id, System.currentTimeMillis()))
-            }
+            val account = serverCredentials.value?.let { SubsonicClient.accountKeyOf(it) }
+            favoritesRepo.toggleSong(song, serverClient, account)
+        }
+    }
+
+    fun toggleFavoriteAlbum(album: com.example.mimic.data.AlbumGroup) {
+        viewModelScope.launch {
+            favoritesRepo.toggleGroup(
+                com.example.mimic.data.db.FavoriteGroupEntity.KIND_ALBUM, album.key, album.title, album.artist,
+            )
+        }
+    }
+
+    fun toggleFavoriteArtist(artist: com.example.mimic.data.ArtistGroup) {
+        viewModelScope.launch {
+            favoritesRepo.toggleGroup(
+                com.example.mimic.data.db.FavoriteGroupEntity.KIND_ARTIST, artist.key, artist.name,
+                "${artist.songs.size} songs",
+            )
         }
     }
 
@@ -323,7 +417,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Songs in a playlist, in saved order, as a live Flow mapped to full [Song]s. */
     fun songsInPlaylist(playlistId: Long): Flow<List<Song>> =
-        combine(playlistDao.songIdsIn(playlistId), _songs) { ids, songs ->
+        combine(playlistDao.songIdsIn(playlistId), songs) { ids, songs ->
             val byId = songs.associateBy { it.id }
             ids.mapNotNull { byId[it] }
         }
@@ -345,7 +439,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Music server (Navidrome / Subsonic) ----
 
     private val serverCredsRepo = container.serverCredentialsRepository
-    private val downloadDao = container.downloadDao
 
     private val _serverStatus = MutableStateFlow<ServerStatus>(ServerStatus.Disconnected)
     val serverStatus: StateFlow<ServerStatus> = _serverStatus.asStateFlow()
@@ -363,23 +456,27 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val lastServerUrl: StateFlow<String?> = serverCredsRepo.lastServerUrl
         .stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
-    /** Downloaded tracks as playable (offline, file-backed) [Song]s. */
-    val downloads: StateFlow<List<Song>> = downloadDao.all()
-        .map { list ->
-            list.map {
-                Song(
-                    id = remoteStableId(it.remoteId),
-                    title = it.title, artist = it.artist, album = it.album,
-                    durationMs = it.durationMs, uri = it.fileUri, albumArtUri = it.coverArtUri,
-                    dateAddedSec = it.downloadedAt / 1000, folder = "Downloads",
-                )
-            }
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** Server track ids currently downloading — every screen shows the same progress state. */
+    private val _downloading = MutableStateFlow<Set<String>>(emptySet())
+    val downloading: StateFlow<Set<String>> = _downloading.asStateFlow()
+
+    /** One-shot user messages (download finished / failed). */
+    private val _messages = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 8)
+    val messages: kotlinx.coroutines.flow.SharedFlow<String> = _messages
 
     private var serverClient: SubsonicClient? = null
+    private var libraryById: Map<Long, Song> = emptyMap()
 
     init {
+        // Keep the player's id -> Song lookup in step with the unified library, so the current
+        // song / queue resolve for downloaded and server tracks as well as on-device files.
+        viewModelScope.launch {
+            songs.collect { lib ->
+                libraryById = lib.associateBy { it.id }
+                songsById = songsById + libraryById
+                controller?.let { syncFromPlayer(it); rebuildQueue(it) }
+            }
+        }
         // Encrypt any legacy plaintext password left by an older install (safe no-op otherwise).
         viewModelScope.launch { serverCredsRepo.migratePlaintextIfNeeded() }
         // Rebuild the client from saved credentials so the server survives app restarts —
@@ -390,6 +487,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 if (creds != null && stay && serverClient == null) {
                     serverClient = SubsonicClient(creds)
                     _serverStatus.value = ServerStatus.Connected
+                    onServerSession()
                 }
             }
         }
@@ -416,8 +514,40 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     serverCredsRepo.save(creds, staySignedIn)
                     _serverStatus.value = ServerStatus.Connected
                     loadRemoteAlbums()
+                    onServerSession()
                 },
                 onFailure = { _serverStatus.value = ServerStatus.Error(it.message ?: "Connection failed") },
+            )
+        }
+    }
+
+    /**
+     * A server session started (sign-in or restored on launch): load the song catalog in the
+     * background and sync favorites. Never blocks the UI; failures (offline) leave the on-device
+     * and downloaded music fully usable.
+     */
+    private fun onServerSession() {
+        refreshServerCatalog()
+        val client = serverClient ?: return
+        viewModelScope.launch { favoritesRepo.syncWithServer(client) }
+    }
+
+    /** (Re)load the server's song metadata. Audio is never downloaded by this. */
+    fun refreshServerCatalog() {
+        val client = serverClient ?: return
+        if (_catalogState.value == CatalogState.Loading) return
+        viewModelScope.launch {
+            _catalogState.value = CatalogState.Loading
+            client.allSongs().fold(
+                onSuccess = { remote ->
+                    if (serverClient !== client) return@fold // signed out meanwhile
+                    remoteById = remote.associateBy { it.id }
+                    _serverSongs.value = remote.map { client.toPlayableSong(it) }
+                    _catalogState.value = CatalogState.Loaded(remote.size)
+                },
+                onFailure = {
+                    _catalogState.value = CatalogState.Error(it.message ?: "Could not load the server library")
+                },
             )
         }
     }
@@ -426,11 +556,18 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { serverCredsRepo.setStaySignedIn(value) }
     }
 
-    /** Full sign-out: forget the account entirely. Local (on-device) playback keeps working. */
+    private fun clearServerSession() {
+        serverClient = null
+        _remoteAlbums.value = emptyList()
+        _serverSongs.value = emptyList()
+        remoteById = emptyMap()
+        _catalogState.value = CatalogState.Idle
+    }
+
+    /** Full sign-out: forget the account entirely. Local (on-device) playback and downloads keep working. */
     fun disconnectServer() {
         viewModelScope.launch {
-            serverClient = null
-            _remoteAlbums.value = emptyList()
+            clearServerSession()
             serverCredsRepo.clear()
             _serverStatus.value = ServerStatus.Disconnected
         }
@@ -439,8 +576,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     /** Switch account: sign out of the current user but keep the server address prefilled. */
     fun switchAccount() {
         viewModelScope.launch {
-            serverClient = null
-            _remoteAlbums.value = emptyList()
+            clearServerSession()
             serverCredsRepo.signOutKeepServer()
             _serverStatus.value = ServerStatus.Disconnected
         }
@@ -459,36 +595,64 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun remoteCoverUrl(coverArtId: String?): String? = serverClient?.coverArtUrl(coverArtId)
 
-    /** Stream a remote album (converts to playable Songs whose uri streams from the server). */
+    /** Stream a remote album (converts to playable Songs; downloaded tracks play from the file). */
     fun playRemote(songs: List<RemoteSong>, index: Int) {
         val client = serverClient ?: return
         play(songs.map { client.toPlayableSong(it) }, index)
     }
 
-    suspend fun isDownloaded(remoteId: String): Boolean = downloadDao.isDownloaded(remoteId)
+    /** Download a server track (from the server browser) for offline playback. */
+    fun downloadRemote(song: RemoteSong) {
+        remoteById = remoteById + (song.id to song)
+        startDownload(song)
+    }
 
-    /** Download a remote track to app storage for offline playback. */
-    fun downloadRemote(song: RemoteSong, onResult: (Boolean) -> Unit) {
-        val client = serverClient ?: return onResult(false)
-        viewModelScope.launch {
-            val dir = File(getApplication<Application>().filesDir, "downloads")
-            val ext = song.suffix?.takeIf { it.isNotBlank() } ?: "mp3"
-            val target = File(dir, "${song.id}.$ext")
-            client.download(song, target).fold(
-                onSuccess = {
-                    downloadDao.upsert(
-                        DownloadEntity(
-                            remoteId = song.id, title = song.title, artist = song.artist,
-                            album = song.album, durationMs = song.durationMs,
-                            fileUri = android.net.Uri.fromFile(target).toString(),
-                            coverArtUri = client.coverArtUrl(song.coverArtId),
-                            downloadedAt = System.currentTimeMillis(),
-                        ),
-                    )
-                    onResult(true)
-                },
-                onFailure = { onResult(false) },
+    /** Download a library song that comes from the server. No-op for on-device songs. */
+    fun downloadSong(song: Song) {
+        val remote = song.remoteId?.let { remoteById[it] }
+        if (remote == null) {
+            _messages.tryEmit("Connect to your server to download \"${song.title}\"")
+            return
+        }
+        startDownload(remote)
+    }
+
+    /** User-initiated "Download album": downloads the listed server tracks one at a time. */
+    fun downloadAll(list: List<Song>) {
+        val todo = list.filter { it.isFromServer && (!it.isDownloaded || it.fileMissing) }
+            .mapNotNull { s -> s.remoteId?.let { remoteById[it] } }
+        if (todo.isEmpty()) {
+            _messages.tryEmit("Nothing to download")
+            return
+        }
+        _messages.tryEmit("Downloading ${todo.size} songs…")
+        viewModelScope.launch { for (r in todo) download(r, announce = false) }
+    }
+
+    private fun startDownload(remote: RemoteSong) {
+        viewModelScope.launch { download(remote, announce = true) }
+    }
+
+    private suspend fun download(remote: RemoteSong, announce: Boolean) {
+        val client = serverClient ?: run { _messages.tryEmit("Not connected to your server"); return }
+        if (remote.id in _downloading.value) return
+        _downloading.update { it + remote.id }
+        try {
+            downloadRepo.download(client, remote).fold(
+                onSuccess = { if (announce) _messages.tryEmit("Downloaded \"${remote.title}\"") },
+                onFailure = { _messages.tryEmit("Download failed: ${it.message ?: "unknown error"}") },
             )
+        } finally {
+            _downloading.update { it - remote.id }
+        }
+    }
+
+    /** Delete the offline copy only; the song stays on the server. */
+    fun removeDownload(song: Song) {
+        val remoteId = song.remoteId ?: return
+        viewModelScope.launch {
+            downloadRepo.remove(remoteId)
+            _messages.tryEmit("Removed download (still on your server)")
         }
     }
 

@@ -136,27 +136,36 @@ fun ThemeColors.toColorScheme(): ColorScheme {
  */
 object ThemeRegistry {
 
+    // MImic 3.0 glass tuning: light tint + light blur + strong lens, so the content behind the
+    // nav / mini-player stays visible. (2.9 used 42-64% tint over 24-30dp blur => solid-looking.)
+
+    /** Clear: barely tinted, barely blurred — the content behind is plainly visible, bent at the rim. */
     private val GLASS_CLEAR = ThemeStyle(
-        glass = true, glassOpacity = 0.42f, blurRadius = 28, refraction = 0.6f, edgeHighlight = 0.8f,
-        cornerRadius = 26, controlShape = ControlShape.CAPSULE, gradientBackground = true,
+        glass = true, glassOpacity = 0.12f, blurRadius = 4, refraction = 1f, edgeHighlight = 0.9f,
+        shadow = 0.35f, cornerRadius = 26, controlShape = ControlShape.CAPSULE, gradientBackground = true,
         gradientColor = 0xFFCFE0F7, pillNav = true, animationScale = 1.15f, headerWeight = 800,
-        glassTone = GlassTone.LIGHT,
+        glassTone = GlassTone.LIGHT, titleWeight = 500,
     )
+
+    /** Frosted: noticeably blurred content behind, medium translucency. */
     private val GLASS_FROSTED = ThemeStyle(
-        glass = true, glassOpacity = 0.64f, blurRadius = 24, refraction = 0.35f, edgeHighlight = 0.6f,
+        glass = true, glassOpacity = 0.3f, blurRadius = 20, refraction = 0.45f, edgeHighlight = 0.6f,
         cornerRadius = 24, controlShape = ControlShape.SQUIRCLE, gradientBackground = true,
-        gradientColor = 0xFF1C2A3A, pillNav = true, animationScale = 1.1f,
+        gradientColor = 0xFF1C2A3A, pillNav = true, animationScale = 1.1f, titleWeight = 500,
     )
+
+    /** Dark: a smoky dark tint that still lets the colors behind glow through. */
     private val GLASS_DARK = ThemeStyle(
-        glass = true, glassOpacity = 0.5f, blurRadius = 26, refraction = 0.55f, edgeHighlight = 0.7f,
+        glass = true, glassOpacity = 0.36f, blurRadius = 8, refraction = 0.75f, edgeHighlight = 0.7f,
         cornerRadius = 24, controlShape = ControlShape.CAPSULE, gradientBackground = true,
         gradientColor = 0xFF0E1E33, pillNav = true, animationScale = 1.1f, glassTone = GlassTone.DARK,
+        titleWeight = 500,
     )
 
     /** The MImic flagship: dark liquid glass that re-tints itself from the playing album. */
     private val GLASS_MIMIC = ThemeStyle(
-        glass = true, glassOpacity = 0.52f, blurRadius = 30, refraction = 0.7f, edgeHighlight = 0.75f,
-        shadow = 0.6f, cornerRadius = 26, navCornerRadius = 32, controlShape = ControlShape.SQUIRCLE,
+        glass = true, glassOpacity = 0.2f, blurRadius = 10, refraction = 0.85f, edgeHighlight = 0.8f,
+        shadow = 0.55f, cornerRadius = 26, navCornerRadius = 32, controlShape = ControlShape.SQUIRCLE,
         gradientBackground = true, albumAdaptive = true, pillNav = true, animationScale = 1.15f,
         headerWeight = 800, titleWeight = 500,
     )

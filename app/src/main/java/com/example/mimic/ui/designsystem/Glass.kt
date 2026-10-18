@@ -101,13 +101,41 @@ fun glassTint(env: GlassEnv = LocalGlass.current): Color = when {
     else -> MaterialTheme.colorScheme.surface
 }
 
+/** What a glass surface is actually rendering right now — shown to the user, never hidden. */
+enum class GlassRenderMode(val label: String) {
+    LIVE_LENS("Live blur + lens refraction"),
+    LIVE_BLUR("Live blur (lens needs Android 13+)"),
+    TINTED("Tinted translucency, no blur"),
+    OPAQUE("Off — solid surfaces"),
+}
+
+/** The mode [glassSurface] will use for [env] with or without a live backdrop. Pure. */
+fun glassRenderMode(env: GlassEnv, hasBackdrop: Boolean, sdk: Int = Build.VERSION.SDK_INT): GlassRenderMode = when {
+    !env.enabled -> GlassRenderMode.OPAQUE
+    !hasBackdrop || env.quality.blurFactor == 0f || sdk < Build.VERSION_CODES.S -> GlassRenderMode.TINTED
+    env.quality.allowsRefraction && env.style.refraction > 0f && sdk >= Build.VERSION_CODES.TIRAMISU -> GlassRenderMode.LIVE_LENS
+    else -> GlassRenderMode.LIVE_BLUR
+}
+
 /**
- * A Liquid Glass panel. Picks the best renderer the device and the quality mode allow:
+ * Minimum tint alpha that keeps text on a glass panel legible, given how strongly the content
+ * behind is blurred (dp). Clear glass needs a little blur *or* a little tint — not a near-opaque
+ * slab. 2.9 used 0.92 -> 0.25 here, which is why its "clear" glass looked like solid dark cards.
+ * Pure + JVM-tested.
+ */
+fun glassReadabilityFloor(effectiveBlurDp: Float): Float =
+    (0.08f + 0.02f * (6f - effectiveBlurDp).coerceAtLeast(0f)).coerceIn(0.08f, 0.2f)
+
+/**
+ * A Liquid Glass panel (MImic 3.0 rework). Picks the best renderer the device and quality allow:
  *
- *  - HIGH/BALANCED on API 31+ with a live [backdrop]: real backdrop blur + vibrancy, plus lens
- *    refraction on API 33+ at HIGH, rim highlight and soft shadow (Kyant Backdrop).
- *  - PERFORMANCE, older devices, or no live backdrop: a denser translucent tint with a gradient
- *    rim — no shaders, no blur, no per-frame work.
+ *  - HIGH / BALANCED on API 31+ with a live [backdrop]: the content *behind* the panel (the
+ *    scrolling list, artwork, the theme gradient) is captured and drawn through it with vibrancy,
+ *    blur, and on API 33+ lens refraction at the edges, plus a rim highlight and soft shadow
+ *    (Kyant Backdrop, the engine behind AndroidLiquidGlass). Only a light tint goes on top, so the
+ *    content stays visible — that is what makes it glass rather than a dark rounded card.
+ *  - PERFORMANCE, older devices, or no live backdrop: a translucent tint with a gradient rim — no
+ *    shaders, no blur, no per-frame work. Content shows through, unblurred.
  *  - Glass disabled (OFF or a flat theme): the plain opaque [fallback] surface (pre-2.9 look).
  *
  * The panel never intercepts touches by itself and draws nothing outside [shape], so it cannot
@@ -129,18 +157,14 @@ fun Modifier.glassSurface(
     val baseTint = tint ?: glassTint(env)
     val opacity = (style.glassOpacity + opacityBoost).coerceIn(0f, 1f)
     val rim = Color.White
-    val blurPx = with(LocalDensity.current) { (style.blurRadius * env.quality.blurFactor).dp.toPx() }
-    val canBlur = backdrop != null && blurPx > 0.5f && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
+    val effectiveBlurDp = style.blurRadius * env.quality.blurFactor
+    val blurPx = with(LocalDensity.current) { effectiveBlurDp.dp.toPx() }
+    val mode = glassRenderMode(env, backdrop != null)
 
-    if (canBlur) {
-        // Readability floor: a clear panel is only legible when the content behind it is blurred
-        // enough. Strong blur (>=16dp effective) may go down to 25% tint; no blur keeps 92%.
-        val effectiveBlurDp = style.blurRadius * env.quality.blurFactor
-        val floor = 0.92f - 0.67f * (effectiveBlurDp / 16f).coerceIn(0f, 1f)
-        val readableOpacity = opacity.coerceAtLeast(floor)
-        val lensOn = env.quality.allowsRefraction && style.refraction > 0f &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU
-        val refraction = style.refraction
+    if (mode == GlassRenderMode.LIVE_LENS || mode == GlassRenderMode.LIVE_BLUR) {
+        val readableOpacity = opacity.coerceAtLeast(glassReadabilityFloor(effectiveBlurDp))
+        val lensOn = mode == GlassRenderMode.LIVE_LENS
+        val refraction = style.refraction * env.quality.refractionFactor
         val edge = style.edgeHighlight
         val shadowAlpha = style.shadow
         return this.drawBackdrop(
@@ -148,11 +172,11 @@ fun Modifier.glassSurface(
             shape = { shape },
             effects = {
                 vibrancy()
-                blur(blurPx)
+                if (blurPx > 0.5f) blur(blurPx)
                 if (lensOn) {
                     lens(
-                        refractionHeight = 14.dp.toPx() * refraction,
-                        refractionAmount = 28.dp.toPx() * refraction,
+                        refractionHeight = 16.dp.toPx() * refraction,
+                        refractionAmount = 32.dp.toPx() * refraction,
                         depthEffect = refraction > 0.5f,
                     )
                 }
@@ -163,9 +187,10 @@ fun Modifier.glassSurface(
         ).clip(shape)
     }
 
-    // Translucent fallback: no live blur, so content behind would show through sharply — keep the
-    // tint dense enough that text on the panel always stays readable.
-    val fallbackAlpha = opacity.coerceAtLeast(0.92f)
+    // Tinted translucency: no live blur, so what's behind shows through *sharply* and would fight
+    // the labels on the panel (verified on-device: at 62% list text bled through the nav labels).
+    // 84% keeps the labels clean while colors and shapes behind still tint the panel.
+    val fallbackAlpha = opacity.coerceIn(0.84f, 0.9f)
     val shadowDp = (10f * style.shadow).dp
     return this
         .then(if (style.shadow > 0f) Modifier.shadow(shadowDp, shape, clip = false) else Modifier)

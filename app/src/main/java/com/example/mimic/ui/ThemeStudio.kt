@@ -225,14 +225,24 @@ private fun GlassQualityPicker(current: GlassQuality, onPick: (GlassQuality) -> 
         }
         Text(
             when (current) {
-                GlassQuality.HIGH -> "Live blur + light refraction (refraction needs Android 13+)."
-                GlassQuality.BALANCED -> "Live blur at lower strength, no refraction. Recommended."
-                GlassQuality.PERFORMANCE -> "Frosted translucent panels without live blur. Lightest on battery."
+                GlassQuality.HIGH -> "Full live blur + lens refraction (refraction needs Android 13+, blur Android 12+)."
+                GlassQuality.BALANCED -> "Live blur + lens refraction, slightly lighter. Recommended."
+                GlassQuality.PERFORMANCE -> "Tinted see-through panels without live blur or shaders. Lightest on battery."
                 GlassQuality.OFF -> "Glass themes use plain opaque surfaces."
             },
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        // Honest status: exactly what the navigation bar / mini-player draw on THIS device now.
+        val env = com.example.mimic.ui.designsystem.LocalGlass.current
+        val mode = if (!env.style.glass) null else com.example.mimic.ui.designsystem.glassRenderMode(env, hasBackdrop = true)
+        Text(
+            if (mode == null) "Rendering now: the active theme is not a glass theme." else "Rendering now: ${mode.label}.",
+            style = MaterialTheme.typography.bodySmall,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.padding(horizontal = 16.dp, vertical = 2.dp),
         )
     }
 }
