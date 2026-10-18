@@ -18,6 +18,13 @@ Git Bash:
 MIMIC_MUSIC_DIR="/c/Users/Eno/Music" docker compose up -d
 ```
 
+**Recommended (survives reboots):** instead of an env var that only lasts for one shell, put the
+path in `server/.env` (gitignored) so `docker compose` always uses it:
+```
+MIMIC_MUSIC_DIR=C:/Users/Eno/Music
+```
+Then just `docker compose up -d`. The music mount is always read-only (`:ro`).
+
 First run downloads the image and scans your library (a few minutes for large collections).
 
 ## 2. Create the admin account
@@ -51,6 +58,10 @@ password, tap **Test connection**, then **Connect**.
   not open the port to the public internet.)
 - Empty library: check `MIMIC_MUSIC_DIR` really points at audio files and re-run
   `docker compose up -d`.
+- **Catalog shows songs but playback fails ("no such file"):** the files were moved/renamed after
+  the last scan, so the database points at paths that no longer exist. Fix: set `MIMIC_MUSIC_DIR`
+  to where the files actually are now, `docker compose up -d`, then full-rescan
+  (Navidrome web UI → rescan, or `startScan.view?...&fullScan=true`).
 - The laptop must be **running and awake** for the phone to stream or download.
 
 ## Status (honest)

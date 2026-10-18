@@ -22,3 +22,5 @@ keystore.properties
 # Local server admin credentials for testing — never commit
 server/navi-creds.txt
 server/navidrome-data/
+# Machine-specific music path (points MIMIC_MUSIC_DIR at your local music folder)
+server/.env
