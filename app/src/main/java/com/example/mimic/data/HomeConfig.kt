@@ -5,15 +5,17 @@ package com.example.mimic.data
  * dashboard). Names are persisted — never rename one; RECENTLY_PLAYED is "Continue Listening".
  */
 enum class HomeSection(val label: String) {
+    QUICK_ACCESS("Quick Access"), // MImic 3.2: compact grid of Liked Songs, Downloads, recent albums
     RECENTLY_PLAYED("Continue Listening"),
     DOWNLOADS("Downloaded Music"),
+    RECENT_SONGS("Recently Played"), // MImic 3.2: the play history (Continue Listening = albums)
     RECENTLY_ADDED("Recently Added"),
     FAVORITES("Favorite Songs"),
     FAVORITE_ARTISTS("Favorite Artists"),
     ALBUMS("Albums"), // MImic 3.1: newest albums from every source, cloud included
     PLAYLISTS("My Playlists"),
-    SMART_COLLECTIONS("Smart Collections"),
-    MOST_PLAYED("Jump Back In"),
+    SMART_COLLECTIONS("Smart Mixes"),
+    MOST_PLAYED("Most Played"),
     SUGGESTED("Suggested For You"),
 }
 
@@ -44,16 +46,19 @@ data class HomeConfig(
      * The user's order, completed with any section they have never seen (e.g. added in a newer
      * version): each missing section goes right after its nearest default-order predecessor that
      * the user has, so a saved 2.x order gains "Downloaded Music" after "Continue Listening"
-     * instead of at the very bottom. Sections with no such predecessor are appended.
+     * instead of at the very bottom. Sections with no such predecessor are appended — except a new
+     * *first* default section (3.2 Quick Access), which opens Home for upgraders too.
      */
     fun completeOrder(): List<HomeSection> {
         val order = sectionOrder.distinct().toMutableList()
         val defaults = HomeSection.entries
+        val leading = defaults.first().takeIf { it !in order }
         for ((i, section) in defaults.withIndex()) {
-            if (section in order) continue
+            if (section in order || section == leading) continue
             val anchor = defaults.subList(0, i).lastOrNull { it in order }
             if (anchor == null) order.add(section) else order.add(order.indexOf(anchor) + 1, section)
         }
+        if (leading != null) order.add(0, leading)
         return order
     }
 

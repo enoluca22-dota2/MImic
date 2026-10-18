@@ -20,6 +20,8 @@ class AppContainer(application: Application) {
     val musicRepository: MusicRepository = MusicRepository(application)
     val settingsRepository: SettingsRepository = SettingsRepository(application)
     val serverCredentialsRepository: ServerCredentialsRepository = ServerCredentialsRepository(application)
+    /** Last play queue + position (MImic 3.2), written by the player service, restored by the UI. */
+    val playbackStateStore: com.example.mimic.data.PlaybackStateStore = com.example.mimic.data.PlaybackStateStore(application)
 
     val favoriteDao get() = database.favoriteDao()
     val historyDao get() = database.historyDao()

@@ -96,7 +96,9 @@ fun SearchScreen(
             )
         }
     }
-    LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    com.example.mimic.ui.navigation.ScrollToTopOnReselect(com.example.mimic.ui.navigation.TopLevel.SEARCH, listState)
+    LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item(key = "title") { SectionHeader("Search") }
         item(key = "field") {
             // Pill-shaped search field; flat (no live glass) so typing/scrolling costs nothing extra.

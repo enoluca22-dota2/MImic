@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.windowInsetsTopHeight
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -72,13 +75,13 @@ import com.kyant.backdrop.backdrops.layerBackdrop
 import com.kyant.backdrop.backdrops.rememberLayerBackdrop
 
 @Composable
-private fun BottomBar(navController: NavHostController, navStyle: NavStyle) {
+private fun BottomBar(navController: NavHostController, navStyle: NavStyle, onReselect: (TopLevel) -> Unit) {
     // Recompose on every back-stack change; the owning tab is derived from the whole stack, so a
     // pushed screen (Album, Account, ...) keeps its tab highlighted.
     val entry by navController.currentBackStackEntryAsState()
     val routes = remember(entry) { navController.currentBackStack.value.map { it.destination.route } }
     val owner = TopLevelNavigation.owningTab(routes)
-    val goTo: (TopLevel) -> Unit = { TopLevelNavigation.navigate(navController, it) }
+    val goTo: (TopLevel) -> Unit = { tab -> TopLevelNavigation.navigate(navController, tab)?.let(onReselect) }
     val compact = navStyle == NavStyle.COMPACT
     if (navStyle == NavStyle.GLASS) {
         GlassNavBar(
@@ -141,6 +144,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
     val playlists by viewModel.playlists.collectAsStateWithLifecycle()
     val settings by viewModel.settings.collectAsStateWithLifecycle()
     val navController = rememberNavController()
+    val tabReselect = remember { kotlinx.coroutines.flow.MutableSharedFlow<TopLevel>(extraBufferCapacity = 1) }
     val glassEnv = LocalGlass.current
     val navStyle = settings.homeConfig.navStyle.resolve(
         themeWantsGlassNav = glassEnv.style.glass && glassEnv.style.pillNav,
@@ -174,6 +178,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
             openDownloads = { navController.navigate("downloads") },
             openFavorites = { navController.navigate("favorites") },
             openSmart = { navController.navigate("smartcollections") },
+            openMix = { navController.navigate("smartmix/${it.name}") },
             openBrowse = { navController.navigate("browse/${it.name}") },
             openServerBrowse = { navController.navigate("serverbrowse") },
             createPlaylist = { createDialog = true },
@@ -232,7 +237,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
         }
     }
 
-    CompositionLocalProvider(LocalGlassBackdrop provides if (liveGlass) backdrop else null) {
+    CompositionLocalProvider(
+        LocalGlassBackdrop provides if (liveGlass) backdrop else null,
+        com.example.mimic.ui.navigation.LocalTabReselect provides tabReselect,
+    ) {
     // While a full-screen overlay is up, the screen beneath is hidden from TalkBack too.
     val overlayOpen = (nowPlayingOpen && uiState.currentSong != null) || editingTheme != null
     Scaffold(
@@ -255,7 +263,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         error = uiState.playbackError,
                     )
                 }
-                BottomBar(navController, navStyle)
+                BottomBar(navController, navStyle, onReselect = { tabReselect.tryEmit(it) })
             }
         },
     ) { innerPadding ->
@@ -356,6 +364,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
             composable("smartcollections") {
                 InsetScreen(innerPadding) { SmartCollectionsScreen(viewModel, onBack = back, onSongMenu = onSongMenu, rowEnv = rowEnv) }
             }
+            composable("smartmix/{mix}") { entry ->
+                val mix = entry.arguments?.getString("mix")?.let { runCatching { SmartMix.valueOf(it) }.getOrNull() }
+                InsetScreen(innerPadding) { SmartCollectionsScreen(viewModel, onBack = back, onSongMenu = onSongMenu, rowEnv = rowEnv, initialMix = mix) }
+            }
             composable("browse/{type}") { entry ->
                 val type = entry.arguments?.getString("type")
                     ?.let { runCatching { BrowseType.valueOf(it) }.getOrNull() }
@@ -368,6 +380,15 @@ fun MimicApp(viewModel: PlayerViewModel) {
                 InsetScreen(innerPadding) { PlaylistDetailScreen(viewModel, id, name, onBack = back, onSongMenu = onSongMenu) }
             }
         }
+        // Status-bar scrim (3.2): content scrolls edge-to-edge, so without this, titles scrolled
+        // under the clock / battery icons collide with them.
+        val bg = MaterialTheme.colorScheme.background
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .windowInsetsTopHeight(androidx.compose.foundation.layout.WindowInsets.Companion.statusBars)
+                .background(Brush.verticalGradient(listOf(bg.copy(alpha = 0.92f), bg.copy(alpha = 0.7f)))),
+        )
         }
     }
     }

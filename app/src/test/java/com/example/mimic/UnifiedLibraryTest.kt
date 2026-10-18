@@ -139,6 +139,18 @@ class HomeOrderTest {
 
     @Test fun default_order_is_the_dashboard_order() {
         assertEquals(HomeSection.entries, HomeConfig().completeOrder())
-        assertEquals(HomeSection.DOWNLOADS, HomeConfig().visibleOrdered()[1])
+        assertEquals(HomeSection.DOWNLOADS, HomeConfig().visibleOrdered()[2])
+    }
+
+    @Test fun saved_3_1_order_gains_quick_access_on_top_and_recent_songs_after_downloads() {
+        val saved = listOf(
+            HomeSection.RECENTLY_PLAYED, HomeSection.DOWNLOADS, HomeSection.RECENTLY_ADDED, HomeSection.FAVORITES,
+            HomeSection.FAVORITE_ARTISTS, HomeSection.ALBUMS, HomeSection.PLAYLISTS, HomeSection.SMART_COLLECTIONS,
+            HomeSection.MOST_PLAYED, HomeSection.SUGGESTED,
+        )
+        val order = HomeConfig(sectionOrder = saved, hidden = setOf(HomeSection.ALBUMS)).completeOrder()
+        assertEquals(HomeSection.QUICK_ACCESS, order.first())
+        assertEquals(HomeSection.RECENT_SONGS, order[order.indexOf(HomeSection.DOWNLOADS) + 1])
+        assertEquals(saved, order.filter { it in saved })
     }
 }

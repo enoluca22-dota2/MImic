@@ -130,8 +130,10 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
     // Opening the library picks up songs uploaded to the cloud since the last check.
     androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshIfStale() }
 
+    val listState = androidx.compose.foundation.lazy.rememberLazyListState()
+    com.example.mimic.ui.navigation.ScrollToTopOnReselect(com.example.mimic.ui.navigation.TopLevel.LIBRARY, listState)
     RefreshableLibrary(vm, contentPadding) {
-    LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
+    LazyColumn(state = listState, contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item(key = "title") {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp)) {
                 Text(

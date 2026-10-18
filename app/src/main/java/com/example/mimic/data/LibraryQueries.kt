@@ -30,6 +30,25 @@ object LibraryQueries {
         return songs.filter { it.artist in likedArtists && it.id !in playedIds }.take(limit)
     }
 
+    /**
+     * Albums the user played recently, most recent first ("Continue Listening" / Quick Access).
+     * [recentIds] is the play history (distinct song ids, newest first); songs no longer in the
+     * library are skipped, and each album appears once, at its most recent play.
+     */
+    fun recentAlbums(recentIds: List<Long>, songs: List<Song>, limit: Int): List<AlbumGroup> {
+        val byId = songs.associateBy { it.id }
+        val keys = LinkedHashSet<String>()
+        for (id in recentIds) {
+            val song = byId[id] ?: continue
+            keys += song.albumKey
+            if (keys.size >= limit) break
+        }
+        if (keys.isEmpty()) return emptyList()
+        val members = songs.filter { it.albumKey in keys }
+        val groups = UnifiedLibrary.albums(members).associateBy { it.key }
+        return keys.mapNotNull { groups[it] }
+    }
+
     /** Move the item at [from] to [to], returning a new list (used by drag/up-down reorder). */
     fun <T> List<T>.moved(from: Int, to: Int): List<T> {
         if (from !in indices || to !in indices) return this

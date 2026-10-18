@@ -201,6 +201,31 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun daySeed(): Long = System.currentTimeMillis() / 86_400_000L
 
+    /** Albums played recently, newest first — Continue Listening and Quick Access (MImic 3.2). */
+    val recentAlbums: StateFlow<List<com.example.mimic.data.AlbumGroup>> =
+        combine(historyDao.recentlyPlayedIds(150), songs) { ids, songs ->
+            com.example.mimic.data.LibraryQueries.recentAlbums(ids, songs, 12)
+        }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    // ---- Smart Mixes (MImic 3.2): deterministic rules over the user's own library + history ----
+
+    val favoriteArtistsMix: StateFlow<List<Song>> =
+        combine(favoritesRepo.groups, favoritesRepo.favoriteIds, historyDao.recentlyPlayedIds(15), songs) { groups, favs, recent, songs ->
+            val artistKeys = groups.filter { it.kind == com.example.mimic.data.db.FavoriteGroupEntity.KIND_ARTIST }.map { it.groupKey }.toSet()
+            com.example.mimic.data.SmartCollections.favoriteArtistsMix(songs, artistKeys, favs.toSet(), recent, daySeed(), 50)
+        }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val shuffleDiscovery: StateFlow<List<Song>> =
+        combine(historyDao.mostPlayed(Int.MAX_VALUE), songs) { counts, songs ->
+            com.example.mimic.data.SmartCollections.shuffleDiscovery(songs, counts.associate { it.songId to it.count }, daySeed(), 50)
+        }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     val playlists: StateFlow<List<PlaylistEntity>> = playlistDao.playlists()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -215,8 +240,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private val listener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             // A new item started loading — clear any stale error from the previous track.
+            // (Plays are recorded by PlaybackService, which also sees plays with the UI closed.)
             _uiState.update { it.copy(playbackError = null) }
-            mediaItem?.mediaId?.toLongOrNull()?.let { recordPlay(it) }
         }
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -240,6 +265,11 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             }
             android.util.Log.w("MImic", "Playback error ${error.errorCodeName}", error)
             _uiState.update { it.copy(isBuffering = false, playbackError = reason) }
+            // The service skips an unplayable song when more follow; say which one and why, since
+            // the mini-player error clears as soon as the next song loads.
+            if (controller?.hasNextMediaItem() == true && current != null) {
+                _messages.tryEmit("Skipped \"${current.title}\": $reason")
+            }
         }
 
         override fun onEvents(player: Player, events: Player.Events) {
@@ -278,6 +308,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             syncFromPlayer(controller!!)
             rebuildQueue(controller!!)
             startPositionUpdates()
+            restoreQueueIfIdle()
         }, MoreExecutors.directExecutor())
     }
 
@@ -371,6 +402,24 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun removeFromQueue(index: Int) = controller?.removeMediaItem(index)
     fun moveInQueue(from: Int, to: Int) = controller?.moveMediaItem(from, to)
+
+    /** Clear Up Next: everything after the current song (the song itself keeps playing). */
+    fun clearUpcoming() {
+        val c = controller ?: return
+        val from = c.currentMediaItemIndex + 1
+        if (from < c.mediaItemCount) c.removeMediaItems(from, c.mediaItemCount)
+    }
+
+    /** Save the whole queue, in order, as a new playlist. */
+    fun saveQueueAsPlaylist(name: String) {
+        val ids = _queue.value.map { it.id }.distinct()
+        if (ids.isEmpty()) return
+        viewModelScope.launch {
+            val id = playlistDao.create(PlaylistEntity(name = name, createdAt = System.currentTimeMillis()))
+            ids.forEachIndexed { pos, songId -> playlistDao.insertMember(PlaylistSongEntity(id, songId, pos)) }
+            _messages.tryEmit("Saved ${ids.size} songs to \"$name\"")
+        }
+    }
 
     // ---- Favorites ----
 
@@ -959,14 +1008,29 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     // ---- Internals ----
 
-    private fun recordPlay(songId: Long) {
+    /**
+     * Cold start with an idle player: bring back the last queue, paused at the saved song and
+     * position (MImic 3.2). Waits briefly for the library to contain the saved song — server and
+     * cloud songs arrive a moment after on-device ones — then restores whatever resolves; songs
+     * that are gone (or unreachable and not downloaded) are skipped. Never interrupts playback the
+     * user already started.
+     */
+    private fun restoreQueueIfIdle() {
+        val c = controller ?: return
+        if (c.mediaItemCount > 0) return
         viewModelScope.launch {
-            historyDao.record(
-                com.example.mimic.data.db.PlayHistoryEntity(
-                    songId = songId,
-                    playedAt = System.currentTimeMillis(),
-                ),
-            )
+            val snap = container.playbackStateStore.read() ?: return@launch
+            val lib = kotlinx.coroutines.withTimeoutOrNull(8_000) {
+                songs.first { lib -> !_loading.value && lib.any { it.id == snap.currentId } }
+            } ?: songs.value
+            val byId = lib.associateBy { it.id }
+            val items = snap.ids.mapNotNull { byId[it] }.map(::preferOffline)
+            val (index, position) = snap.resumePoint(items.map { it.id }) ?: return@launch
+            val player = controller ?: return@launch
+            if (player.mediaItemCount > 0) return@launch // the user started something meanwhile
+            songsById = songsById + items.associateBy { it.id }
+            player.setMediaItems(items.map { it.toMediaItem() }, index, position)
+            player.prepare() // paused: the mini-player and Continue Listening show it, ready to resume
         }
     }
 

@@ -1,5 +1,11 @@
 package com.example.mimic.ui.navigation
 
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.staticCompositionLocalOf
+import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.SharedFlow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
@@ -8,6 +14,23 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+
+/** Re-taps of a tab while its root screen is showing (MImic 3.2): that screen scrolls to the top. */
+val LocalTabReselect = staticCompositionLocalOf<SharedFlow<TopLevel>> { MutableSharedFlow() }
+
+/** Scrolls [state] back to the top whenever [tab] is re-tapped on its root screen. */
+@Composable
+fun ScrollToTopOnReselect(tab: TopLevel, state: LazyListState) {
+    val events = LocalTabReselect.current
+    LaunchedEffect(events, state) {
+        events.collect {
+            if (it != tab) return@collect
+            // Jump most of the way first so a long list doesn't animate through every row.
+            if (state.firstVisibleItemIndex > 12) state.scrollToItem(6)
+            state.animateScrollToItem(0)
+        }
+    }
+}
 
 /** The four primary destinations (MImic 3.0). Everything else is pushed on top of one of them. */
 enum class TopLevel(
@@ -58,19 +81,25 @@ object TopLevelNavigation {
 
         /** Switch tabs, saving the current stack; [restore] brings back the target's saved stack. */
         data class SwitchTab(val tab: TopLevel, val restore: Boolean) : Plan
+
+        /** Already on [tab]'s root screen: nothing to navigate, the screen scrolls back to the top. */
+        data class ScrollToTop(val tab: TopLevel) : Plan
     }
 
     fun plan(target: TopLevel, backStackRoutes: List<String?>): Plan {
         val current = owningTab(backStackRoutes)
         return when {
+            current == target && backStackRoutes.lastOrNull() == target.route -> Plan.ScrollToTop(target)
             current == target -> Plan.PopToRoot(target)
             else -> Plan.SwitchTab(target, restore = target.restoresState)
         }
     }
 
-    fun navigate(navController: NavController, target: TopLevel) {
+    /** Applies the plan; returns the tab to scroll to the top when the user re-tapped its root. */
+    fun navigate(navController: NavController, target: TopLevel): TopLevel? {
         val routes = navController.currentBackStack.value.map { it.destination.route }
         when (val p = plan(target, routes)) {
+            is Plan.ScrollToTop -> return p.tab
             is Plan.PopToRoot -> {
                 if (!navController.popBackStack(p.tab.route, inclusive = false)) {
                     navController.navigate(p.tab.route) { launchSingleTop = true }
@@ -82,5 +111,6 @@ object TopLevelNavigation {
                 restoreState = p.restore
             }
         }
+        return null
     }
 }

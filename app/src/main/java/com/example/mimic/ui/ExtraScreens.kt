@@ -20,6 +20,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
@@ -260,17 +262,34 @@ fun SongListScreen(
     onSongMenu: (Song) -> Unit,
     favoriteIds: Set<Long> = emptySet(),
     rowEnv: com.example.mimic.ui.library.RowEnv? = null,
+    subtitle: String? = null,
 ) {
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(title, onBack)
+        if (subtitle != null) {
+            Text(
+                subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp),
+            )
+        }
         if (songs.isEmpty()) {
-            EmptyState("Nothing here yet", "Songs you add will show up here.")
+            EmptyState("Nothing here yet", "Play, like or add music and this fills in on its own.")
         } else {
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(
+                Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(8.dp),
+            ) {
                 Button(onClick = { onPlay(songs, 0) }) {
                     Icon(Icons.Default.PlayArrow, contentDescription = null)
                     Spacer(Modifier.width(4.dp))
                     Text("Play all")
+                }
+                androidx.compose.material3.FilledTonalButton(onClick = { onPlay(songs.shuffled(), 0) }) {
+                    Icon(Icons.Default.Shuffle, contentDescription = null)
+                    Spacer(Modifier.width(4.dp))
+                    Text("Shuffle")
                 }
             }
             LazyColumn(contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.example.mimic.ui.library.LocalBarPadding.current)) {
@@ -547,70 +566,102 @@ fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
 }
 
 /**
- * Smart Collections — generated views over the user's own library + play history (no server).
- * A hub lists each collection with its live count; tapping one opens it in [SongListScreen].
- * These never alter the user's manual playlists.
+ * Smart Mixes (MImic 3.2; "Smart Collections" before) — generated views over the user's own
+ * library + play history. Every mix is a plain, deterministic rule (no AI, nothing leaves the
+ * phone), and each says in one line why its songs were picked. They never alter manual playlists.
  */
+enum class SmartMix(val title: String, val explanation: String) {
+    RECENTLY_PLAYED("Recently Played", "The songs you played last, newest first"),
+    MOST_PLAYED("Most Played", "Your most-played songs, by play count"),
+    FAVORITE_ARTISTS("Favorite Artists Mix", "Songs by artists you ♡ or whose songs you liked, mixed so no artist dominates"),
+    NEVER_PLAYED("Never Played", "Music in your library you haven't heard yet, newest additions first"),
+    FORGOTTEN_FAVORITES("Forgotten Favorites", "Liked songs you haven't played recently"),
+    SHUFFLE_DISCOVERY("Shuffle Discovery", "A daily shuffle that favors songs you rarely play, max 3 per artist"),
+    LEAST_PLAYED("Least Played", "Songs you've played only a few times"),
+}
+
+/** Live contents of every mix (each is a VM StateFlow; nothing is computed in composition). */
+@Composable
+fun rememberSmartMixes(vm: PlayerViewModel): Map<SmartMix, List<Song>> {
+    val recent by vm.recentlyPlayed.collectAsStateWithLifecycle()
+    val most by vm.mostPlayed.collectAsStateWithLifecycle()
+    val favArtists by vm.favoriteArtistsMix.collectAsStateWithLifecycle()
+    val never by vm.neverPlayed.collectAsStateWithLifecycle()
+    val forgotten by vm.forgottenFavorites.collectAsStateWithLifecycle()
+    val discovery by vm.shuffleDiscovery.collectAsStateWithLifecycle()
+    val least by vm.leastPlayed.collectAsStateWithLifecycle()
+    return mapOf(
+        SmartMix.RECENTLY_PLAYED to recent, SmartMix.MOST_PLAYED to most, SmartMix.FAVORITE_ARTISTS to favArtists,
+        SmartMix.NEVER_PLAYED to never, SmartMix.FORGOTTEN_FAVORITES to forgotten,
+        SmartMix.SHUFFLE_DISCOVERY to discovery, SmartMix.LEAST_PLAYED to least,
+    )
+}
+
 @Composable
 fun SmartCollectionsScreen(
     vm: PlayerViewModel,
     onBack: () -> Unit,
     onSongMenu: (Song) -> Unit,
     rowEnv: com.example.mimic.ui.library.RowEnv? = null,
+    /** Open straight into one mix (from Home); Back then returns to where the user came from. */
+    initialMix: SmartMix? = null,
 ) {
-    val never by vm.neverPlayed.collectAsStateWithLifecycle()
-    val least by vm.leastPlayed.collectAsStateWithLifecycle()
-    val forgotten by vm.forgottenFavorites.collectAsStateWithLifecycle()
-    val random by vm.randomDiscovery.collectAsStateWithLifecycle()
+    val mixes = rememberSmartMixes(vm)
     val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
 
-    data class Collection(val title: String, val subtitle: String, val songs: List<Song>)
-    val collections = listOf(
-        Collection("Never Played", "Music in your library you haven't heard yet", never),
-        Collection("Least Played", "Songs you've played the fewest times", least),
-        Collection("Forgotten Favorites", "Liked songs you haven't played recently", forgotten),
-        Collection("Random Discovery", "A fresh shuffle from your library each day", random),
-    )
-
-    var selected by remember { mutableStateOf<Int?>(null) }
+    var selected by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(initialMix) }
     val sel = selected
     if (sel == null) {
         Column(Modifier.fillMaxSize()) {
-            ScreenHeader("Smart Collections", onBack)
-            LazyColumn(Modifier.fillMaxSize()) {
-                items(collections.size, key = { it }) { i ->
-                    val c = collections[i]
+            ScreenHeader("Smart Mixes", onBack)
+            Text(
+                "Built on this phone from your own library and play history — simple rules, no AI, nothing is sent anywhere.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            )
+            LazyColumn(
+                Modifier.fillMaxSize(),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.example.mimic.ui.library.LocalBarPadding.current),
+            ) {
+                items(SmartMix.entries.size, key = { SmartMix.entries[it].name }) { i ->
+                    val mix = SmartMix.entries[i]
+                    val songs = mixes[mix].orEmpty()
                     Row(
-                        Modifier.fillMaxWidth().clickable { selected = i }.padding(16.dp),
+                        Modifier.fillMaxWidth().clickable { selected = mix }.padding(start = 16.dp, top = 12.dp, bottom = 12.dp, end = 4.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
                             Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
                                 .background(MaterialTheme.colorScheme.surfaceVariant),
                             contentAlignment = Alignment.Center,
-                        ) { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        ) { Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                         Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) {
-                            Text(c.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
-                            Text(c.subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
+                            Text(mix.title, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                            Text(mix.explanation, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 2)
                         }
                         Spacer(Modifier.width(8.dp))
-                        Text("${c.songs.size}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("${songs.size}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        IconButton(onClick = { vm.play(songs, 0) }, enabled = songs.isNotEmpty()) {
+                            Icon(Icons.Default.PlayArrow, contentDescription = "Play ${mix.title}")
+                        }
                     }
                 }
             }
         }
     } else {
-        val c = collections[sel]
+        val leave = { if (initialMix != null) onBack() else selected = null }
         SongListScreen(
-            title = c.title,
-            songs = c.songs,
-            onBack = { selected = null },
+            title = sel.title,
+            songs = mixes[sel].orEmpty(),
+            onBack = leave,
             onPlay = vm::play,
             onSongMenu = onSongMenu,
             favoriteIds = favoriteIds,
             rowEnv = rowEnv,
+            subtitle = sel.explanation,
         )
-        androidx.activity.compose.BackHandler { selected = null }
+        androidx.activity.compose.BackHandler { leave() }
     }
 }

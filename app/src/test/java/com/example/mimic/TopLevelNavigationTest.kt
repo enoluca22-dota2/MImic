@@ -39,6 +39,13 @@ class TopLevelNavigationTest {
         assertEquals(Plan.PopToRoot(TopLevel.SETTINGS), TopLevelNavigation.plan(TopLevel.SETTINGS, deepSettings))
     }
 
+    @Test fun retapping_a_tab_on_its_root_scrolls_to_top() {
+        assertEquals(Plan.ScrollToTop(TopLevel.HOME), TopLevelNavigation.plan(TopLevel.HOME, listOf(null, "home")))
+        assertEquals(Plan.ScrollToTop(TopLevel.LIBRARY), TopLevelNavigation.plan(TopLevel.LIBRARY, listOf(null, "home", "library")))
+        // Home's root is under a pushed screen: pop, don't just scroll.
+        assertEquals(Plan.PopToRoot(TopLevel.HOME), TopLevelNavigation.plan(TopLevel.HOME, listOf(null, "home", "downloads")))
+    }
+
     @Test fun browsing_tabs_restore_settings_does_not() {
         assertEquals(Plan.SwitchTab(TopLevel.LIBRARY, restore = true), TopLevelNavigation.plan(TopLevel.LIBRARY, deepHome))
         assertEquals(Plan.SwitchTab(TopLevel.SEARCH, restore = true), TopLevelNavigation.plan(TopLevel.SEARCH, deepHome))

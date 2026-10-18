@@ -39,8 +39,8 @@ android {
         applicationId = "com.example.mimic"
         minSdk = 24
         targetSdk = 37
-        versionCode = 17
-        versionName = "3.1"
+        versionCode = 18
+        versionName = "3.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
