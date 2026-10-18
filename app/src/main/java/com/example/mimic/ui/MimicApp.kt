@@ -181,6 +181,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
             openDownloads = { navController.navigate("downloads") },
             openFavorites = { navController.navigate("favorites") },
             openSmart = { navController.navigate("smartcollections") },
+            openStats = { navController.navigate("stats") },
             openMix = { navController.navigate("smartmix/${it.name}") },
             openBrowse = { navController.navigate("browse/${it.name}") },
             openServerBrowse = { navController.navigate("serverbrowse") },
@@ -366,11 +367,12 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     )
                 }
             }
+            composable("stats") { InsetScreen(innerPadding) { StatsScreen(viewModel, onBack = back) } }
             composable("playback") {
                 InsetScreen(innerPadding, padBottom = true) { com.example.mimic.ui.player.PlaybackSettingsScreen(viewModel, onBack = back) }
             }
             composable("smartcollections") {
-                InsetScreen(innerPadding) { SmartCollectionsScreen(viewModel, onBack = back, onSongMenu = onSongMenu, rowEnv = rowEnv) }
+                InsetScreen(innerPadding) { SmartCollectionsScreen(viewModel, onBack = back, onSongMenu = onSongMenu, rowEnv = rowEnv, onOpenStats = { navController.navigate("stats") }) }
             }
             composable("smartmix/{mix}") { entry ->
                 val mix = entry.arguments?.getString("mix")?.let { runCatching { SmartMix.valueOf(it) }.getOrNull() }

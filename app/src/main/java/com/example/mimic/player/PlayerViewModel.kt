@@ -213,6 +213,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun daySeed(): Long = System.currentTimeMillis() / 86_400_000L
 
+    /** Listening stats window in days (7 / 30 / 365). */
+    val statsDays = MutableStateFlow(30)
+
+    val listeningStats: StateFlow<com.example.mimic.data.ListeningStats?> =
+        combine(historyDao.historySince(System.currentTimeMillis() - 366 * com.example.mimic.data.ListeningStats.DAY_MS), songs, statsDays) { h, s, d ->
+            val now = System.currentTimeMillis()
+            com.example.mimic.data.ListeningStats.compute(h, s, now, d, java.util.TimeZone.getDefault().getOffset(now).toLong())
+        }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
     /** Albums played recently, newest first — Continue Listening and Quick Access (MImic 3.2). */
     val recentAlbums: StateFlow<List<com.example.mimic.data.AlbumGroup>> =
         combine(historyDao.recentlyPlayedIds(150), songs) { ids, songs ->
@@ -596,6 +607,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private var serverClient: SubsonicClient? = null
     private var libraryById: Map<Long, Song> = emptyMap()
 
+    private val networkCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onAvailable(network: android.net.Network) {
+            viewModelScope.launch { if (_catalogState.value is CatalogState.Error) refreshServerCatalog() }
+        }
+    }
+
     init {
         // Keep the player's id -> Song lookup in step with the unified library, so the current
         // song / queue resolve for downloaded and server tracks as well as on-device files.
@@ -609,6 +626,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         // Cloud libraries: refresh on launch when stale (foreground refresh is the reliable path;
         // the background worker is best-effort).
         cloud.syncAllAsync(10 * 60_000L)
+        // Back online after a failed load (airplane mode, tunnel, Wi-Fi switch): reload the server
+        // catalog by itself, so server songs and their favorites reappear without a manual refresh.
+        runCatching {
+            val cm = getApplication<Application>().getSystemService(android.net.ConnectivityManager::class.java)
+            cm.registerDefaultNetworkCallback(networkCallback)
+        }
         // Encrypt any legacy plaintext password left by an older install (safe no-op otherwise).
         viewModelScope.launch { serverCredsRepo.migratePlaintextIfNeeded() }
         // Rebuild the client from saved credentials so the server survives app restarts —
@@ -1220,6 +1243,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     override fun onCleared() {
+        runCatching { getApplication<Application>().getSystemService(android.net.ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback) }
         controller?.removeListener(listener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
         controller = null

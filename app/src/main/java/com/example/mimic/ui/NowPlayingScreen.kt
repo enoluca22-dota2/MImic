@@ -3,6 +3,7 @@ package com.example.mimic.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -182,11 +183,14 @@ fun NowPlayingScreen(
         // Swipe the artwork sideways to skip (left = next, right = previous); it follows the finger.
         var dragX by remember { mutableStateOf(0f) }
         val threshold = with(androidx.compose.ui.platform.LocalDensity.current) { 72.dp.toPx() }
+        // The artwork takes what's left after the text + controls, so on a small screen it shrinks
+        // instead of pushing the controls and the action row off the bottom.
+        Box(Modifier.weight(1f, fill = false), contentAlignment = Alignment.Center) {
         AlbumArt(
             song,
             modifier = Modifier
                 .fillMaxWidth(artworkFraction)
-                .aspectRatio(1f)
+                .aspectRatio(1f, matchHeightConstraintsFirst = true)
                 .graphicsLayer {
                     translationX = dragX * 0.6f
                     alpha = 1f - (kotlin.math.abs(dragX) / (threshold * 4)).coerceAtMost(0.4f)
@@ -205,8 +209,9 @@ fun NowPlayingScreen(
             corner = corner,
             shape = artShape,
         )
+        }
 
-        if (config.layout == PlayerLayout.IMMERSIVE) Spacer(Modifier.weight(1f)) else Spacer(Modifier.height(28.dp))
+        if (config.layout == PlayerLayout.IMMERSIVE) Spacer(Modifier.weight(0.01f)) else Spacer(Modifier.height(if (config.layout == PlayerLayout.COMPACT) 16.dp else 24.dp))
 
         // Title + favorite
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -218,7 +223,9 @@ fun NowPlayingScreen(
                     fontWeight = env.headerFontWeight,
                     color = MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
+                    // Long titles scroll slowly instead of being cut off (respecting reduced motion).
+                    modifier = if (env.motionScale > 0f) Modifier.basicMarquee(initialDelayMillis = 1500) else Modifier,
+                    overflow = if (env.motionScale > 0f) TextOverflow.Clip else TextOverflow.Ellipsis,
                 )
                 Text(
                     song?.artist ?: "",

@@ -57,6 +57,7 @@ class AppNav(
     val openDownloads: () -> Unit,
     val openFavorites: () -> Unit,
     val openSmart: () -> Unit,
+    val openStats: () -> Unit,
     /** Open one Smart Mix directly (Home tiles). */
     val openMix: (com.example.mimic.ui.SmartMix) -> Unit,
     val openBrowse: (BrowseType) -> Unit,

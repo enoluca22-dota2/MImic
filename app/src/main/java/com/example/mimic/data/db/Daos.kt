@@ -28,6 +28,10 @@ interface HistoryDao {
     @Insert
     suspend fun record(event: PlayHistoryEntity)
 
+    /** Raw play events since [since] (listening stats, MImic 3.2). */
+    @Query("SELECT * FROM play_history WHERE playedAt >= :since")
+    fun historySince(since: Long): Flow<List<PlayHistoryEntity>>
+
     /** Most recent distinct songs, newest first. */
     @Query(
         "SELECT songId FROM play_history GROUP BY songId " +

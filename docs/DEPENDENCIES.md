@@ -40,3 +40,14 @@ pulls JetBrains `material3 1.10.0-alpha05`, which would push AndroidX material3 
 - **KMPalette** (MIT) — redundant: AndroidX Palette (already used) does the extraction on Android.
 - **Resonate** (MIT) — studied as a design reference only; no code copied.
 - No Apple assets, fonts or icons are used; typography uses Android's built-in system families.
+
+## Design references and attribution (3.2)
+No new runtime dependencies were added in 3.2. Design ideas were studied from:
+- **Resonate** (https://github.com/kimhabkhun/resonate), MIT License, Copyright (c) 2026 Kimhab —
+  playback-effects architecture (service-side queue persistence, a single volume equation,
+  fade-through crossfade, sleep fade, equalizer on the audio session, LRC parsing approach).
+  MImic's implementations are its own code; this credit is given in the spirit of the MIT license.
+- **Tune** (https://github.com/v8065791/Tune) — no license published; only general feature ideas
+  (reorderable/hideable tabs, grid/list toggle, sort direction) were taken from its README.
+- **android/nav3-recipes** (Apache-2.0) — navigation patterns reviewed; no code used.
+See docs/MIMIC_3_2.md for details.

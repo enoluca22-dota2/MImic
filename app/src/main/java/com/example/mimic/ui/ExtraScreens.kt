@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.GraphicEq
+import androidx.compose.material.icons.filled.Insights
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Add
@@ -605,6 +606,7 @@ fun SmartCollectionsScreen(
     rowEnv: com.example.mimic.ui.library.RowEnv? = null,
     /** Open straight into one mix (from Home); Back then returns to where the user came from. */
     initialMix: SmartMix? = null,
+    onOpenStats: (() -> Unit)? = null,
 ) {
     val mixes = rememberSmartMixes(vm)
     val favoriteIds by vm.favoriteIds.collectAsStateWithLifecycle()
@@ -624,6 +626,22 @@ fun SmartCollectionsScreen(
                 Modifier.fillMaxSize(),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(bottom = com.example.mimic.ui.library.LocalBarPadding.current),
             ) {
+                if (onOpenStats != null) item(key = "stats") {
+                    Row(
+                        Modifier.fillMaxWidth().clickable(onClick = onOpenStats).padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(
+                            Modifier.size(48.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.primary),
+                            contentAlignment = Alignment.Center,
+                        ) { Icon(Icons.Default.Insights, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary) }
+                        Spacer(Modifier.width(16.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text("Listening stats", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                            Text("Plays, listening time, top artists and songs", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                }
                 items(SmartMix.entries.size, key = { SmartMix.entries[it].name }) { i ->
                     val mix = SmartMix.entries[i]
                     val songs = mixes[mix].orEmpty()

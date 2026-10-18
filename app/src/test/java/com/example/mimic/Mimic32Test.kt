@@ -138,3 +138,26 @@ class SearchAndLibraryConfigTest {
         assertEquals(listOf("Small", "Big"), GroupSorting.albums(albums, GroupSort.SIZE, true).map { it.title })
     }
 }
+
+class ListeningStatsTest {
+    private val day = com.example.mimic.data.ListeningStats.DAY_MS
+    @Test fun counts_window_top_lists_per_day_and_streak() {
+        val lib = listOf(song(1, artist = "A"), song(2, artist = "B"), song(3, artist = "A"))
+        val now = 100 * day + 1000
+        val h = listOf(
+            com.example.mimic.data.db.PlayHistoryEntity(songId = 1, playedAt = now - 10),
+            com.example.mimic.data.db.PlayHistoryEntity(songId = 1, playedAt = now - day),
+            com.example.mimic.data.db.PlayHistoryEntity(songId = 3, playedAt = now - 2 * day),
+            com.example.mimic.data.db.PlayHistoryEntity(songId = 2, playedAt = now - 20 * day), // outside a 7-day window
+            com.example.mimic.data.db.PlayHistoryEntity(songId = 99, playedAt = now - 5), // deleted song
+        )
+        val s = com.example.mimic.data.ListeningStats.compute(h, lib, now, days = 7)
+        assertEquals(4, s.plays)
+        assertEquals(1L, s.topSongs.first().first.id)
+        assertEquals("A" to 3, s.topArtists.first())
+        assertEquals(7, s.playsPerDay.size)
+        assertEquals(listOf(0, 0, 0, 0, 1, 1, 2), s.playsPerDay)
+        assertEquals(3, s.streakDays)
+        assertEquals(10L, s.estimatedMinutes) // 3 known plays x 200 s
+    }
+}
