@@ -118,3 +118,66 @@ data class CustomThemeEntity(
     /** ThemeStyle as flat JSON (MImic 2.9+). Null for themes saved before 2.9 => default style. */
     val styleJson: String? = null,
 )
+
+/**
+ * A connected Google Drive / OneDrive account (MImic 3.1). Holds no tokens — those stay in the
+ * provider SDK's own encrypted cache (MSAL / Google Play services). [accountKey] =
+ * "<provider>:<accountId>" and scopes every cloud row, download and sync token to this account.
+ */
+@Entity(tableName = "cloud_accounts")
+data class CloudAccountEntity(
+    @PrimaryKey val accountKey: String,
+    val provider: String, // CloudProviderType.id
+    val accountId: String,
+    val displayName: String,
+    val email: String?,
+    /** The one music folder the user picked; null until chosen. */
+    val folderId: String?,
+    val folderName: String?,
+    /** OneDrive delta link / Google Drive changes page token; null = next sync is a full listing. */
+    val syncToken: String?,
+    val lastSyncAt: Long,
+    val lastError: String?,
+    val connectedAt: Long,
+    /** Test-only API endpoint override (debug mock server); null = the real provider API. */
+    val apiBase: String? = null,
+)
+
+/**
+ * One file or folder inside an account's music folder, keyed by the provider's stable item id —
+ * a rename or move updates this row instead of creating a new one. Tag fields are filled from the
+ * provider's own audio metadata (OneDrive) or by reading the file's tags ([tagsVersion] records
+ * which file version they were read from, so changed files are re-read and unchanged ones never).
+ */
+@Entity(
+    tableName = "cloud_items",
+    primaryKeys = ["accountKey", "itemId"],
+    indices = [Index("accountKey"), Index("parentId")],
+)
+data class CloudItemEntity(
+    val accountKey: String,
+    val itemId: String,
+    val parentId: String?,
+    val name: String,
+    val isFolder: Boolean,
+    val mimeType: String?,
+    val size: Long,
+    val createdAt: Long,
+    val modifiedAt: Long,
+    /** Changes whenever the file content changes (OneDrive cTag, Drive md5/version). */
+    val contentVersion: String?,
+    /** "sha1:<hex>" / "md5:<hex>" for download integrity checks; null when the provider has none. */
+    val hash: String?,
+    val title: String? = null,
+    val artist: String? = null,
+    val albumArtist: String? = null,
+    val album: String? = null,
+    val trackNo: Int? = null,
+    val discNo: Int? = null,
+    val durationMs: Long = 0L,
+    val genre: String? = null,
+    val year: Int? = null,
+    /** Local file:// artwork extracted/fetched for this track, if any. */
+    val artUri: String? = null,
+    val tagsVersion: String? = null,
+)

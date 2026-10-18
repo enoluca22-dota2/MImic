@@ -39,6 +39,25 @@
             </intent-filter>
         </activity>
 
+        <!--
+            OneDrive sign-in (MSAL): receives the browser redirect
+            msauth://com.example.mimic/<signature hash>. The hash comes from the build
+            (cloud.properties / the debug keystore default) and must match the Azure registration.
+        -->
+        <activity
+            android:name="com.microsoft.identity.client.BrowserTabActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="com.example.mimic"
+                    android:path="/${msalSignatureHash}"
+                    android:scheme="msauth" />
+            </intent-filter>
+        </activity>
+
         <!-- Media3 playback service: keeps music playing in the background. -->
         <service
             android:name=".player.PlaybackService"

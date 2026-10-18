@@ -2,7 +2,11 @@ package com.example.mimic.player
 
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import com.example.mimic.MimicApplication
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 
@@ -14,9 +18,15 @@ class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
 
+    @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
+        val cloud = (application as MimicApplication).container.cloudLibrary
+        // One player for every source: files/content/http as before, plus mimic-cloud:// songs
+        // (Google Drive / OneDrive) resolved and range-streamed by CloudDataSource.
+        val dataSources = MimicDataSourceFactory(this, cloud, cloud.httpClient)
         val player = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(dataSources))
             .setAudioAttributes(
                 AudioAttributes.Builder()
                     .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)

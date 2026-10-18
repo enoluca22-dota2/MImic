@@ -69,8 +69,8 @@ class UnifiedLibraryTest {
 
     @Test fun source_filters() {
         val lib = UnifiedLibrary.merge(listOf(local(1, "L")), listOf(server("r1", "S"), server("r2", "D")), listOf(download("r2", "D")))
-        assertEquals(listOf("L"), UnifiedLibrary.filter(lib, SourceFilter.ON_DEVICE).map { it.title })
-        assertEquals(setOf("S", "D"), UnifiedLibrary.filter(lib, SourceFilter.SERVER).map { it.title }.toSet())
+        assertEquals(listOf("L"), UnifiedLibrary.filter(lib, SourceFilter.PHONE).map { it.title })
+        assertEquals(setOf("S", "D"), UnifiedLibrary.filter(lib, SourceFilter.NAVIDROME).map { it.title }.toSet())
         assertEquals(listOf("D"), UnifiedLibrary.filter(lib, SourceFilter.DOWNLOADED).map { it.title })
         assertEquals(3, UnifiedLibrary.filter(lib, SourceFilter.ALL).size)
     }

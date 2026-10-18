@@ -84,7 +84,7 @@ enum class LibraryCategory(val label: String) {
 
 /** Grouping / sorting runs off the main thread so a large library never stalls scrolling. */
 @Composable
-private fun <T> rememberComputed(initial: T, vararg keys: Any?, compute: () -> T): T {
+internal fun <T> rememberComputed(initial: T, vararg keys: Any?, compute: () -> T): T {
     val state by produceState(initial, *keys) { value = withContext(Dispatchers.Default) { compute() } }
     return state
 }
@@ -127,7 +127,10 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
     val favData = rememberFavoritesData(vm)
     var favKind by rememberSaveable { mutableStateOf(FavKind.SONGS) }
     var dlGrouping by rememberSaveable { mutableStateOf(DownloadGrouping.ALL) }
+    // Opening the library picks up songs uploaded to the cloud since the last check.
+    androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshIfStale() }
 
+    RefreshableLibrary(vm, contentPadding) {
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item(key = "title") {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 20.dp, bottom = 8.dp)) {
@@ -193,17 +196,24 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
             else -> Unit
         }
     }
+    }
 }
 
 private fun emptyText(filter: String) =
-    if (filter == "All") "No music yet. Add audio files to your phone, or sign in to your server in Settings → Account."
+    if (filter == "All") "No music yet. Add audio files to your phone, or connect Google Drive / OneDrive in Settings → Music Sources."
     else "Nothing here with the \"$filter\" filter."
 
 private fun libraryCountLine(all: List<Song>, catalog: CatalogState): String {
-    val device = all.count { it.source == com.example.mimic.data.SongSource.LOCAL }
-    val server = all.count { it.isFromServer }
+    val byProvider = all.groupingBy { it.provider }.eachCount()
     val dl = all.count { it.isDownloaded }
-    val base = "$device on device · $server on server · $dl downloaded"
+    val parts = buildList {
+        add("${byProvider[com.example.mimic.data.MusicProvider.PHONE] ?: 0} on phone")
+        for (p in listOf(com.example.mimic.data.MusicProvider.GOOGLE_DRIVE, com.example.mimic.data.MusicProvider.ONEDRIVE, com.example.mimic.data.MusicProvider.NAVIDROME)) {
+            byProvider[p]?.let { add("$it ${p.label}") }
+        }
+        add("$dl downloaded")
+    }
+    val base = parts.joinToString(" · ")
     return when (catalog) {
         CatalogState.Loading -> "$base · loading server…"
         is CatalogState.Error -> "$base · server unavailable"

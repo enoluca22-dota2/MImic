@@ -17,8 +17,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         DownloadEntity::class,
         FavoriteGroupEntity::class,
         PendingStarEntity::class,
+        CloudAccountEntity::class,
+        CloudItemEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class MimicDatabase : RoomDatabase() {
@@ -29,6 +31,7 @@ abstract class MimicDatabase : RoomDatabase() {
     abstract fun downloadDao(): DownloadDao
     abstract fun favoriteGroupDao(): FavoriteGroupDao
     abstract fun pendingStarDao(): PendingStarDao
+    abstract fun cloudDao(): CloudDao
 
     companion object {
         @Volatile
@@ -92,6 +95,34 @@ abstract class MimicDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v5 → v6 (MImic 3.1): two new tables for Google Drive / OneDrive accounts and their file
+         * trees. Purely additive — every existing table and row is untouched.
+         */
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cloud_accounts` (" +
+                        "`accountKey` TEXT NOT NULL, `provider` TEXT NOT NULL, `accountId` TEXT NOT NULL, " +
+                        "`displayName` TEXT NOT NULL, `email` TEXT, `folderId` TEXT, `folderName` TEXT, " +
+                        "`syncToken` TEXT, `lastSyncAt` INTEGER NOT NULL, `lastError` TEXT, " +
+                        "`connectedAt` INTEGER NOT NULL, `apiBase` TEXT, PRIMARY KEY(`accountKey`))",
+                )
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `cloud_items` (" +
+                        "`accountKey` TEXT NOT NULL, `itemId` TEXT NOT NULL, `parentId` TEXT, " +
+                        "`name` TEXT NOT NULL, `isFolder` INTEGER NOT NULL, `mimeType` TEXT, " +
+                        "`size` INTEGER NOT NULL, `createdAt` INTEGER NOT NULL, `modifiedAt` INTEGER NOT NULL, " +
+                        "`contentVersion` TEXT, `hash` TEXT, `title` TEXT, `artist` TEXT, `albumArtist` TEXT, " +
+                        "`album` TEXT, `trackNo` INTEGER, `discNo` INTEGER, `durationMs` INTEGER NOT NULL, " +
+                        "`genre` TEXT, `year` INTEGER, `artUri` TEXT, `tagsVersion` TEXT, " +
+                        "PRIMARY KEY(`accountKey`, `itemId`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_cloud_items_accountKey` ON `cloud_items` (`accountKey`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_cloud_items_parentId` ON `cloud_items` (`parentId`)")
+            }
+        }
+
         fun get(context: Context): MimicDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -99,7 +130,7 @@ abstract class MimicDatabase : RoomDatabase() {
                     MimicDatabase::class.java,
                     "mimic.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                     .build()
                     .also { instance = it }
             }

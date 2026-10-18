@@ -10,6 +10,7 @@ enum class HomeSection(val label: String) {
     RECENTLY_ADDED("Recently Added"),
     FAVORITES("Favorite Songs"),
     FAVORITE_ARTISTS("Favorite Artists"),
+    ALBUMS("Albums"), // MImic 3.1: newest albums from every source, cloud included
     PLAYLISTS("My Playlists"),
     SMART_COLLECTIONS("Smart Collections"),
     MOST_PLAYED("Jump Back In"),

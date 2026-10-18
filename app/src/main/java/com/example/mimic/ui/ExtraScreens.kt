@@ -22,6 +22,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -96,7 +97,9 @@ fun SettingsScreen(
     onOpenPlayerStudio: () -> Unit,
     onOpenHomeCustomize: () -> Unit,
     onOpenMusicServer: () -> Unit,
+    onOpenMusicSources: () -> Unit = {},
 ) {
+    val cloudAccounts by vm.cloudAccounts.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val current by vm.activeTheme.collectAsStateWithLifecycle()
     val status by vm.serverStatus.collectAsStateWithLifecycle()
@@ -173,6 +176,32 @@ fun SettingsScreen(
                 )
             }
         }
+        Text(
+            "Music",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(start = 16.dp, top = 12.dp, bottom = 4.dp),
+        )
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenMusicSources).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Default.Cloud, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Music Sources", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                Text(
+                    if (cloudAccounts.isEmpty()) "Google Drive, OneDrive, Navidrome, phone music"
+                    else cloudAccounts.joinToString(" · ") { (com.example.mimic.data.cloud.CloudProviderType.of(it.provider)?.label ?: it.provider) + (if (it.lastError != null) " (needs attention)" else "") },
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
         Row(
             Modifier.fillMaxWidth().clickable(onClick = onOpenMusicServer).padding(16.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -183,7 +212,7 @@ fun SettingsScreen(
             ) { Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
-                Text("Account", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                Text("Navidrome account", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                 Text(
                     if (status == com.example.mimic.data.server.ServerStatus.Connected && creds != null) {
                         "Signed in as ${creds!!.username} · server library & downloads"
@@ -197,8 +226,8 @@ fun SettingsScreen(
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "MImic — a personal music player for the audio on this phone and your own music server. " +
-                "No telemetry; nothing is sent anywhere except to the server you sign in to.",
+            "MImic — a personal music player for the audio on this phone, your Google Drive / OneDrive music folder " +
+                "and your own music server. No telemetry; nothing is sent anywhere except to the services you connect.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(16.dp),
@@ -429,6 +458,9 @@ fun SongActionsSheet(
     onToggleFavorite: () -> Unit,
     onDownload: (() -> Unit)? = null,
     onRemoveDownload: (() -> Unit)? = null,
+    /** Non-null while this song is downloading: fraction 0..1, or < 0 while the size is unknown. */
+    downloadProgress: Float? = null,
+    onCancelDownload: (() -> Unit)? = null,
     onGoToAlbum: (() -> Unit)? = null,
     onGoToArtist: (() -> Unit)? = null,
 ) {
@@ -453,8 +485,13 @@ fun SongActionsSheet(
             ActionRow(Icons.Default.PlayArrow, "Play next") { onPlayNext(); onDismiss() }
             ActionRow(Icons.AutoMirrored.Filled.QueueMusic, "Add to queue") { onAddToQueue(); onDismiss() }
             ActionRow(Icons.AutoMirrored.Filled.PlaylistAdd, "Add to playlist") { onAddToPlaylist() }
-            if (onDownload != null) ActionRow(androidx.compose.material.icons.Icons.Default.Download, if (song.fileMissing) "Download again (file missing)" else "Download for offline") { onDownload(); onDismiss() }
-            if (onRemoveDownload != null) ActionRow(Icons.Default.Delete, "Remove download (keeps it on the server)") { onRemoveDownload(); onDismiss() }
+            if (downloadProgress != null && onCancelDownload != null) {
+                val pct = if (downloadProgress >= 0f) " ${(downloadProgress * 100).toInt()}%" else "…"
+                ActionRow(Icons.Default.Close, "Downloading$pct — tap to cancel") { onCancelDownload(); onDismiss() }
+            } else if (onDownload != null) {
+                ActionRow(androidx.compose.material.icons.Icons.Default.Download, if (song.fileMissing) "Download again (file missing)" else "Download for offline") { onDownload(); onDismiss() }
+            }
+            if (onRemoveDownload != null) ActionRow(Icons.Default.Delete, "Remove download (keeps the original in ${if (song.provider == com.example.mimic.data.MusicProvider.NAVIDROME) "your server" else song.provider.label})") { onRemoveDownload(); onDismiss() }
             if (onGoToAlbum != null) ActionRow(androidx.compose.material.icons.Icons.Default.Album, "Go to album") { onGoToAlbum(); onDismiss() }
             if (onGoToArtist != null) ActionRow(androidx.compose.material.icons.Icons.Default.Person, "Go to artist") { onGoToArtist(); onDismiss() }
         }

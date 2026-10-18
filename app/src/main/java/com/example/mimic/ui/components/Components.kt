@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.CloudQueue
 import androidx.compose.material.icons.filled.DownloadDone
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -175,6 +176,7 @@ fun SourceIndicator(song: Song, isDownloading: Boolean = false) {
         song.fileMissing -> Icon(Icons.Default.ErrorOutline, contentDescription = "Download missing", tint = scheme.error, modifier = mod)
         song.isDownloaded -> Icon(Icons.Default.DownloadDone, contentDescription = "Downloaded", tint = scheme.primary, modifier = mod)
         song.source == SongSource.SERVER -> Icon(Icons.Default.CloudQueue, contentDescription = "On server", tint = scheme.onSurfaceVariant, modifier = mod)
+        song.source == SongSource.CLOUD -> Icon(Icons.Default.Cloud, contentDescription = "In ${song.provider.label}", tint = scheme.onSurfaceVariant, modifier = mod)
         else -> Unit
     }
 }

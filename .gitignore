@@ -26,3 +26,6 @@ server/navidrome-data/
 server/.env
 # Local DB/config backups (machine-specific, can be large)
 server/backups/
+
+# Cloud app-registration ids (MSAL client id etc.) — per-user, see docs/CLOUD_SETUP.md
+cloud.properties

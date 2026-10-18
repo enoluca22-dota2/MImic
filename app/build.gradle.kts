@@ -18,6 +18,17 @@ if (hasKeystore) {
     reader.close()
 }
 
+// Cloud sign-in configuration (MImic 3.1) from a gitignored cloud.properties. These are PUBLIC
+// client identifiers, not secrets (no client secret exists for a mobile app) — they are kept out
+// of git only because they belong to the user's own app registrations. See docs/CLOUD_SETUP.md.
+val cloudPropsFile = rootProject.file("cloud.properties")
+val cloudProps = Properties()
+if (cloudPropsFile.exists()) cloudPropsFile.reader().use { cloudProps.load(it) }
+val msalClientId: String = cloudProps.getProperty("msal.clientId", "").trim()
+// Base64 SHA-1 of the APK signing certificate; the default is this machine's debug keystore,
+// which signs every MImic APK installed so far (no release keystore exists).
+val msalSignatureHash: String = cloudProps.getProperty("msal.signatureHash", "eA5L9wOTGbvwmdX3ojvGnABaX/k=").trim()
+
 android {
     namespace = "com.example.mimic"
     compileSdk {
@@ -28,10 +39,14 @@ android {
         applicationId = "com.example.mimic"
         minSdk = 24
         targetSdk = 37
-        versionCode = 16
-        versionName = "3.0"
+        versionCode = 17
+        versionName = "3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "MSAL_CLIENT_ID", "\"$msalClientId\"")
+        buildConfigField("String", "MSAL_SIGNATURE_HASH", "\"$msalSignatureHash\"")
+        manifestPlaceholders["msalSignatureHash"] = msalSignatureHash
     }
 
     signingConfigs {
@@ -59,6 +74,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 }
 
@@ -85,11 +101,17 @@ dependencies {
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.palette)
     implementation(libs.okhttp)
+    implementation(libs.androidx.media3.datasource.okhttp)
+    implementation(libs.androidx.work.runtime)
+    implementation(libs.msal)
+    implementation(libs.play.services.auth)
     implementation(libs.kyant.backdrop)
     implementation(libs.kyant.shapes)
     implementation(libs.material.color.utilities)
     implementation(libs.colorpicker.compose)
     testImplementation(libs.junit)
+    testImplementation(libs.okhttp.mockwebserver)
+    testImplementation(libs.json.test) // real org.json for JVM tests (android.jar only has stubs)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.compose.ui.test.junit4)
     androidTestImplementation(libs.androidx.espresso.core)

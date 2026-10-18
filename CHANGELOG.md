@@ -1,5 +1,44 @@
 # Changelog
 
+## 3.1 — Google Drive + OneDrive music (no laptop server required)
+- **Built-in cloud sources** (not plugins): Settings → **Music Sources** with Google Drive,
+  OneDrive, Navidrome (optional) and Phone music. Connect account (provider's own sign-in UI),
+  choose one music folder (in-app folder browser), status, library counts, last synced, Sync now,
+  Change folder, Disconnect (optionally also delete that account's downloads).
+- **OneDrive**: MSAL 8.5 public client (no secret), delegated `Files.Read`, personal accounts.
+  Catalog via Graph `delta` on the folder (pages followed, delta link stored, 410 → full resync).
+  Streaming via `/content` → 302 to a short-lived pre-authenticated URL that receives the Range
+  requests; the URL is cached in memory ~20 min, never stored or logged, re-resolved on 401/403/404/410.
+- **Google Drive**: Google Identity Services AuthorizationClient, `drive.readonly` (restricted scope —
+  fine for your own/test accounts; public release needs Google verification, see docs/CLOUD_SETUP.md).
+  Catalog via breadth-first `files.list` + Changes API (start token taken before the listing);
+  streaming via `files.get?alt=media` with a bearer header and Range requests. Drive 403
+  rate-limit responses are retried like 429.
+- **One identity per cloud file**: provider + account + stable item id (`onedrive:<acct>:<id>`),
+  62-bit collision-resistant song ids; renames/moves update the same song (favorites, playlists,
+  history and downloads keep working); two accounts never merge. Identical uploads shown once;
+  unsupported / DRM formats (WMA, M4P, AIFF, …) skipped and counted.
+- **Metadata**: OneDrive audio facet; otherwise embedded tags + artwork read through
+  MediaMetadataRetriever over 128 KB range reads (never the whole file, 2 in parallel, Wi-Fi only by
+  default); `cover.jpg`/`folder.jpg`; OneDrive thumbnails; then Artist/Album folder layout, then the
+  file name ("03 - Title"). Album track order from tags/file names.
+- **One player**: the existing Media3 PlaybackService gained a routing data source for
+  `mimic-cloud://` URIs — seek, queue, background, notification and media-button controls are
+  unchanged; errors say "Can't reach OneDrive…", "sign in again", "no longer in your folder".
+- **Sync**: incremental, atomic (applied in one transaction after all pages arrive), on app start /
+  Library open when stale, pull-to-refresh on Home and Library, Sync now, WorkManager every ~6 h
+  (network + battery-not-low; survives reboot). Retry-After honoured, exponential backoff.
+- **Downloads**: cloud songs use the existing download workflow — progress, Cancel (deletes the
+  partial file), Retry, size + provider hash (Drive MD5 / OneDrive SHA-1) verification before the
+  file is recorded, free-space check, optional Wi-Fi-only. Cloud deletion or disconnect never deletes
+  a download.
+- Home gains an **Albums** row (newest albums across sources); source filters are now All · Phone ·
+  Navidrome · Google Drive · OneDrive · Downloaded (provider filters include that provider's downloads).
+- Room v6 (additive `cloud_accounts`, `cloud_items`; MIGRATION_5_6). versionCode 17.
+- Tests: 103 JVM (29 new: identity, mapping, sync planning, Graph/Drive paging, 410, 429/403
+  Retry-After, 401 refresh, 302 resolution) + 12 instrumented (2 new: v5→v6 upgrade, verified cloud
+  download survives disconnect).
+
 ## 3.0 — Music app restructure: one-tap Home, downloads on Home, organized library, real glass
 - **Fixed: Home needed several Back presses** (Settings → Account → Server Library → Home). Root
   cause: every tab tap used `popUpTo(start){saveState}` + `restoreState`; Settings sub-screens were

@@ -177,3 +177,63 @@ interface PlaylistDao {
         )
     }
 }
+
+/** Connected cloud accounts and their stored file trees (MImic 3.1). */
+@Dao
+interface CloudDao {
+    @Query("SELECT * FROM cloud_accounts ORDER BY connectedAt")
+    fun accounts(): Flow<List<CloudAccountEntity>>
+
+    @Query("SELECT * FROM cloud_accounts ORDER BY connectedAt")
+    suspend fun accountsOnce(): List<CloudAccountEntity>
+
+    @Query("SELECT * FROM cloud_accounts WHERE accountKey = :accountKey")
+    suspend fun account(accountKey: String): CloudAccountEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertAccount(account: CloudAccountEntity)
+
+    @Query("UPDATE cloud_accounts SET lastError = :error WHERE accountKey = :accountKey")
+    suspend fun setError(accountKey: String, error: String?)
+
+    @Query("UPDATE cloud_accounts SET syncToken = :token, lastSyncAt = :at, lastError = NULL WHERE accountKey = :accountKey")
+    suspend fun markSynced(accountKey: String, token: String?, at: Long)
+
+    @Query("UPDATE cloud_accounts SET syncToken = :token WHERE accountKey = :accountKey")
+    suspend fun setSyncToken(accountKey: String, token: String?)
+
+    @Query("SELECT * FROM cloud_items")
+    fun allItems(): Flow<List<CloudItemEntity>>
+
+    @Query("SELECT * FROM cloud_items WHERE accountKey = :accountKey")
+    suspend fun itemsOnce(accountKey: String): List<CloudItemEntity>
+
+    @Query("SELECT * FROM cloud_items WHERE accountKey = :accountKey AND itemId = :itemId")
+    suspend fun item(accountKey: String, itemId: String): CloudItemEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertItems(items: List<CloudItemEntity>)
+
+    @Query("DELETE FROM cloud_items WHERE accountKey = :accountKey AND itemId IN (:itemIds)")
+    suspend fun deleteItems(accountKey: String, itemIds: List<String>)
+
+    @Query("DELETE FROM cloud_items WHERE accountKey = :accountKey")
+    suspend fun clearItems(accountKey: String)
+
+    /** Replace an account's whole tree (a full re-listing) in one transaction. */
+    @Transaction
+    suspend fun replaceItems(accountKey: String, items: List<CloudItemEntity>) {
+        clearItems(accountKey)
+        items.chunked(500).forEach { upsertItems(it) }
+    }
+
+    /** Disconnect: forget the account and its file list. Downloads are separate and kept. */
+    @Transaction
+    suspend fun removeAccount(accountKey: String) {
+        clearItems(accountKey)
+        deleteAccount(accountKey)
+    }
+
+    @Query("DELETE FROM cloud_accounts WHERE accountKey = :accountKey")
+    suspend fun deleteAccount(accountKey: String)
+}

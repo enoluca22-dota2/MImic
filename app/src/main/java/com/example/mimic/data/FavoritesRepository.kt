@@ -35,7 +35,9 @@ class FavoritesRepository(
         if (nowFavorite) favoriteDao.add(FavoriteEntity(song.id, System.currentTimeMillis()))
         else favoriteDao.remove(song.id)
 
-        val remoteId = song.remoteId
+        // Only Navidrome has a server-side "starred" list; cloud drives have no music favorites,
+        // so a cloud track's favorite lives in Room only (per song id = per account + file).
+        val remoteId = song.remoteId?.takeIf { song.provider == MusicProvider.NAVIDROME }
         val account = client?.accountKey ?: accountKey
         if (remoteId != null && account != null) {
             val sent = client != null &&

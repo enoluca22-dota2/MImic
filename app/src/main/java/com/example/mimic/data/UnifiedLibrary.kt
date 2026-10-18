@@ -1,16 +1,21 @@
 package com.example.mimic.data
 
-/** Library / search / Home source filter (MImic 3.0). */
+/** Library / search / Home source filter (MImic 3.0; per-provider since 3.1). */
 enum class SourceFilter(val label: String) {
     ALL("All"),
-    ON_DEVICE("On device"),
-    SERVER("Server"),
+    PHONE("Phone"),
+    NAVIDROME("Navidrome"),
+    GOOGLE_DRIVE("Google Drive"),
+    ONEDRIVE("OneDrive"),
     DOWNLOADED("Downloaded");
 
+    /** Provider filters include that provider's downloads: a downloaded OneDrive song is still OneDrive. */
     fun matches(song: Song): Boolean = when (this) {
         ALL -> true
-        ON_DEVICE -> song.source == SongSource.LOCAL
-        SERVER -> song.isFromServer // streamed or downloaded, it is a server track
+        PHONE -> song.provider == MusicProvider.PHONE
+        NAVIDROME -> song.provider == MusicProvider.NAVIDROME
+        GOOGLE_DRIVE -> song.provider == MusicProvider.GOOGLE_DRIVE
+        ONEDRIVE -> song.provider == MusicProvider.ONEDRIVE
         DOWNLOADED -> song.isDownloaded
     }
 }
@@ -46,7 +51,8 @@ data class ArtistGroup(
 object UnifiedLibrary {
 
     /**
-     * Merge on-device, server-catalog and downloaded songs. A server track and its download share
+     * Merge on-device, remote-catalog (Navidrome + cloud drives) and downloaded songs. A remote
+     * track and its download share
      * one id, so the download *replaces* the streamed entry (one logical song, never two). A
      * download whose file is missing keeps its identity and, when the server catalog is loaded,
      * plays from the stream instead; it stays flagged [Song.fileMissing] so the UI can offer a
@@ -108,7 +114,11 @@ object UnifiedLibrary {
         songs.filter { it.artistKey == key }.takeIf { it.isNotEmpty() }?.let { artistOf(key, it) }
 
     private fun albumOf(key: String, list: List<Song>): AlbumGroup {
-        val tracks = list.sortedWith(compareBy(String.CASE_INSENSITIVE_ORDER) { it.title })
+        // Track order when tags/file names give one; titles otherwise (and among unnumbered tracks).
+        val tracks = list.sortedWith(
+            compareBy<Song> { if (it.trackNo > 0) 0 else 1 }.thenBy { it.trackNo }
+                .thenBy(String.CASE_INSENSITIVE_ORDER) { it.title },
+        )
         val artist = list.groupingBy { it.artist }.eachCount().maxByOrNull { it.value }?.key
             ?: MetadataFallback.UNKNOWN_ARTIST
         return AlbumGroup(

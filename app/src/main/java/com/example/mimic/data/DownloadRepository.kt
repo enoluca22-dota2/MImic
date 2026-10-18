@@ -6,7 +6,9 @@ import com.example.mimic.data.db.DownloadDao
 import com.example.mimic.data.db.DownloadEntity
 import com.example.mimic.data.server.RemoteSong
 import com.example.mimic.data.server.SubsonicClient
-import com.example.mimic.data.server.remoteStableId
+import com.example.mimic.data.cloud.CloudRef
+import com.example.mimic.data.server.songIdForRemote
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flowOn
@@ -64,7 +66,98 @@ class DownloadRepository(context: Context, private val dao: DownloadDao) {
         return Result.success(size)
     }
 
-    /** Remove the local copy only. The original on the server is never touched. */
+    /**
+     * Save a cloud track (MImic 3.1) from [body] with the same guarantees as server downloads:
+     * bytes go to a ".part" file, the size must match the cloud listing, the provider's content
+     * hash (Drive MD5 / OneDrive SHA-1) must match when it has one, and only then is the file
+     * renamed into place and recorded. Cancellation (the coroutine) deletes the partial file.
+     */
+    suspend fun saveCloudDownload(
+        song: Song,
+        accountKey: String,
+        extension: String,
+        body: java.io.InputStream,
+        expectedSize: Long,
+        hash: String?,
+        onProgress: (Long) -> Unit,
+    ): Result<Long> = withContext(Dispatchers.IO) {
+        val remoteId = song.remoteId ?: return@withContext Result.failure(IllegalArgumentException("Not a remote song"))
+        val target = File(dir, "cloud_" + sha(remoteId).take(32) + "." + safeName(extension.ifBlank { "mp3" }))
+        val part = File(dir, target.name + ".part")
+        val algorithm = when {
+            hash?.startsWith("md5:") == true -> "MD5"
+            hash?.startsWith("sha1:") == true -> "SHA-1"
+            else -> null
+        }
+        try {
+            dir.mkdirs()
+            val digest = algorithm?.let { java.security.MessageDigest.getInstance(it) }
+            var written = 0L
+            var lastReport = 0L
+            body.use { input ->
+                part.outputStream().use { out ->
+                    val buf = ByteArray(64 * 1024)
+                    while (true) {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        val n = input.read(buf)
+                        if (n < 0) break
+                        out.write(buf, 0, n)
+                        digest?.update(buf, 0, n)
+                        written += n
+                        if (written - lastReport >= 256 * 1024) { onProgress(written); lastReport = written }
+                    }
+                    out.fd.sync()
+                }
+            }
+            onProgress(written)
+            if (expectedSize > 0 && written != expectedSize) {
+                throw java.io.IOException("Incomplete download: $written of $expectedSize bytes")
+            }
+            if (digest != null) {
+                val actual = digest.digest().joinToString("") { "%02x".format(it) }
+                if (actual != hash!!.substringAfter(':')) throw java.io.IOException("Downloaded file failed its integrity check")
+            }
+            if (written == 0L || !part.canRead()) throw java.io.IOException("Downloaded file is empty or unreadable")
+            if (target.exists()) target.delete()
+            if (!part.renameTo(target)) throw java.io.IOException("Could not finalize download")
+
+            // Keep the artwork with the download so it survives disconnecting the account.
+            val cover = song.albumArtUri?.takeIf { it.startsWith("file:") }?.let { uri ->
+                val src = File(Uri.parse(uri).path ?: "")
+                if (!src.isFile) null else {
+                    val dst = File(coverDir, src.name)
+                    if (!dst.isFile) { coverDir.mkdirs(); src.copyTo(dst, overwrite = true) }
+                    Uri.fromFile(dst).toString()
+                }
+            }
+            dao.upsert(
+                DownloadEntity(
+                    remoteId = remoteId, title = song.title, artist = song.artist, album = song.album,
+                    durationMs = song.durationMs, fileUri = Uri.fromFile(target).toString(), coverArtUri = cover,
+                    downloadedAt = System.currentTimeMillis(),
+                    albumId = song.albumKey, // cloud rows store the full album key
+                    accountKey = accountKey, sizeBytes = written,
+                ),
+            )
+            Result.success(written)
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Result.failure(e)
+        } finally {
+            part.delete()
+        }
+    }
+
+    /** Only when the user explicitly asks while disconnecting an account. */
+    suspend fun removeAllForAccount(accountKey: String) {
+        for (row in dao.allOnce()) if (row.accountKey == accountKey) remove(row.remoteId)
+    }
+
+    /** Free space left for downloads, in bytes. */
+    fun freeBytes(): Long = (if (dir.exists()) dir else dir.parentFile ?: dir).usableSpace
+
+    /** Remove the local copy only. The original on the server / in the cloud is never touched. */
     suspend fun remove(remoteId: String) = withContext(Dispatchers.IO) {
         val row = dao.get(remoteId) ?: return@withContext
         fileOf(row).delete()
@@ -82,7 +175,7 @@ class DownloadRepository(context: Context, private val dao: DownloadDao) {
     // Rows written before 3.0 hold the server's raw placeholders ("[Unknown Artist]"); normalize
     // them with the same fallback policy as every other source.
     private fun DownloadEntity.toSong(fileMissing: Boolean) = Song(
-        id = remoteStableId(remoteId),
+        id = songIdForRemote(remoteId),
         title = MetadataFallback.title(title, null),
         artist = MetadataFallback.artist(artist),
         album = MetadataFallback.album(album),
@@ -90,10 +183,14 @@ class DownloadRepository(context: Context, private val dao: DownloadDao) {
         dateAddedSec = downloadedAt / 1000, folder = "Downloads",
         source = SongSource.DOWNLOADED,
         remoteId = remoteId,
-        albumKey = SubsonicClient.serverAlbumKey(albumId, album),
+        albumKey = if (CloudRef.parse(remoteId) != null) albumId ?: "cloud:${accountKey}:album:unknown"
+        else SubsonicClient.serverAlbumKey(albumId, album),
         artistKey = MetadataFallback.artistKey(MetadataFallback.artist(artist)),
         fileMissing = fileMissing,
     )
 
     private fun safeName(s: String) = s.replace(Regex("[^A-Za-z0-9._-]"), "_")
+
+    private fun sha(s: String) = java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray())
+        .joinToString("") { "%02x".format(it) }
 }

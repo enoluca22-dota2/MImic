@@ -76,6 +76,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val downloadRepo = container.downloadRepository
     private val favoritesRepo = container.favoritesRepository
+    private val cloud = container.cloudLibrary
 
     /** On-device (MediaStore) songs only. */
     private val _localSongs = MutableStateFlow<List<Song>>(emptyList())
@@ -98,8 +99,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * collections — derives from this single source of truth.
      */
     val songs: StateFlow<List<Song>> =
-        combine(_localSongs, _serverSongs, downloads) { local, server, dl ->
-            com.example.mimic.data.UnifiedLibrary.merge(local, server, dl)
+        combine(_localSongs, _serverSongs, cloud.songs, downloads) { local, server, cloudSongs, dl ->
+            // Cloud songs merge exactly like server ones: a download replaces its streamed entry.
+            com.example.mimic.data.UnifiedLibrary.merge(local, server + cloudSongs, dl)
         }
             .flowOn(kotlinx.coroutines.Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -219,7 +221,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             // Classify without leaking the stream URL (which carries the auth token).
-            val reason = when (error.errorCode) {
+            val current = _uiState.value.currentSong
+            val cloudName = current?.remoteId?.let(com.example.mimic.data.cloud.CloudRef::parse)?.provider?.label
+            val reason = if (cloudName != null) cloudPlaybackError(error.errorCode, cloudName) else when (error.errorCode) {
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
                     "Can't reach the server. Check your connection (or Tailscale) and try again."
@@ -242,6 +246,23 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             syncFromPlayer(player)
             rebuildQueue(player)
         }
+    }
+
+    private fun cloudPlaybackError(code: Int, provider: String): String = when (code) {
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
+            "Can't reach $provider. Check your internet connection — downloaded songs still play offline."
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_NO_PERMISSION ->
+            "$provider needs you to sign in again (Settings → Music Sources)."
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
+            "This song is no longer in your $provider music folder."
+        androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
+            "$provider refused the request. Try again, or sync the library."
+        androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
+        androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
+        androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ->
+            "This file's format can't be played on this phone."
+        else -> "Couldn't play from $provider (${androidx.media3.common.PlaybackException.getErrorCodeName(code)})."
     }
 
     fun initController() {
@@ -477,6 +498,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 controller?.let { syncFromPlayer(it); rebuildQueue(it) }
             }
         }
+        // Cloud libraries: refresh on launch when stale (foreground refresh is the reliable path;
+        // the background worker is best-effort).
+        cloud.syncAllAsync(10 * 60_000L)
         // Encrypt any legacy plaintext password left by an older install (safe no-op otherwise).
         viewModelScope.launch { serverCredsRepo.migratePlaintextIfNeeded() }
         // Rebuild the client from saved credentials so the server survives app restarts —
@@ -607,8 +631,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         startDownload(song)
     }
 
-    /** Download a library song that comes from the server. No-op for on-device songs. */
+    /** Download a library song that comes from the server or a cloud drive. No-op for on-device songs. */
     fun downloadSong(song: Song) {
+        if (song.remoteId?.let(com.example.mimic.data.cloud.CloudRef::parse) != null) {
+            startCloudDownload(song, announce = true)
+            return
+        }
         val remote = song.remoteId?.let { remoteById[it] }
         if (remote == null) {
             _messages.tryEmit("Connect to your server to download \"${song.title}\"")
@@ -619,14 +647,59 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** User-initiated "Download album": downloads the listed server tracks one at a time. */
     fun downloadAll(list: List<Song>) {
-        val todo = list.filter { it.isFromServer && (!it.isDownloaded || it.fileMissing) }
-            .mapNotNull { s -> s.remoteId?.let { remoteById[it] } }
-        if (todo.isEmpty()) {
+        val wanted = list.filter { it.isFromServer && (!it.isDownloaded || it.fileMissing) }
+        val (cloudSongs, serverSongs) = wanted.partition { s -> s.remoteId?.let(com.example.mimic.data.cloud.CloudRef::parse) != null }
+        val todo = serverSongs.mapNotNull { s -> s.remoteId?.let { remoteById[it] } }
+        if (todo.isEmpty() && cloudSongs.isEmpty()) {
             _messages.tryEmit("Nothing to download")
             return
         }
-        _messages.tryEmit("Downloading ${todo.size} songs…")
-        viewModelScope.launch { for (r in todo) download(r, announce = false) }
+        _messages.tryEmit("Downloading ${todo.size + cloudSongs.size} songs…")
+        viewModelScope.launch {
+            for (r in todo) download(r, announce = false)
+            // One at a time: bounded bandwidth, and Cancel stops exactly the current song.
+            for (s in cloudSongs) cloudDownload(s, announce = false)
+        }
+    }
+
+    /** remoteId -> fraction downloaded (0..1, or -1 while the size is unknown). */
+    private val _downloadProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
+    val downloadProgress: StateFlow<Map<String, Float>> = _downloadProgress.asStateFlow()
+    private val downloadJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
+
+    private fun startCloudDownload(song: Song, announce: Boolean) {
+        viewModelScope.launch { cloudDownload(song, announce) }
+    }
+
+    private suspend fun cloudDownload(song: Song, announce: Boolean) {
+        val id = song.remoteId ?: return
+        if (id in _downloading.value) return
+        cloud.downloadBlockedReason()?.let { _messages.tryEmit("$it — \"${song.title}\" wasn't downloaded"); return }
+        _downloading.update { it + id }
+        _downloadProgress.update { it + (id to -1f) }
+        val job = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            cloud.download(song) { done, total ->
+                val f = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else -1f
+                _downloadProgress.update { it + (id to f) }
+            }.fold(
+                onSuccess = { if (announce) _messages.tryEmit("Downloaded \"${song.title}\"") },
+                onFailure = { _messages.tryEmit("Download failed: ${it.message ?: "unknown error"}. Tap Download to retry.") },
+            )
+        }
+        downloadJobs[id] = job
+        try {
+            job.join()
+            if (job.isCancelled) _messages.tryEmit("Download cancelled")
+        } finally {
+            downloadJobs.remove(id)
+            _downloading.update { it - id }
+            _downloadProgress.update { it - id }
+        }
+    }
+
+    /** Cancel a running cloud download; the partial file is deleted, nothing is recorded. */
+    fun cancelDownload(song: Song) {
+        song.remoteId?.let { downloadJobs[it]?.cancel() }
     }
 
     private fun startDownload(remote: RemoteSong) {
@@ -647,12 +720,111 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Delete the offline copy only; the song stays on the server. */
+    /** Delete the offline copy only; the song stays on the server / in the cloud. */
     fun removeDownload(song: Song) {
         val remoteId = song.remoteId ?: return
         viewModelScope.launch {
             downloadRepo.remove(remoteId)
-            _messages.tryEmit("Removed download (still on your server)")
+            val where = com.example.mimic.data.cloud.CloudRef.parse(remoteId)?.provider?.label ?: "your server"
+            _messages.tryEmit("Removed download (still in $where)")
+        }
+    }
+
+    // ---- Cloud sources: Google Drive / OneDrive (MImic 3.1) ----
+
+    val cloudAccounts: StateFlow<List<com.example.mimic.data.db.CloudAccountEntity>> = cloud.accounts
+    val cloudSyncState: StateFlow<Map<String, com.example.mimic.data.cloud.CloudSyncState>> = cloud.syncState
+    val cloudStats: StateFlow<Map<String, com.example.mimic.data.cloud.CloudAccountStats>> = cloud.stats
+    val oneDriveConfigured: Boolean get() = cloud.oneDriveAuth.isConfigured
+
+    /** Pull-to-refresh / "Sync now": Navidrome catalog + every cloud account. */
+    fun refreshAllSources() {
+        refreshServerCatalog()
+        cloud.syncAllAsync(0)
+    }
+
+    /** Opening the library: refresh cloud accounts not synced in the last 10 minutes. */
+    fun refreshIfStale() = cloud.syncAllAsync(10 * 60_000L)
+
+    fun syncCloudAccount(accountKey: String) {
+        viewModelScope.launch { cloud.sync(accountKey) }
+    }
+
+    private fun cloudError(e: Throwable): String = when (e) {
+        is com.example.mimic.data.cloud.CloudException -> e.message ?: "Cloud error"
+        else -> "Couldn't connect (${e.javaClass.simpleName})"
+    }
+
+    /** OneDrive sign-in (browser) -> returns the new account key for folder selection. */
+    fun connectOneDrive(activity: android.app.Activity, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            runCatching { cloud.connectOneDrive(activity) }.fold(
+                onSuccess = { onDone(it.accountKey) },
+                onFailure = { _messages.tryEmit(cloudError(it)); onDone(null) },
+            )
+        }
+    }
+
+    /** Google step 1: either already authorized, or hands back Google's consent UI to launch. */
+    fun connectGoogle(launchConsent: (android.app.PendingIntent) -> Unit, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            runCatching { cloud.beginGoogle() }.fold(
+                onSuccess = { step ->
+                    when (step) {
+                        is com.example.mimic.data.cloud.google.GoogleDriveAuth.Step.NeedsConsent -> launchConsent(step.intent)
+                        is com.example.mimic.data.cloud.google.GoogleDriveAuth.Step.Authorized -> finishGoogle(step.token, onDone)
+                    }
+                },
+                onFailure = { _messages.tryEmit(cloudError(it)); onDone(null) },
+            )
+        }
+    }
+
+    /** Google step 2: the consent UI returned. */
+    fun completeGoogleConsent(data: android.content.Intent?, onDone: (String?) -> Unit) {
+        viewModelScope.launch {
+            runCatching { cloud.googleTokenFromConsent(data) }.fold(
+                onSuccess = { finishGoogle(it, onDone) },
+                onFailure = { _messages.tryEmit(cloudError(it)); onDone(null) },
+            )
+        }
+    }
+
+    private suspend fun finishGoogle(token: String, onDone: (String?) -> Unit) {
+        runCatching { cloud.finishGoogle(token) }.fold(
+            onSuccess = { onDone(it.accountKey) },
+            onFailure = { _messages.tryEmit(cloudError(it)); onDone(null) },
+        )
+    }
+
+    /** Debug builds: connect a mock-API test account (local test server via adb reverse). */
+    fun connectMockCloud(provider: com.example.mimic.data.cloud.CloudProviderType, apiBase: String, onDone: (String?) -> Unit = {}) {
+        viewModelScope.launch {
+            runCatching { cloud.connectMock(provider, apiBase) }.fold(
+                onSuccess = { onDone(it.accountKey) },
+                onFailure = { _messages.tryEmit(cloudError(it)); onDone(null) },
+            )
+        }
+    }
+
+    suspend fun listCloudFolders(accountKey: String, parentId: String?): Result<List<com.example.mimic.data.cloud.CloudFolder>> =
+        runCatching { cloud.listFolders(accountKey, parentId) }
+
+    fun chooseCloudFolder(accountKey: String, folder: com.example.mimic.data.cloud.CloudFolder) {
+        viewModelScope.launch { cloud.chooseFolder(accountKey, folder) }
+    }
+
+    fun disconnectCloud(accountKey: String, removeDownloads: Boolean) {
+        viewModelScope.launch {
+            cloud.disconnect(accountKey, removeDownloads)
+            _messages.tryEmit(if (removeDownloads) "Disconnected and removed its downloads" else "Disconnected — downloaded songs are kept")
+        }
+    }
+
+    fun setCloudDataControls(wifiOnlyDownloads: Boolean, cellularTagReading: Boolean, backgroundSync: Boolean) {
+        viewModelScope.launch {
+            settingsRepo.setCloudDataControls(wifiOnlyDownloads, cellularTagReading, backgroundSync)
+            com.example.mimic.data.sync.CloudLibrarySyncWorker.schedule(getApplication(), backgroundSync)
         }
     }
 

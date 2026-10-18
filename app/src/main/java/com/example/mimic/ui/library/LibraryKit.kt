@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -119,6 +120,34 @@ fun SourceFilterRow(vm: PlayerViewModel, modifier: Modifier = Modifier) {
             )
         }
     }
+}
+
+/**
+ * Pull-to-refresh for the library tabs (MImic 3.1): re-checks the Navidrome catalog and every
+ * cloud account (incremental — only changes are transferred). The spinner shows while any source
+ * is still syncing, including syncs started elsewhere (Sync now, app launch).
+ */
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
+@Composable
+fun RefreshableLibrary(vm: PlayerViewModel, contentPadding: PaddingValues, content: @Composable () -> Unit) {
+    val catalog by vm.catalogState.collectAsStateWithLifecycle()
+    val cloud by vm.cloudSyncState.collectAsStateWithLifecycle()
+    val refreshing = catalog == com.example.mimic.player.CatalogState.Loading ||
+        cloud.values.any { it is com.example.mimic.data.cloud.CloudSyncState.Syncing && it.phase.startsWith("Reading").not() }
+    val state = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
+    androidx.compose.material3.pulltorefresh.PullToRefreshBox(
+        isRefreshing = refreshing,
+        onRefresh = { vm.refreshAllSources() },
+        state = state,
+        modifier = Modifier.fillMaxSize(),
+        indicator = {
+            androidx.compose.material3.pulltorefresh.PullToRefreshDefaults.Indicator(
+                state = state,
+                isRefreshing = refreshing,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = contentPadding.calculateTopPadding()),
+            )
+        },
+    ) { content() }
 }
 
 /** A section heading with an optional "See all". */

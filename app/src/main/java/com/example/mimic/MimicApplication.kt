@@ -5,6 +5,8 @@ import com.example.mimic.data.DownloadRepository
 import com.example.mimic.data.FavoritesRepository
 import com.example.mimic.data.MusicRepository
 import com.example.mimic.data.SettingsRepository
+import com.example.mimic.data.cloud.CloudLibraryRepository
+import com.example.mimic.data.sync.CloudLibrarySyncWorker
 import com.example.mimic.data.db.MimicDatabase
 import com.example.mimic.data.server.ServerCredentialsRepository
 
@@ -31,8 +33,19 @@ class AppContainer(application: Application) {
     val favoritesRepository: FavoritesRepository by lazy {
         FavoritesRepository(favoriteDao, favoriteGroupDao, pendingStarDao)
     }
+
+    /** Google Drive + OneDrive (MImic 3.1): shared by the UI, the player service and the sync worker. */
+    val cloudLibrary: CloudLibraryRepository by lazy {
+        CloudLibraryRepository(application, database.cloudDao(), downloadRepository, settingsRepository)
+    }
 }
 
 class MimicApplication : Application() {
     val container: AppContainer by lazy { AppContainer(this) }
+
+    override fun onCreate() {
+        super.onCreate()
+        // Periodic background refresh of cloud libraries (survives reboots via WorkManager).
+        CloudLibrarySyncWorker.schedule(this, enabled = true)
+    }
 }

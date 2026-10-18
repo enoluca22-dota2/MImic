@@ -44,7 +44,7 @@ class ThemeMigrationTest {
         }
 
         val room = Room.databaseBuilder(context, MimicDatabase::class.java, name)
-            .addMigrations(MimicDatabase.MIGRATION_1_2, MimicDatabase.MIGRATION_2_3, MimicDatabase.MIGRATION_3_4, MimicDatabase.MIGRATION_4_5)
+            .addMigrations(MimicDatabase.MIGRATION_1_2, MimicDatabase.MIGRATION_2_3, MimicDatabase.MIGRATION_3_4, MimicDatabase.MIGRATION_4_5, MimicDatabase.MIGRATION_5_6)
             .build()
         try {
             val themes = room.customThemeDao().all().first()

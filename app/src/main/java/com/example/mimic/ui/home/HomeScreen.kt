@@ -92,7 +92,13 @@ fun HomeScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNav) 
     val player by vm.nowPlaying.collectAsStateWithLifecycle()
 
     fun List<Song>.f() = if (filter == SourceFilter.ALL) this else filter { filter.matches(it) }
+    val newestAlbums = com.example.mimic.ui.library.rememberComputed(emptyList<com.example.mimic.data.AlbumGroup>(), all, filter) {
+        UnifiedLibrary.albums(UnifiedLibrary.filter(all, filter))
+            .sortedByDescending { a -> a.songs.maxOf { it.dateAddedSec } }
+            .take(20)
+    }
 
+    com.example.mimic.ui.library.RefreshableLibrary(vm, contentPadding) {
     LazyColumn(contentPadding = contentPadding, modifier = Modifier.fillMaxSize()) {
         item(key = "greeting") { Greeting(all) }
         item(key = "filters") { SourceFilterRow(vm, Modifier.padding(top = 4.dp)) }
@@ -123,18 +129,19 @@ fun HomeScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNav) 
                     if (downloads.isEmpty()) {
                         item(key = "dl_e") {
                             InlineEmpty(
-                                "Songs you download from your server appear here automatically and play offline.",
-                                "Browse server library", nav.openServerBrowse,
+                                "Songs you download from your cloud folder or server appear here automatically and play offline.",
                             )
                         }
                     } else {
-                        songCarousel("dl", downloads, vm, nav)
+                        val list = downloads.f()
+                        if (list.isEmpty()) item(key = "dl_f") { InlineEmpty("No downloads from this source yet.") }
+                        else songCarousel("dl", list, vm, nav)
                     }
                 }
                 HomeSection.RECENTLY_ADDED -> {
                     val list = recentlyAdded.f()
                     item(key = "ra_h") { SectionTitle(section.label) }
-                    if (list.isEmpty()) item(key = "ra_e") { InlineEmpty("New music on your phone or server will show up here.") }
+                    if (list.isEmpty()) item(key = "ra_e") { InlineEmpty("New music on your phone, cloud folder or server will show up here.") }
                     else songCarousel("ra", list, vm, nav, showSource = true)
                 }
                 HomeSection.FAVORITES -> {
@@ -154,6 +161,20 @@ fun HomeScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNav) 
                                 items(favArtists, key = { it.groupKey }) { g ->
                                     val art = remember(all, g.groupKey) { all.firstOrNull { it.artistKey == g.groupKey }?.albumArtUri }
                                     ArtistCard(g.name, g.subtitle, art, onClick = { nav.openArtist(g.groupKey) })
+                                }
+                            }
+                        }
+                    }
+                }
+                HomeSection.ALBUMS -> {
+                    item(key = "al_h") { SectionTitle(section.label) }
+                    if (newestAlbums.isEmpty()) {
+                        item(key = "al_e") { InlineEmpty("Albums from your phone, cloud folder and server appear here.") }
+                    } else {
+                        item(key = "al_r") {
+                            LazyRow(contentPadding = PaddingValues(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                items(newestAlbums, key = { it.key }) { a ->
+                                    com.example.mimic.ui.library.AlbumCard(a.title, a.artist, a.artUri, onClick = { nav.openAlbum(a.key) })
                                 }
                             }
                         }
@@ -212,6 +233,7 @@ fun HomeScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNav) 
             }
         }
     }
+    }
 }
 
 @Composable
@@ -231,8 +253,9 @@ private fun Greeting(all: List<Song>) {
         )
         val dl = all.count { it.isDownloaded }
         val device = all.count { it.source == SongSource.LOCAL }
+        val cloud = all.count { it.provider == com.example.mimic.data.MusicProvider.GOOGLE_DRIVE || it.provider == com.example.mimic.data.MusicProvider.ONEDRIVE }
         Text(
-            "$device on this phone · $dl downloaded",
+            "$device on this phone · " + (if (cloud > 0) "$cloud in the cloud · " else "") + "$dl downloaded",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
@@ -317,6 +340,7 @@ private fun SongCard(song: Song, showSource: Boolean, onClick: () -> Unit, onLon
             song.artist + " · " + when {
                 song.isDownloaded -> "Downloaded"
                 song.source == SongSource.SERVER -> "Server"
+                song.source == SongSource.CLOUD -> song.provider.label
                 else -> "On device"
             }
         } else song.artist

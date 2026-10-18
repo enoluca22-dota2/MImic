@@ -288,6 +288,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenPlayerStudio = { navController.navigate("playerstudio") },
                     onOpenHomeCustomize = { navController.navigate("homecustomize") },
                     onOpenMusicServer = { navController.navigate("musicserver") },
+                    onOpenMusicSources = { navController.navigate("sources") },
                 )
             }
 
@@ -312,6 +313,20 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         onOpenBrowse = { navController.navigate("serverbrowse") },
                     )
                 }
+            }
+            composable("sources") {
+                InsetScreen(innerPadding) {
+                    com.example.mimic.ui.sources.MusicSourcesScreen(
+                        viewModel,
+                        onBack = back,
+                        onOpenNavidrome = { navController.navigate("musicserver") },
+                        onChooseFolder = { navController.navigate("cloudfolder/${enc(it)}") },
+                    )
+                }
+            }
+            composable("cloudfolder/{key}") { entry ->
+                val key = entry.arguments?.getString("key")?.let(Uri::decode) ?: return@composable
+                InsetScreen(innerPadding) { com.example.mimic.ui.sources.CloudFolderPickerScreen(viewModel, key, onDone = back) }
             }
             composable("serverbrowse") {
                 InsetScreen(innerPadding) {
@@ -390,6 +405,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
 
     menuSong?.let { song ->
         val canDownload = song.isFromServer && (!song.isDownloaded || song.fileMissing)
+        val progress = viewModel.downloadProgress.collectAsStateWithLifecycle().value
         SongActionsSheet(
             song = song,
             isFavorite = viewModel.favoriteIds.collectAsStateWithLifecycle().value.contains(song.id),
@@ -400,6 +416,8 @@ fun MimicApp(viewModel: PlayerViewModel) {
             onToggleFavorite = { viewModel.toggleFavorite(song) },
             onDownload = if (canDownload) ({ viewModel.downloadSong(song) }) else null,
             onRemoveDownload = if (song.isDownloaded) ({ viewModel.removeDownload(song) }) else null,
+            downloadProgress = song.remoteId?.let { progress[it] },
+            onCancelDownload = { viewModel.cancelDownload(song) },
             onGoToAlbum = { nowPlayingOpen = false; nav.openAlbum(song.albumKey) },
             onGoToArtist = { nowPlayingOpen = false; nav.openArtist(song.artistKey) },
         )
