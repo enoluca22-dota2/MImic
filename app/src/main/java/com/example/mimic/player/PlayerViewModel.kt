@@ -228,6 +228,20 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun next() = controller?.seekToNextMediaItem()
     fun previous() = controller?.seekToPreviousMediaItem()
+
+    /**
+     * Stop & close: halt playback, clear the queue, and reset UI state. This empties the
+     * MediaSession so Android removes the media notification / system media controls (the OS may
+     * still keep a "recently used" card briefly — that surface is owned by the system, not MImic).
+     * Clearing currentSong also dismisses the full-screen player and hides the mini-player.
+     */
+    fun stopPlayback() {
+        val c = controller ?: return
+        c.stop()
+        c.clearMediaItems()
+        _queue.value = emptyList()
+        _uiState.value = PlayerUiState()
+    }
     fun seekTo(positionMs: Long) = controller?.seekTo(positionMs)
     fun playQueueItem(index: Int) = controller?.seekToDefaultPosition(index)
 

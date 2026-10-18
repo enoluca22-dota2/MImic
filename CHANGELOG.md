@@ -1,5 +1,37 @@
 # Changelog
 
+## 2.8.4 — Player overlay / insets / Stop & Close (real phone UI bug report)
+Repairs the broken Player Layout / Now Playing experience reported on a physical Xiaomi phone.
+- **Root cause of "Now Playing over the settings page / darkened screen":** the Immersive layout's
+  background was a *translucent* accent gradient (`primary.copy(alpha=0.35f)` at top), so the
+  full-screen player did not occlude the screen behind it — the underlying UI bled through, the
+  controls appeared to float over the bottom nav, and touches leaked. (Classic/Compact used an
+  opaque color, so this was Immersive-specific; the user had Immersive selected.) Fixed by painting
+  an **opaque base** behind the gradient (edge-to-edge) and insetting the content with
+  `systemBarsPadding()` so the header clears the status bar and the controls clear the nav bar.
+- **Root cause of headers overlapping the status bar:** pushed sub-screens (Settings, Player
+  Layout, Account, Theme Studio, etc.) drew edge-to-edge with no insets (only the three tab screens
+  got them from the Scaffold). Added one `InsetScreen` wrapper applying the Scaffold's innerPadding
+  (top status bar + bottom mini-player/nav) to every sub-screen — titles no longer overlap the
+  clock and last rows no longer hide behind the mini-player.
+- **New Stop & Close action** (■ in the player top bar): `stopPlayback()` halts playback, clears the
+  queue, and resets UI state, emptying the MediaSession so Android removes the media notification /
+  system media controls (`state=NONE` verified). Clearing the current song also dismisses the
+  full-screen player and hides the mini-player. **Minimize** (⌄ / system back) keeps playing and
+  collapses to the mini-player. The "Island"/media card on Xiaomi/HyperOS is the **OS-owned**
+  system media surface driven by the MediaSession — not a MImic overlay; Stop clears it (HyperOS may
+  briefly keep a "recently used" card, which is OS-controlled).
+- Full-screen back always collapses (BackHandler) and never reopens automatically.
+- Emulator-verified: opaque Immersive overlay, header/controls clear of system bars, Stop → NONE +
+  overlay closed + mini-player gone, Minimize keeps playing, layout switching Classic/Immersive/
+  Compact with no trapping, settings scroll, back navigation, background playback, 0 crashes/ANR.
+- Regression test `PlayerUiStateTest` (cleared/stopped state). 38 unit tests, 0 failures.
+  versionCode 14 / versionName 2.8.4; applicationId + signing unchanged.
+- Library: Navidrome mount finalized at `C:/Users/Eno/Music/mp3` (`:ro`), backup SQLite
+  `integrity_check: ok`, **386 tracks** indexed, multiple real tracks stream (HTTP 206 audio/mpeg,
+  range/seek) incl. over Tailscale. Unicode filenames (fullwidth `｜`, accents, spaces, parens) are
+  handled server-side + via opaque song ids; the app never touches raw filenames.
+
 ## 2.8.1 — Scroll jank + playback-freeze repair (real phone bug report)
 Fixes two issues reported on a physical phone over Tailscale (both environment-dependent, so
 the earlier localhost emulator test didn't surface them):

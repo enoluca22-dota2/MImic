@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.QueueMusic
 import androidx.compose.material.icons.filled.Bedtime
@@ -28,6 +29,7 @@ import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.SkipPrevious
+import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -71,12 +73,15 @@ fun NowPlayingScreen(
     onToggleFavorite: () -> Unit,
     onOpenQueue: () -> Unit,
     onOpenSleep: () -> Unit,
+    onStop: () -> Unit = {},
 ) {
     val song = state.currentSong
-    // System back collapses the full-screen player (previously it could get stuck open).
+    // System back collapses (minimizes) the full-screen player — it never gets stuck open.
     BackHandler(onBack = onBack)
-    // Immersive uses a subtle top-down gradient from the accent into the background.
-    val background = if (config.layout == PlayerLayout.IMMERSIVE) {
+    // The overlay must FULLY occlude whatever is behind it. Immersive paints a translucent accent
+    // gradient, so it is layered ON TOP of an opaque base; otherwise the screen underneath bleeds
+    // through (the reported "Now Playing over the settings page / darkened screen" bug).
+    val immersiveOverlay = if (config.layout == PlayerLayout.IMMERSIVE) {
         Modifier.background(
             Brush.verticalGradient(
                 listOf(
@@ -86,7 +91,7 @@ fun NowPlayingScreen(
             ),
         )
     } else {
-        Modifier.background(MaterialTheme.colorScheme.background)
+        Modifier
     }
 
     val artworkFraction = when (config.layout) {
@@ -96,15 +101,25 @@ fun NowPlayingScreen(
     }
     val corner = if (config.artworkShape == ArtworkShape.CIRCLE) 1000 else config.artworkShape.cornerDp()
 
+    // Opaque base fills edge-to-edge (behind the system bars for an immersive look); the content
+    // Column is inset with systemBarsPadding so the header clears the status bar and the controls
+    // clear the navigation bar.
+    Box(
+        Modifier.fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .then(immersiveOverlay),
+    ) {
     Column(
-        // statusBarsPadding keeps the collapse chevron below the status-bar clock so it stays tappable.
-        modifier = Modifier.fillMaxSize().then(background).statusBarsPadding().padding(horizontal = 24.dp),
+        modifier = Modifier.fillMaxSize().systemBarsPadding().padding(horizontal = 24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        // Top bar: collapse + optional secondary actions.
+        // Top bar: Minimize (collapse, keeps playing) + Stop & Close + optional secondary actions.
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onBack) {
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Collapse")
+                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Minimize")
+            }
+            IconButton(onClick = onStop) {
+                Icon(Icons.Default.Stop, contentDescription = "Stop & close")
             }
             Text(
                 "Now Playing",
@@ -168,6 +183,7 @@ fun NowPlayingScreen(
         Controls(state, config, onPlayPause, onNext, onPrevious, onShuffle, onRepeat)
 
         if (config.layout == PlayerLayout.IMMERSIVE) Spacer(Modifier.height(24.dp))
+    }
     }
 }
 

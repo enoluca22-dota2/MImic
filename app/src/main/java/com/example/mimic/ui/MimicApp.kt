@@ -2,7 +2,9 @@ package com.example.mimic.ui
 
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -82,6 +84,17 @@ private val tabs = listOf(
     Tab("search", "Search", Icons.Default.Search),
     Tab("library", "Your Library", Icons.Default.LibraryMusic),
 )
+
+/**
+ * Insets full-screen sub-screens (Settings, Player Layout, Account, etc.) by the Scaffold's
+ * [padding]: the top keeps their header below the status-bar clock, the bottom keeps their last
+ * rows above the mini-player + navigation bar. The three tab screens consume innerPadding
+ * themselves (as LazyColumn contentPadding), so they are not wrapped here.
+ */
+@Composable
+private fun InsetScreen(padding: PaddingValues, content: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize().padding(padding)) { content() }
+}
 
 @Composable
 fun MimicApp(viewModel: PlayerViewModel) {
@@ -186,65 +199,73 @@ fun MimicApp(viewModel: PlayerViewModel) {
                 )
             }
             composable("settings") {
-                SettingsScreen(
-                    viewModel,
-                    onBack = { navController.popBackStack() },
-                    onOpenThemeStudio = { navController.navigate("themestudio") },
-                    onOpenPlayerStudio = { navController.navigate("playerstudio") },
-                    onOpenHomeCustomize = { navController.navigate("homecustomize") },
-                    onOpenMusicServer = { navController.navigate("musicserver") },
-                )
+                InsetScreen(innerPadding) {
+                    SettingsScreen(
+                        viewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenThemeStudio = { navController.navigate("themestudio") },
+                        onOpenPlayerStudio = { navController.navigate("playerstudio") },
+                        onOpenHomeCustomize = { navController.navigate("homecustomize") },
+                        onOpenMusicServer = { navController.navigate("musicserver") },
+                    )
+                }
             }
-            composable("playerstudio") { PlayerLayoutStudioScreen(viewModel, onBack = { navController.popBackStack() }) }
-            composable("homecustomize") { HomeCustomizeScreen(viewModel, onBack = { navController.popBackStack() }) }
+            composable("playerstudio") { InsetScreen(innerPadding) { PlayerLayoutStudioScreen(viewModel, onBack = { navController.popBackStack() }) } }
+            composable("homecustomize") { InsetScreen(innerPadding) { HomeCustomizeScreen(viewModel, onBack = { navController.popBackStack() }) } }
             composable("musicserver") {
-                MusicServerScreen(
-                    viewModel,
-                    onBack = { navController.popBackStack() },
-                    onOpenBrowse = { navController.navigate("serverbrowse") },
-                )
+                InsetScreen(innerPadding) {
+                    MusicServerScreen(
+                        viewModel,
+                        onBack = { navController.popBackStack() },
+                        onOpenBrowse = { navController.navigate("serverbrowse") },
+                    )
+                }
             }
-            composable("serverbrowse") { ServerBrowseScreen(viewModel, onBack = { navController.popBackStack() }) }
+            composable("serverbrowse") { InsetScreen(innerPadding) { ServerBrowseScreen(viewModel, onBack = { navController.popBackStack() }) } }
             composable("downloads") {
                 val downloads by viewModel.downloads.collectAsStateWithLifecycle()
-                SongListScreen(
-                    title = "Downloads",
-                    songs = downloads,
-                    onBack = { navController.popBackStack() },
-                    onPlay = viewModel::play,
-                    onSongMenu = onSongMenu,
-                )
+                InsetScreen(innerPadding) {
+                    SongListScreen(
+                        title = "Downloads",
+                        songs = downloads,
+                        onBack = { navController.popBackStack() },
+                        onPlay = viewModel::play,
+                        onSongMenu = onSongMenu,
+                    )
+                }
             }
             composable("themestudio") {
-                ThemeStudioScreen(
-                    vm = viewModel,
-                    onEdit = { editingTheme = it },
-                    onCreateNew = {
-                        val base = ThemeRegistry.byId(ThemeRegistry.DEFAULT_ID)
-                        editingTheme = base.copy(id = viewModel.newThemeId(), name = "My Theme", builtIn = false)
-                    },
-                    onImport = { importLauncher.launch(arrayOf("application/json", "text/plain", "text/*")) },
-                    onExportFile = { pendingExportTheme = it; exportLauncher.launch("mimic-theme-${it.name}.json") },
-                    onShare = shareTheme,
-                    onBack = { navController.popBackStack() },
-                )
+                InsetScreen(innerPadding) {
+                    ThemeStudioScreen(
+                        vm = viewModel,
+                        onEdit = { editingTheme = it },
+                        onCreateNew = {
+                            val base = ThemeRegistry.byId(ThemeRegistry.DEFAULT_ID)
+                            editingTheme = base.copy(id = viewModel.newThemeId(), name = "My Theme", builtIn = false)
+                        },
+                        onImport = { importLauncher.launch(arrayOf("application/json", "text/plain", "text/*")) },
+                        onExportFile = { pendingExportTheme = it; exportLauncher.launch("mimic-theme-${it.name}.json") },
+                        onShare = shareTheme,
+                        onBack = { navController.popBackStack() },
+                    )
+                }
             }
             composable("favorites") {
-                FavoritesScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
+                InsetScreen(innerPadding) { FavoritesScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu) }
             }
             composable("smartcollections") {
-                SmartCollectionsScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
+                InsetScreen(innerPadding) { SmartCollectionsScreen(viewModel, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu) }
             }
             composable("browse/{type}") { entry ->
                 val type = entry.arguments?.getString("type")
                     ?.let { runCatching { BrowseType.valueOf(it) }.getOrNull() }
                     ?: BrowseType.ALBUMS
-                BrowseScreen(viewModel, type, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
+                InsetScreen(innerPadding) { BrowseScreen(viewModel, type, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu) }
             }
             composable("playlist/{id}") { entry ->
                 val id = entry.arguments?.getString("id")?.toLongOrNull() ?: return@composable
                 val name = playlists.firstOrNull { it.id == id }?.name ?: "Playlist"
-                PlaylistDetailScreen(viewModel, id, name, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu)
+                InsetScreen(innerPadding) { PlaylistDetailScreen(viewModel, id, name, onBack = { navController.popBackStack() }, onSongMenu = onSongMenu) }
             }
         }
     }
@@ -265,6 +286,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
             onToggleFavorite = { uiState.currentSong?.let { viewModel.toggleFavorite(it) } },
             onOpenQueue = { queueOpen = true },
             onOpenSleep = { sleepOpen = true },
+            onStop = { viewModel.stopPlayback(); nowPlayingOpen = false },
         )
     }
 
