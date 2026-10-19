@@ -15,6 +15,7 @@ data class AppSettings(
     val themeId: String = ThemeRegistry.DEFAULT_ID,
     val sleepTimerMinutes: Int = 0,
     val playerLayout: PlayerLayoutConfig = PlayerLayoutConfig(),
+    val dynamicPlayer: DynamicPlayerConfig = DynamicPlayerConfig(),
     val homeConfig: HomeConfig = HomeConfig(),
     val glassQuality: GlassQuality = GlassQuality.BALANCED,
     /** Library tabs / views / sorting (MImic 3.2). */
@@ -46,6 +47,18 @@ class SettingsRepository(private val context: Context) {
         val HOME_HIDDEN = stringPreferencesKey("home_hidden")
         val NAV_STYLE = stringPreferencesKey("nav_style")
         val PLAYER_BG = stringPreferencesKey("player_background")
+        // Dynamic Now Playing (4.1)
+        val DYN_GRADIENT = booleanPreferencesKey("dyn_gradient")
+        val DYN_BLUR = booleanPreferencesKey("dyn_blur")
+        val DYN_ANIMATED = booleanPreferencesKey("dyn_animated")
+        val DYN_INTENSITY = stringPreferencesKey("dyn_intensity")
+        val DYN_SHAPE = stringPreferencesKey("dyn_shape")
+        val DYN_GLASS = booleanPreferencesKey("dyn_glass")
+        val DYN_SIZE = stringPreferencesKey("dyn_size")
+        val DYN_BRIGHTNESS = floatPreferencesKey("dyn_brightness")
+        val DYN_CONTRAST = booleanPreferencesKey("dyn_contrast")
+        val DYN_REDUCED = booleanPreferencesKey("dyn_reduced_motion")
+        val LOCK_STYLE = stringPreferencesKey("lock_style")
         val CONTROL_STYLE = stringPreferencesKey("player_control_style")
         val GLASS_QUALITY = stringPreferencesKey("glass_quality")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
@@ -87,6 +100,19 @@ class SettingsRepository(private val context: Context) {
                 showSecondaryActions = prefs[Keys.SHOW_SECONDARY] ?: true,
                 background = decode(prefs[Keys.PLAYER_BG], PlayerBackground.AUTO),
                 controlStyle = decode(prefs[Keys.CONTROL_STYLE], ControlStyle.AUTO),
+            ),
+            dynamicPlayer = DynamicPlayerConfig(
+                gradient = prefs[Keys.DYN_GRADIENT] ?: true,
+                artworkBlur = prefs[Keys.DYN_BLUR] ?: true,
+                animatedBackground = prefs[Keys.DYN_ANIMATED] ?: true,
+                intensity = decode(prefs[Keys.DYN_INTENSITY], DynamicIntensity.BALANCED),
+                artShape = decode(prefs[Keys.DYN_SHAPE], DynamicArtShape.EXTRA_ROUNDED),
+                glassControls = prefs[Keys.DYN_GLASS] ?: true,
+                artSize = decode(prefs[Keys.DYN_SIZE], DynamicArtSize.NORMAL),
+                brightness = (prefs[Keys.DYN_BRIGHTNESS] ?: 0f).coerceIn(-0.4f, 0.4f),
+                autoContrast = prefs[Keys.DYN_CONTRAST] ?: true,
+                reduceMotion = prefs[Keys.DYN_REDUCED] ?: false,
+                lockStyle = decode(prefs[Keys.LOCK_STYLE], LockStyle.DYNAMIC),
             ),
             homeConfig = HomeConfig(
                 sectionOrder = decodeSections(prefs[Keys.HOME_ORDER]).ifEmpty { HomeSection.entries },
@@ -137,6 +163,22 @@ class SettingsRepository(private val context: Context) {
             it[Keys.SHOW_SECONDARY] = config.showSecondaryActions
             it[Keys.PLAYER_BG] = config.background.name
             it[Keys.CONTROL_STYLE] = config.controlStyle.name
+        }
+    }
+
+    suspend fun setDynamicPlayer(c: DynamicPlayerConfig) {
+        context.dataStore.edit {
+            it[Keys.DYN_GRADIENT] = c.gradient
+            it[Keys.DYN_BLUR] = c.artworkBlur
+            it[Keys.DYN_ANIMATED] = c.animatedBackground
+            it[Keys.DYN_INTENSITY] = c.intensity.name
+            it[Keys.DYN_SHAPE] = c.artShape.name
+            it[Keys.DYN_GLASS] = c.glassControls
+            it[Keys.DYN_SIZE] = c.artSize.name
+            it[Keys.DYN_BRIGHTNESS] = c.brightness.coerceIn(-0.4f, 0.4f)
+            it[Keys.DYN_CONTRAST] = c.autoContrast
+            it[Keys.DYN_REDUCED] = c.reduceMotion
+            it[Keys.LOCK_STYLE] = c.lockStyle.name
         }
     }
 

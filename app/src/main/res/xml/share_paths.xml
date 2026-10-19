@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Song sharing (MImic 4.1): only offline downloads can be exposed, read-only, one URI at a time. -->
+<paths xmlns:android="http://schemas.android.com/apk/res/android">
+    <files-path name="songs" path="downloads/" />
+</paths>

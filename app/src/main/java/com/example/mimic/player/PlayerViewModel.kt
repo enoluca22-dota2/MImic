@@ -70,6 +70,8 @@ data class PlayerUiState(
     val isBuffering: Boolean = false,
     val positionMs: Long = 0L,
     val durationMs: Long = 0L,
+    /** How far the player has loaded ahead (Media3 bufferedPosition), for the seek bar. */
+    val bufferedPositionMs: Long = 0L,
     val shuffle: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val isCurrentFavorite: Boolean = false,
@@ -336,6 +338,116 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    // ---- Casting (Google Cast, 4.1) ----
+
+    private val castController = container.castController
+    @Volatile private var casting = false
+    private var lastCastIndex = 0
+    private var lastCastPositionMs = 0L
+
+    /** "Casting to <TV>" for the UI, or null. */
+    private val _castingTo = MutableStateFlow<String?>(null)
+    val castingTo: StateFlow<String?> = _castingTo.asStateFlow()
+
+    /** The player the controls act on: the TV while casting, otherwise the phone. */
+    private val activePlayer: Player? get() = if (casting) castController.player ?: controller else controller
+
+    private fun castPlayerIfCasting(): Player? = if (casting) castController.player else null
+
+    private val castListener = object : Player.Listener {
+        override fun onEvents(player: Player, events: Player.Events) {
+            if (!casting) return
+            lastCastIndex = player.currentMediaItemIndex
+            lastCastPositionMs = player.currentPosition
+            syncFromPlayer(player)
+            rebuildQueue(player)
+        }
+    }
+
+    init {
+        viewModelScope.launch {
+            castController.events.collect { e ->
+                when (e) {
+                    com.example.mimic.cast.CastController.Event.SESSION_STARTED -> startCasting()
+                    com.example.mimic.cast.CastController.Event.SESSION_ENDED -> stopCasting()
+                }
+            }
+        }
+    }
+
+    /** A cast session began: hand the phone's queue + position to the TV, pause the phone. */
+    private fun startCasting() {
+        val tv = castController.player ?: return
+        if (castController.server.start() == null) {
+            _messages.tryEmit("To cast, connect this phone to the same Wi-Fi network as your TV.")
+            castController.disconnect()
+            return
+        }
+        casting = true
+        _castingTo.value = castController.deviceName() ?: "TV"
+        tv.addListener(castListener)
+        val c = controller
+        val songs = c?.let { (0 until it.mediaItemCount).mapNotNull { i -> it.getMediaItemAt(i).mediaId.toLongOrNull()?.let { id -> songsById[id] } } }.orEmpty()
+        if (c != null && songs.isNotEmpty()) {
+            val items = songs.mapNotNull(::toCastItem)
+            if (items.size != songs.size) _messages.tryEmit("Some songs can't be cast and were left out")
+            tv.setMediaItems(items, c.currentMediaItemIndex.coerceIn(0, (items.size - 1).coerceAtLeast(0)), c.currentPosition)
+            tv.repeatMode = c.repeatMode
+            tv.prepare()
+            tv.play()
+            c.pause()
+        }
+        _messages.tryEmit("Casting to ${_castingTo.value}")
+    }
+
+    /** The cast session ended: the phone takes over at the same song and position, paused. */
+    private fun stopCasting() {
+        if (!casting) return
+        casting = false
+        castController.player?.removeListener(castListener)
+        castController.server.stop()
+        val name = _castingTo.value
+        _castingTo.value = null
+        controller?.let { c ->
+            if (lastCastIndex in 0 until c.mediaItemCount) c.seekTo(lastCastIndex, lastCastPositionMs)
+            c.pause()
+            syncFromPlayer(c)
+            rebuildQueue(c)
+        }
+        _messages.tryEmit("Stopped casting${name?.let { " to $it" } ?: ""} — playback is back on the phone")
+    }
+
+    /**
+     * The TV-side item for [song]: its audio and artwork served by the phone's LAN server under
+     * random tokens. Navidrome songs are relayed (transcoded to MP3, which every Cast device
+     * plays) — the stream URL with its login token never leaves the phone.
+     */
+    private fun toCastItem(song: Song): androidx.media3.common.MediaItem? {
+        val server = castController.server
+        val uri = android.net.Uri.parse(song.uri)
+        val (source, mime) = when (uri.scheme) {
+            "content" -> com.example.mimic.cast.LanMediaServer.Source.ContentUri(uri) to
+                (runCatching { getApplication<Application>().contentResolver.getType(uri) }.getOrNull() ?: "audio/mpeg")
+            "file" -> com.example.mimic.cast.LanMediaServer.Source.LocalFile(java.io.File(uri.path ?: return null)) to
+                com.example.mimic.share.SongShare.mimeFor(com.example.mimic.share.SongShare.extensionOf(song.uri))
+            "http", "https" -> com.example.mimic.cast.LanMediaServer.Source.Relay(song.uri + "&format=mp3&maxBitRate=320") to "audio/mpeg"
+            else -> return null
+        }
+        val url = server.publish(source, mime) ?: return null
+        val art = song.albumArtUri?.let { server.publish(com.example.mimic.cast.LanMediaServer.Source.Artwork(it), "image/jpeg") }
+        return androidx.media3.common.MediaItem.Builder()
+            .setMediaId(song.id.toString())
+            .setUri(url)
+            .setMimeType(mime)
+            .setMediaMetadata(
+                MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist).setAlbumTitle(song.album)
+                    .setArtworkUri(art?.let(android.net.Uri::parse)).build(),
+            )
+            .build()
+    }
+
+    fun disconnectCast() = castController.disconnect()
+
     // ---- Playback ----
 
     fun play(queue: List<Song>, index: Int) {
@@ -345,7 +457,18 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val resolved = queue.map(::preferOffline)
         songsById = songsById + resolved.associateBy { it.id }
         _uiState.update { it.copy(playbackError = null) }
-        c.setMediaItems(resolved.map { it.toMediaItem() }, index.coerceIn(0, resolved.size - 1), 0L)
+        val start = index.coerceIn(0, resolved.size - 1)
+        val tv = castPlayerIfCasting()
+        if (tv != null) {
+            // Casting: the TV plays it; the phone keeps the same queue (paused) for when casting ends.
+            c.setMediaItems(resolved.map { it.toMediaItem() }, start, 0L)
+            c.prepare()
+            tv.setMediaItems(resolved.mapNotNull(::toCastItem), start, 0L)
+            tv.prepare()
+            tv.play()
+            return
+        }
+        c.setMediaItems(resolved.map { it.toMediaItem() }, start, 0L)
         c.prepare()
         c.play()
     }
@@ -363,12 +486,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun togglePlayPause() {
-        val c = controller ?: return
-        if (c.isPlaying) c.pause() else c.play()
+        val p = activePlayer ?: return
+        if (p.isPlaying) p.pause() else p.play()
     }
 
-    fun next() = controller?.seekToNextMediaItem()
-    fun previous() = controller?.seekToPreviousMediaItem()
+    fun next() = activePlayer?.seekToNextMediaItem()
+    fun previous() = activePlayer?.seekToPreviousMediaItem()
+
+    fun pause() {
+        activePlayer?.pause()
+    }
 
     /**
      * Stop & close: halt playback, clear the queue, and reset UI state. This empties the
@@ -383,16 +510,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         _queue.value = emptyList()
         _uiState.value = PlayerUiState()
     }
-    fun seekTo(positionMs: Long) = controller?.seekTo(positionMs)
-    fun playQueueItem(index: Int) = controller?.seekToDefaultPosition(index)
+    fun seekTo(positionMs: Long) = activePlayer?.seekTo(positionMs)
+    fun playQueueItem(index: Int) = activePlayer?.seekToDefaultPosition(index)
 
     fun toggleShuffle() {
-        val c = controller ?: return
+        val c = activePlayer ?: return
         c.shuffleModeEnabled = !c.shuffleModeEnabled
     }
 
     fun cycleRepeat() {
-        val c = controller ?: return
+        val c = activePlayer ?: return
         c.repeatMode = when (c.repeatMode) {
             Player.REPEAT_MODE_OFF -> Player.REPEAT_MODE_ALL
             Player.REPEAT_MODE_ALL -> Player.REPEAT_MODE_ONE
@@ -406,6 +533,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val s = preferOffline(song)
         songsById = songsById + (s.id to s)
         controller?.addMediaItem(s.toMediaItem())
+        castPlayerIfCasting()?.let { tv -> toCastItem(s)?.let(tv::addMediaItem) }
     }
 
     fun addAllToQueue(list: List<Song>) {
@@ -415,6 +543,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         val resolved = list.map(::preferOffline)
         songsById = songsById + resolved.associateBy { it.id }
         c.addMediaItems(resolved.map { it.toMediaItem() })
+        castPlayerIfCasting()?.addMediaItems(resolved.mapNotNull(::toCastItem))
         _messages.tryEmit("Added ${list.size} songs to the queue")
     }
 
@@ -424,13 +553,25 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         songsById = songsById + (s.id to s)
         val insertAt = (c.currentMediaItemIndex + 1).coerceAtMost(c.mediaItemCount)
         c.addMediaItem(insertAt, s.toMediaItem())
+        castPlayerIfCasting()?.let { tv -> toCastItem(s)?.let { tv.addMediaItem((tv.currentMediaItemIndex + 1).coerceAtMost(tv.mediaItemCount), it) } }
     }
 
-    fun removeFromQueue(index: Int) = controller?.removeMediaItem(index)
-    fun moveInQueue(from: Int, to: Int) = controller?.moveMediaItem(from, to)
+    fun removeFromQueue(index: Int) {
+        castPlayerIfCasting()?.removeMediaItem(index)
+        controller?.removeMediaItem(index)
+    }
+
+    fun moveInQueue(from: Int, to: Int) {
+        castPlayerIfCasting()?.moveMediaItem(from, to)
+        controller?.moveMediaItem(from, to)
+    }
 
     /** Clear Up Next: everything after the current song (the song itself keeps playing). */
     fun clearUpcoming() {
+        castPlayerIfCasting()?.let { tv ->
+            val from = tv.currentMediaItemIndex + 1
+            if (from < tv.mediaItemCount) tv.removeMediaItems(from, tv.mediaItemCount)
+        }
         val c = controller ?: return
         val from = c.currentMediaItemIndex + 1
         if (from < c.mediaItemCount) c.removeMediaItems(from, c.mediaItemCount)
@@ -546,6 +687,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun setPlayerLayout(config: com.example.mimic.data.PlayerLayoutConfig) {
         viewModelScope.launch { settingsRepo.setPlayerLayout(config) }
+    }
+
+    /** Dynamic Now Playing settings only — other layouts and themes are untouched. */
+    fun setDynamicPlayer(config: com.example.mimic.data.DynamicPlayerConfig) {
+        viewModelScope.launch { settingsRepo.setDynamicPlayer(config) }
+    }
+
+    fun cycleLockStyle() {
+        val cur = settings.value.dynamicPlayer
+        val styles = com.example.mimic.data.LockStyle.entries
+        setDynamicPlayer(cur.copy(lockStyle = styles[(cur.lockStyle.ordinal + 1) % styles.size]))
     }
 
     fun recordSearch(query: String) {
@@ -843,10 +995,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun requestOpenUpdates() { _openUpdates.value = true }
     fun consumeOpenUpdates() { _openUpdates.value = false }
 
-    fun pause() {
-        controller?.pause()
-    }
-
     /**
      * Play a file the downloader just saved. Music is published to MediaStore (Music/MImic), so
      * it is an ordinary phone song: the library's own entry (same MediaStore id → same song id,
@@ -1137,14 +1285,21 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         _queue.value = items
     }
 
+    /** True while MImic is on screen; position polling pauses otherwise (battery, 4.1). */
+    private val uiVisible = MutableStateFlow(true)
+    fun setUiVisible(visible: Boolean) { uiVisible.value = visible }
+
     private fun startPositionUpdates() {
         viewModelScope.launch {
             while (true) {
-                controller?.let { c ->
+                // Nothing on screen needs the position: wait (no polling) until MImic is visible again.
+                if (!uiVisible.value) uiVisible.first { it }
+                activePlayer?.let { c ->
+                    if (casting) { lastCastIndex = c.currentMediaItemIndex; lastCastPositionMs = c.currentPosition }
                     val fav = c.currentMediaItem?.mediaId?.toLongOrNull()
                         ?.let { favoriteIds.value.contains(it) } ?: false
                     _uiState.update {
-                        it.copy(positionMs = c.currentPosition.coerceAtLeast(0L), isCurrentFavorite = fav)
+                        it.copy(positionMs = c.currentPosition.coerceAtLeast(0L), bufferedPositionMs = c.bufferedPosition.coerceAtLeast(0L), isCurrentFavorite = fav)
                     }
                 }
                 delay(500L)

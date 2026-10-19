@@ -73,6 +73,12 @@ class PlaybackService : MediaSessionService() {
         effects = PlaybackEffects(this, player, scope, container.settingsRepository.settings.map { it.audio })
         mediaSession = MediaSession.Builder(this, player)
             .setCallback(sessionCallback())
+            // Notification / lock-screen artwork: per-track art for phone songs (4.1), cached.
+            .setBitmapLoader(
+                androidx.media3.session.CacheBitmapLoader(
+                    com.example.mimic.data.art.TrackArtBitmapLoader(this, androidx.media3.datasource.DataSourceBitmapLoader(this)),
+                ),
+            )
             .setSessionActivity(
                 android.app.PendingIntent.getActivity(
                     this, 0, android.content.Intent(this, com.example.mimic.MainActivity::class.java),

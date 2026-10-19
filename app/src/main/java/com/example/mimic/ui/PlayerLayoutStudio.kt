@@ -82,9 +82,21 @@ fun PlayerLayoutStudioScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
         SelectRow(
             "Layout",
-            listOf("Classic", "Immersive", "Compact"),
+            listOf("Classic", "Immersive", "Compact", "Dynamic Now Playing"),
             config.layout.ordinal,
         ) { update(config.copy(layout = PlayerLayout.entries[it])) }
+
+        DynamicPlayerSettings(vm, settings.dynamicPlayer, active = config.layout == PlayerLayout.DYNAMIC) {
+            update(config.copy(layout = PlayerLayout.DYNAMIC))
+        }
+
+        Text(
+            "Classic · Immersive · Compact",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(start = 16.dp, top = 20.dp, bottom = 4.dp),
+        )
 
         SelectRow(
             "Artwork shape",
@@ -192,6 +204,7 @@ fun PlayerLayoutPreview(config: PlayerLayoutConfig, modifier: Modifier = Modifie
         PlayerLayout.IMMERSIVE -> maxOf(config.artworkSize.fraction(), 0.9f)
         PlayerLayout.COMPACT -> minOf(config.artworkSize.fraction(), 0.6f)
         PlayerLayout.CLASSIC -> config.artworkSize.fraction()
+        PlayerLayout.DYNAMIC -> 0.8f
     } * 0.55f // scale down for the preview card
     val shape = when (config.artworkShape) {
         ArtworkShape.CIRCLE -> CircleShape
@@ -240,6 +253,72 @@ fun PlayerLayoutPreview(config: PlayerLayoutConfig, modifier: Modifier = Modifie
             if (config.showShuffleRepeat) {
                 Icon(Icons.Default.Repeat, null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(18.dp))
             }
+        }
+    }
+}
+
+/**
+ * Settings for the Dynamic Now Playing player (4.1). Stored separately from the other layouts, so
+ * tuning them never changes Classic, Immersive, Compact or any theme.
+ */
+@Composable
+private fun DynamicPlayerSettings(
+    vm: PlayerViewModel,
+    c: com.example.mimic.data.DynamicPlayerConfig,
+    active: Boolean,
+    onUse: () -> Unit,
+) {
+    fun set(n: com.example.mimic.data.DynamicPlayerConfig) = vm.setDynamicPlayer(n)
+    Column(
+        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+            .padding(vertical = 8.dp),
+    ) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Dynamic Now Playing", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
+                Text(
+                    "Colors, gradient and lyrics follow the artwork of the song that's playing.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            if (!active) androidx.compose.material3.FilledTonalButton(onClick = onUse) { Text("Use") }
+            else Text("In use", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelLarge)
+        }
+        ToggleRow("Dynamic gradient", c.gradient) { set(c.copy(gradient = it)) }
+        ToggleRow("Artwork blur", c.artworkBlur) { set(c.copy(artworkBlur = it)) }
+        ToggleRow("Animated background", c.animatedBackground) { set(c.copy(animatedBackground = it)) }
+        SelectRow("Animation intensity", com.example.mimic.data.DynamicIntensity.entries.map { it.label }, c.intensity.ordinal) {
+            set(c.copy(intensity = com.example.mimic.data.DynamicIntensity.entries[it]))
+        }
+        SelectRow("Artwork shape", com.example.mimic.data.DynamicArtShape.entries.map { it.label }, c.artShape.ordinal) {
+            set(c.copy(artShape = com.example.mimic.data.DynamicArtShape.entries[it]))
+        }
+        SelectRow("Artwork size", com.example.mimic.data.DynamicArtSize.entries.map { it.label }, c.artSize.ordinal) {
+            set(c.copy(artSize = com.example.mimic.data.DynamicArtSize.entries[it]))
+        }
+        ToggleRow("Glass controls", c.glassControls) { set(c.copy(glassControls = it)) }
+        Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
+            Text("Background brightness", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+            androidx.compose.material3.Slider(
+                value = c.brightness,
+                onValueChange = { set(c.copy(brightness = it)) },
+                valueRange = -0.4f..0.4f,
+                steps = 7,
+            )
+        }
+        ToggleRow("Automatic contrast", c.autoContrast) { set(c.copy(autoContrast = it)) }
+        Text(
+            "Text always keeps at least 4.5:1 contrast with the background, whatever the artwork or these settings.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        ToggleRow("Reduce motion", c.reduceMotion) { set(c.copy(reduceMotion = it)) }
+        SelectRow("Lock-screen style view", com.example.mimic.data.LockStyle.entries.map { it.label }, c.lockStyle.ordinal) {
+            set(c.copy(lockStyle = com.example.mimic.data.LockStyle.entries[it]))
         }
     }
 }

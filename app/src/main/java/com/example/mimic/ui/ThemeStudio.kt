@@ -113,6 +113,7 @@ fun ThemeStudioScreen(
     onExportFile: (ThemeDefinition) -> Unit,
     onShare: (ThemeDefinition) -> Unit,
     onBack: () -> Unit,
+    onOpenDynamicPlayer: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val themes by vm.allThemes.collectAsStateWithLifecycle()
@@ -138,6 +139,31 @@ fun ThemeStudioScreen(
         })
         LazyColumn(Modifier.fillMaxSize()) {
             item(key = "quality") { GlassQualityPicker(settings.glassQuality, vm::setGlassQuality) }
+            item(key = "dynamic") {
+                val inUse = settings.playerLayout.layout == com.example.mimic.data.PlayerLayout.DYNAMIC
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(24.dp))
+                        .background(
+                            androidx.compose.ui.graphics.Brush.linearGradient(
+                                listOf(androidx.compose.ui.graphics.Color(0xFF1E3A8A), androidx.compose.ui.graphics.Color(0xFF7C3AED), androidx.compose.ui.graphics.Color(0xFFDB2777)),
+                            ),
+                        )
+                        .clickable(onClick = onOpenDynamicPlayer)
+                        .padding(18.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Dynamic Now Playing", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                        Text(
+                            if (inUse) "In use · the player takes its colors from each song's artwork" else "New player theme: colors follow each song's artwork. Your themes stay as they are.",
+                            color = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.85f),
+                            style = MaterialTheme.typography.bodySmall,
+                        )
+                    }
+                    Text(if (inUse) "Customize" else "Try it", color = androidx.compose.ui.graphics.Color.White, style = MaterialTheme.typography.labelLarge)
+                }
+            }
             flagship?.let { theme ->
                 item(key = "flagship") {
                     FlagshipCard(

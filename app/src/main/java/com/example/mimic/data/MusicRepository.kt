@@ -13,8 +13,6 @@ import kotlinx.coroutines.withContext
  */
 class MusicRepository(private val context: Context) {
 
-    private val albumArtBase: Uri = Uri.parse("content://media/external/audio/albumart")
-
     suspend fun loadSongs(): List<Song> = withContext(Dispatchers.IO) {
         val collection = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.Q) {
             MediaStore.Audio.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
@@ -32,6 +30,7 @@ class MusicRepository(private val context: Context) {
             add(MediaStore.Audio.Media.ALBUM_ID)
             add(MediaStore.Audio.Media.DURATION)
             add(MediaStore.Audio.Media.DATE_ADDED)
+            add(MediaStore.Audio.Media.DATE_MODIFIED) // per-track artwork version (4.1)
             add(MediaStore.Audio.Media.DISPLAY_NAME) // file name, for the missing-title fallback
             if (isQ) add(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME) // folder name
             if (isR) add(MediaStore.Audio.Media.GENRE) // genre, where available
@@ -50,6 +49,7 @@ class MusicRepository(private val context: Context) {
             val albumIdCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.ALBUM_ID)
             val durationCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DURATION)
             val dateAddedCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_ADDED)
+            val dateModifiedCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DATE_MODIFIED)
             val nameCol = c.getColumnIndexOrThrow(MediaStore.Audio.Media.DISPLAY_NAME)
             // These may be absent on older OS versions; -1 means "not present".
             val folderCol = if (isQ) c.getColumnIndex(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME) else -1
@@ -59,6 +59,8 @@ class MusicRepository(private val context: Context) {
                 val id = c.getLong(idCol)
                 val albumId = c.getLong(albumIdCol)
                 val artist = MetadataFallback.artist(c.getString(artistCol))
+                val folder = folderCol.takeIf { it >= 0 }?.let { c.getString(it) }
+                val realAlbum = com.example.mimic.data.art.TrackArtwork.isRealAlbum(c.getString(albumCol), folder)
                 songs += Song(
                     id = id,
                     title = MetadataFallback.title(c.getString(titleCol), c.getString(nameCol)),
@@ -66,9 +68,10 @@ class MusicRepository(private val context: Context) {
                     album = MetadataFallback.album(c.getString(albumCol)),
                     durationMs = c.getLong(durationCol),
                     uri = ContentUris.withAppendedId(collection, id).toString(),
-                    albumArtUri = ContentUris.withAppendedId(albumArtBase, albumId).toString(),
+                    // This file's own artwork (4.1 fix: was the shared per-album art — see TrackArtwork).
+                    albumArtUri = com.example.mimic.data.art.TrackArtwork.uri(id, c.getLong(dateModifiedCol), albumId.takeIf { realAlbum }),
                     dateAddedSec = c.getLong(dateAddedCol),
-                    folder = folderCol.takeIf { it >= 0 }?.let { c.getString(it) } ?: "Unknown folder",
+                    folder = folder ?: "Unknown folder",
                     genre = genreCol.takeIf { it >= 0 }?.let { c.getString(it) },
                     source = SongSource.LOCAL,
                     // MediaStore's album id, not the title: two "Greatest Hits" stay two albums.

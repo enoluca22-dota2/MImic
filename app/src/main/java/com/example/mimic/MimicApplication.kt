@@ -34,6 +34,10 @@ class AppContainer(application: Application) {
         FavoritesRepository(favoriteDao, favoriteGroupDao, pendingStarDao)
     }
 
+    /** Google Cast (4.1): one controller + LAN media server per process. */
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    val castController: com.example.mimic.cast.CastController by lazy { com.example.mimic.cast.CastController(application) }
+
     /** GitHub Releases updater (Settings → App Updates, MImic 4.0). */
     val updateManager: com.example.mimic.update.UpdateManager by lazy {
         com.example.mimic.update.UpdateManager(
@@ -43,8 +47,13 @@ class AppContainer(application: Application) {
     }
 }
 
-class MimicApplication : Application() {
+class MimicApplication : Application(), coil.ImageLoaderFactory {
     val container: AppContainer by lazy { AppContainer(this) }
+
+    /** One app-wide image loader that also understands per-track artwork keys (mimic-art://, 4.1). */
+    override fun newImageLoader(): coil.ImageLoader = coil.ImageLoader.Builder(this)
+        .components { add(com.example.mimic.data.art.TrackArtFetcher.Factory(this@MimicApplication)) }
+        .build()
 
     override fun onCreate() {
         super.onCreate()

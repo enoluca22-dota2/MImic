@@ -1,7 +1,8 @@
 package com.example.mimic.data
 
 /** How the Now Playing screen is arranged. Independent of theme colors. */
-enum class PlayerLayout { CLASSIC, IMMERSIVE, COMPACT }
+/** DYNAMIC (4.1): the artwork-colored "Dynamic Now Playing" player — see [DynamicPlayerConfig]. */
+enum class PlayerLayout { CLASSIC, IMMERSIVE, COMPACT, DYNAMIC }
 
 enum class ArtworkShape { ROUNDED, CIRCLE, SQUARE, SQUIRCLE }
 
@@ -51,3 +52,48 @@ fun ArtworkShape.cornerDp(): Int = when (this) {
     ArtworkShape.CIRCLE -> 0
     ArtworkShape.SQUIRCLE -> 28
 }
+
+// ---- Dynamic Now Playing (MImic 4.1) -----------------------------------------------------------
+
+/** How strongly the Dynamic player animates. Transition times stay within 500–900 ms. */
+enum class DynamicIntensity(val label: String) { SUBTLE("Subtle"), BALANCED("Balanced"), IMMERSIVE("Immersive") }
+
+enum class DynamicArtShape(val label: String, val cornerDp: Int) { SQUARE("Square", 4), ROUNDED("Rounded", 18), EXTRA_ROUNDED("Extra rounded", 36) }
+
+enum class DynamicArtSize(val label: String, val fraction: Float) { COMPACT("Compact", 0.64f), NORMAL("Normal", 0.8f), LARGE("Large", 0.92f) }
+
+/** In-app "lock-screen style" full-screen views (not Android's secure lock screen). */
+enum class LockStyle(val label: String) { CLASSIC("Classic"), DYNAMIC("Dynamic"), GLASS("Glass"), MINIMAL("Minimal") }
+
+/**
+ * Settings of the Dynamic Now Playing player only — changing them never touches the Classic,
+ * Immersive or Compact layouts or any theme. Persisted in settings.
+ */
+data class DynamicPlayerConfig(
+    val gradient: Boolean = true,
+    val artworkBlur: Boolean = true,
+    val animatedBackground: Boolean = true,
+    val intensity: DynamicIntensity = DynamicIntensity.BALANCED,
+    val artShape: DynamicArtShape = DynamicArtShape.EXTRA_ROUNDED,
+    val glassControls: Boolean = true,
+    val artSize: DynamicArtSize = DynamicArtSize.NORMAL,
+    /** -0.4 (darker) … +0.4 (brighter) applied to the artwork-derived background. */
+    val brightness: Float = 0f,
+    /** Text/controls pick black or white for contrast; a minimum contrast is enforced either way. */
+    val autoContrast: Boolean = true,
+    /** Reduced motion: no animated background, instant color changes (also follows the system setting). */
+    val reduceMotion: Boolean = false,
+    val lockStyle: LockStyle = LockStyle.DYNAMIC,
+)
+
+/** Color transition length; 0 with reduced motion (pure, unit-tested). */
+fun DynamicPlayerConfig.transitionMs(systemReducedMotion: Boolean): Int =
+    if (reduceMotion || systemReducedMotion) 0 else when (intensity) {
+        DynamicIntensity.SUBTLE -> 900
+        DynamicIntensity.BALANCED -> 700
+        DynamicIntensity.IMMERSIVE -> 500
+    }
+
+/** Whether the slow background motion runs (pure, unit-tested). */
+fun DynamicPlayerConfig.animatesBackground(systemReducedMotion: Boolean): Boolean =
+    animatedBackground && !reduceMotion && !systemReducedMotion

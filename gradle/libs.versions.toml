@@ -23,6 +23,10 @@ kyantShapes = "1.2.0"
 materialColorUtilities = "4.1.1"
 colorpicker = "1.1.3"
 work = "2.11.2"
+# MImic 4.1 casting (Google Cast via Media3).
+mediarouter = "1.8.1"
+appcompat = "1.7.1"
+fragment = "1.8.9"
 # MImic 4.0 media downloader (from ENAGELYUCA).
 youtubedlAndroid = "0.18.1"
 jacksonYtdl = "2.11.1"
@@ -58,6 +62,10 @@ androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lif
 androidx-media3-exoplayer = { group = "androidx.media3", name = "media3-exoplayer", version.ref = "media3" }
 androidx-media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
 androidx-media3-ui = { group = "androidx.media3", name = "media3-ui", version.ref = "media3" }
+androidx-media3-cast = { group = "androidx.media3", name = "media3-cast", version.ref = "media3" }
+androidx-appcompat = { group = "androidx.appcompat", name = "appcompat", version.ref = "appcompat" }
+androidx-fragment = { group = "androidx.fragment", name = "fragment-ktx", version.ref = "fragment" }
+androidx-mediarouter = { group = "androidx.mediarouter", name = "mediarouter", version.ref = "mediarouter" }
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 androidx-room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }
 androidx-room-ktx = { group = "androidx.room", name = "room-ktx", version.ref = "room" }

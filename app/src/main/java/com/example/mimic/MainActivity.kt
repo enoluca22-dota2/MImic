@@ -36,12 +36,14 @@ import com.example.mimic.player.PlayerViewModel
 import com.example.mimic.ui.MimicApp
 import com.example.mimic.ui.theme.MImicTheme
 
-class MainActivity : ComponentActivity() {
+/** FragmentActivity (a ComponentActivity) so Google's Cast device picker can show its dialog (4.1). */
+class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     private val playerViewModel: PlayerViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        initCast()
         if (savedInstanceState == null) handleSharedLink(intent)
         enableEdgeToEdge()
         setContent {
@@ -58,6 +60,22 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    /** Cast: initialize on the main thread so an existing TV session is resumed after a restart. */
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    private fun initCast() {
+        (application as MimicApplication).container.castController.ensureInitialized()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        playerViewModel.setUiVisible(true)
+    }
+
+    override fun onStop() {
+        playerViewModel.setUiVisible(false)
+        super.onStop()
     }
 
     override fun onNewIntent(intent: android.content.Intent) {

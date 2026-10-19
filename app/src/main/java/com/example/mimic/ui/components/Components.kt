@@ -40,6 +40,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.filled.SkipNext
 import coil.compose.AsyncImage
 import com.example.mimic.data.MetadataFallback
 import com.example.mimic.data.Song
@@ -219,12 +221,21 @@ fun MiniPlayer(
     modifier: Modifier = Modifier,
     isBuffering: Boolean = false,
     error: String? = null,
+    /** 4.1: skip to the next song (shown when there's room). */
+    onNext: (() -> Unit)? = null,
+    /** 4.1: real playback progress 0..1 (Media3 position / duration), or null when unknown. */
+    progress: Float? = null,
+    /** 4.1: "Casting to …" while a Cast session is active. */
+    castingTo: String? = null,
+    /** 4.1: the Cast button. */
+    castButton: (@Composable () -> Unit)? = null,
 ) {
     val env = LocalGlass.current
     val glass = env.enabled
     val shape = if (glass) env.style.surfaceShape(0.9f) else RoundedCornerShape((env.style.cornerRadius * 0.45f).dp)
+    androidx.compose.foundation.layout.Box(modifier.fillMaxWidth()) {
     Row(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
             .height(if (glass) 64.dp else 60.dp)
             .glassSurface(shape, fallback = MaterialTheme.colorScheme.surfaceVariant)
@@ -250,6 +261,7 @@ fun MiniPlayer(
             // Error takes priority, then a live "Buffering…" hint, else the artist.
             val (subtitle, subtitleColor) = when {
                 error != null -> error to MaterialTheme.colorScheme.error
+                castingTo != null -> "Casting to $castingTo" to MaterialTheme.colorScheme.primary
                 isBuffering -> "Buffering…" to MaterialTheme.colorScheme.onSurfaceVariant
                 else -> song.artist to MaterialTheme.colorScheme.onSurfaceVariant
             }
@@ -267,6 +279,7 @@ fun MiniPlayer(
                 strokeWidth = 2.dp,
             )
         }
+        castButton?.invoke()
         IconButton(onClick = onPlayPause) {
             Icon(
                 if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -274,6 +287,22 @@ fun MiniPlayer(
                 tint = MaterialTheme.colorScheme.onBackground,
             )
         }
+        if (onNext != null) {
+            IconButton(onClick = onNext) {
+                Icon(Icons.Default.SkipNext, contentDescription = "Next song", tint = MaterialTheme.colorScheme.onBackground)
+            }
+        }
+    }
+    if (progress != null) {
+        // A 2 dp line along the bottom edge; it only moves with real playback.
+        androidx.compose.material3.LinearProgressIndicator(
+            progress = { progress.coerceIn(0f, 1f) },
+            modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 18.dp).height(2.dp),
+            color = MaterialTheme.colorScheme.primary,
+            trackColor = Color.Transparent,
+            drawStopIndicator = {},
+        )
+    }
     }
 }
 

@@ -106,6 +106,8 @@ fun NowPlayingScreen(
     speed: Float = 1f,
     sleepActive: Boolean = false,
     hapticSeek: Boolean = true,
+    /** 4.1: Cast + Share actions, top-right. */
+    topEndActions: @Composable () -> Unit = {},
 ) {
     val song = state.currentSong
     // System back collapses (minimizes) the full-screen player — it never gets stuck open.
@@ -137,7 +139,7 @@ fun NowPlayingScreen(
     val artworkFraction = when (config.layout) {
         PlayerLayout.IMMERSIVE -> maxOf(config.artworkSize.fraction(), 0.9f)
         PlayerLayout.COMPACT -> minOf(config.artworkSize.fraction(), 0.6f)
-        PlayerLayout.CLASSIC -> config.artworkSize.fraction()
+        PlayerLayout.CLASSIC, PlayerLayout.DYNAMIC -> config.artworkSize.fraction()
     }
     val corner = if (config.artworkShape == ArtworkShape.CIRCLE) 1000 else config.artworkShape.cornerDp()
     val artShape = if (config.artworkShape == ArtworkShape.SQUIRCLE) RoundedRectangle(corner.dp) else null
@@ -174,8 +176,8 @@ fun NowPlayingScreen(
                 modifier = Modifier.weight(1f),
                 textAlign = TextAlign.Center,
             )
-            // Balances Minimize + Stop so the title stays centered.
-            Spacer(Modifier.size(if (controls == ControlStyle.GLASS) 104.dp else 96.dp))
+            // Same width as Minimize + Stop, so the title stays centered.
+            Row(Modifier.width(if (controls == ControlStyle.GLASS) 104.dp else 96.dp), horizontalArrangement = Arrangement.End) { topEndActions() }
         }
 
         if (config.layout == PlayerLayout.COMPACT) Spacer(Modifier.height(12.dp)) else Spacer(Modifier.height(24.dp))

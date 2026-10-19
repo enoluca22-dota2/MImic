@@ -1,5 +1,6 @@
 package com.example.mimic.ui
 
+import androidx.compose.material.icons.filled.Share
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -537,6 +538,7 @@ fun SongActionsSheet(
     onCancelDownload: (() -> Unit)? = null,
     onGoToAlbum: (() -> Unit)? = null,
     onGoToArtist: (() -> Unit)? = null,
+    onShare: (() -> Unit)? = null,
 ) {
     val sheetState = rememberModalBottomSheetState()
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
@@ -565,7 +567,8 @@ fun SongActionsSheet(
             } else if (onDownload != null) {
                 ActionRow(androidx.compose.material.icons.Icons.Default.Download, if (song.fileMissing) "Download again (file missing)" else "Download for offline") { onDownload(); onDismiss() }
             }
-            if (onRemoveDownload != null) ActionRow(Icons.Default.Delete, "Remove download (keeps the original in ${if (song.provider == com.example.mimic.data.MusicProvider.NAVIDROME) "your server" else song.provider.label})") { onRemoveDownload(); onDismiss() }
+            if (onRemoveDownload != null) ActionRow(Icons.Default.Delete, if (song.provider == com.example.mimic.data.MusicProvider.NAVIDROME) "Remove download (stays on your server)" else "Remove download") { onRemoveDownload(); onDismiss() }
+            if (onShare != null) ActionRow(androidx.compose.material.icons.Icons.Default.Share, "Share audio file") { onShare(); onDismiss() }
             if (onGoToAlbum != null) ActionRow(androidx.compose.material.icons.Icons.Default.Album, "Go to album") { onGoToAlbum(); onDismiss() }
             if (onGoToArtist != null) ActionRow(androidx.compose.material.icons.Icons.Default.Person, "Go to artist") { onGoToArtist(); onDismiss() }
         }

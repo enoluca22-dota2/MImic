@@ -1,5 +1,8 @@
 package com.example.mimic.ui
 
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.Share
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -159,6 +162,9 @@ fun MimicApp(viewModel: PlayerViewModel) {
     val navMotion = navTransitions(glassEnv)
 
     var nowPlayingOpen by remember { mutableStateOf(false) }
+    var lockViewOpen by remember { mutableStateOf(false) }
+    var shareNeedsDownload by remember { mutableStateOf<Song?>(null) }
+    val castingTo by viewModel.castingTo.collectAsStateWithLifecycle()
     var queueOpen by remember { mutableStateOf(false) }
     var sleepOpen by remember { mutableStateOf(false) }
     var lyricsOpen by remember { mutableStateOf(false) }
@@ -264,7 +270,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
         com.example.mimic.ui.navigation.LocalTabReselect provides tabReselect,
     ) {
     // While a full-screen overlay is up, the screen beneath is hidden from TalkBack too.
-    val overlayOpen = (nowPlayingOpen && uiState.currentSong != null) || editingTheme != null
+    val overlayOpen = (nowPlayingOpen && uiState.currentSong != null) || editingTheme != null || lockViewOpen
     Scaffold(
         modifier = Modifier.fillMaxSize().then(if (overlayOpen) Modifier.clearAndSetSemantics {} else Modifier),
         containerColor = if (glassEnv.style.gradientBackground) Color.Transparent else MaterialTheme.colorScheme.background,
@@ -283,6 +289,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         ),
                         isBuffering = uiState.isBuffering,
                         error = uiState.playbackError,
+                        onNext = { viewModel.next() },
+                        progress = if (uiState.durationMs > 0) uiState.positionMs.toFloat() / uiState.durationMs else null,
+                        castingTo = castingTo,
+                        castButton = { com.example.mimic.cast.CastButton(MaterialTheme.colorScheme.onBackground) },
                     )
                 }
                 BottomBar(navController, navStyle, onReselect = { tabReselect.tryEmit(it) })
@@ -392,6 +402,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         onExportFile = { pendingExportTheme = it; exportLauncher.launch("mimic-theme-${it.name}.json") },
                         onShare = shareTheme,
                         onBack = back,
+                        onOpenDynamicPlayer = { navController.navigate("playerstudio") },
                     )
                 }
             }
@@ -433,7 +444,45 @@ fun MimicApp(viewModel: PlayerViewModel) {
 
     // ---- Overlays, sheets and dialogs ----
 
-    if (nowPlayingOpen && uiState.currentSong != null) {
+    // Share the actual audio file (4.1): local files via the Sharesheet; streamed-only songs
+    // offer a download first — a stream URL (with the server token) is never shared.
+    val shareSong: (Song) -> Unit = { song ->
+        when (val t = com.example.mimic.share.SongShare.target(context, song)) {
+            is com.example.mimic.share.SongShare.Target.File ->
+                runCatching { context.startActivity(com.example.mimic.share.SongShare.intent(t, song)) }
+                    .onFailure { viewModel.showMessage("No app on this phone can receive audio files") }
+            com.example.mimic.share.SongShare.Target.NeedsDownload -> shareNeedsDownload = song
+            com.example.mimic.share.SongShare.Target.Unavailable -> viewModel.showMessage("This song's file isn't available to share")
+        }
+    }
+
+    if (nowPlayingOpen && uiState.currentSong != null && settings.playerLayout.layout == com.example.mimic.data.PlayerLayout.DYNAMIC) {
+        com.example.mimic.ui.dynamic.DynamicNowPlayingScreen(
+            vm = viewModel,
+            state = uiState,
+            config = settings.dynamicPlayer,
+            speed = settings.audio.speed,
+            sleepActive = sleepEndsAt != 0L,
+            actions = com.example.mimic.ui.dynamic.DynamicActions(
+                onBack = { nowPlayingOpen = false },
+                onStop = { viewModel.stopPlayback(); nowPlayingOpen = false },
+                onPlayPause = viewModel::togglePlayPause,
+                onNext = { viewModel.next() },
+                onPrevious = { viewModel.previous() },
+                onSeek = { viewModel.seekTo(it) },
+                onShuffle = { viewModel.toggleShuffle() },
+                onRepeat = { viewModel.cycleRepeat() },
+                onToggleFavorite = { uiState.currentSong?.let { viewModel.toggleFavorite(it) } },
+                onOpenQueue = { queueOpen = true },
+                onOpenSleep = { sleepOpen = true },
+                onOpenSpeed = { speedOpen = true },
+                onShare = { uiState.currentSong?.let(shareSong) },
+                onOpenLockView = { lockViewOpen = true },
+                onOpenSettings = { nowPlayingOpen = false; navController.navigate("playerstudio") },
+            ),
+            castButton = { tint -> com.example.mimic.cast.CastButton(tint) },
+        )
+    } else if (nowPlayingOpen && uiState.currentSong != null) {
         NowPlayingScreen(
             state = uiState,
             config = settings.playerLayout,
@@ -453,6 +502,36 @@ fun MimicApp(viewModel: PlayerViewModel) {
             speed = settings.audio.speed,
             sleepActive = sleepEndsAt != 0L,
             hapticSeek = settings.audio.hapticSeek,
+            topEndActions = {
+                com.example.mimic.cast.CastButton(MaterialTheme.colorScheme.onBackground)
+                IconButton(onClick = { uiState.currentSong?.let(shareSong) }) {
+                    Icon(androidx.compose.material.icons.Icons.Default.Share, contentDescription = "Share song", tint = MaterialTheme.colorScheme.onBackground)
+                }
+            },
+        )
+    }
+
+    if (lockViewOpen && uiState.currentSong != null) {
+        com.example.mimic.ui.lock.LockStyleScreen(
+            state = uiState,
+            config = settings.dynamicPlayer,
+            onClose = { lockViewOpen = false },
+            onPlayPause = viewModel::togglePlayPause,
+            onNext = { viewModel.next() },
+            onPrevious = { viewModel.previous() },
+            onCycleStyle = { viewModel.cycleLockStyle() },
+        )
+    }
+
+    shareNeedsDownload?.let { song ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { shareNeedsDownload = null },
+            title = { Text("Download before sharing?") },
+            text = { Text("\"${song.title}\" streams from your server, so there's no audio file on this phone to share yet. Download it first, then share it.") },
+            confirmButton = {
+                TextButton(onClick = { viewModel.downloadSong(song); shareNeedsDownload = null }) { Text("Download") }
+            },
+            dismissButton = { TextButton(onClick = { shareNeedsDownload = null }) { Text("Cancel") } },
         )
     }
 
@@ -478,6 +557,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
             onCancelDownload = { viewModel.cancelDownload(song) },
             onGoToAlbum = { nowPlayingOpen = false; nav.openAlbum(song.albumKey) },
             onGoToArtist = { nowPlayingOpen = false; nav.openArtist(song.artistKey) },
+            onShare = { shareSong(song) },
         )
     }
 

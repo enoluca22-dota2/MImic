@@ -132,6 +132,11 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.session)
     implementation(libs.androidx.media3.ui)
+    // Cast to Chromecast / Google TV (4.1).
+    implementation(libs.androidx.media3.cast)
+    implementation(libs.androidx.mediarouter)
+    implementation(libs.androidx.appcompat) // Cast picker theme
+    implementation(libs.androidx.fragment) // Cast picker dialog host (FragmentActivity)
     implementation(libs.coil.compose)
     implementation(libs.androidx.room.runtime)
     implementation(libs.androidx.room.ktx)
