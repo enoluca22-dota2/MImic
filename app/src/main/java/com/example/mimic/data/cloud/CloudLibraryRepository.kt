@@ -154,8 +154,8 @@ class CloudLibraryRepository(
         return saveAccount(CloudProviderType.ONEDRIVE, id, apiBase = null)
     }
 
-    /** Google: first step; may return a consent UI to launch. */
-    suspend fun beginGoogle(): GoogleDriveAuth.Step = googleAuth.authorize(null)
+    /** Google: first step; may return a consent UI to launch. [email] re-authorizes that account. */
+    suspend fun beginGoogle(email: String? = null): GoogleDriveAuth.Step = googleAuth.authorize(email)
 
     /** Google: with a granted token, identify the account (about.get) and store it. */
     suspend fun finishGoogle(token: String): CloudAccountEntity {
@@ -166,7 +166,7 @@ class CloudLibraryRepository(
         return saveAccount(CloudProviderType.GOOGLE_DRIVE, CloudIdentity(permissionId, name.ifBlank { email ?: "Google account" }, email), null)
     }
 
-    fun googleTokenFromConsent(data: Intent?): String = googleAuth.resultFromIntent(data)
+    fun googleTokenFromConsent(resultCode: Int, data: Intent?): String = googleAuth.resultFromIntent(resultCode, data)
 
     /** Debug builds only: connect a test account served by a local mock API (adb reverse). */
     suspend fun connectMock(provider: CloudProviderType, apiBase: String): CloudAccountEntity {

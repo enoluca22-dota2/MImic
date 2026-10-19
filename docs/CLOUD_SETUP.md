@@ -18,7 +18,12 @@ Identity of the APK you install (must match both registrations):
 |---|---|
 | Package name | `com.example.mimic` |
 | Signing SHA-1 (debug keystore of this laptop) | `78:0E:4B:F7:03:93:19:BB:F0:99:D5:F7:A2:3B:C6:9C:00:5A:5F:F9` |
+| Signing SHA-256 (same keystore) | `C0:3C:51:07:5A:49:A0:49:38:71:85:C7:75:62:60:74:36:8A:A9:F4:22:0E:B5:BA:0E:74:CC:4A:4F:88:08:7D` |
 | Signature hash (base64 SHA-1, for Microsoft) | `eA5L9wOTGbvwmdX3ojvGnABaX/k=` |
+
+Since 3.3 the app shows the fingerprints of the APK that is *actually installed* in its error and
+setup messages (Settings → Music Sources), selectable for copying. If they differ from this table,
+register the values the app shows.
 
 If you ever sign MImic with a different keystore, both registrations must be updated.
 
@@ -41,6 +46,10 @@ If you ever sign MImic with a different keystore, both registrations must be upd
    (`User.Read`, `offline_access`, `openid`, `profile` are fine to keep). No admin consent is needed
    for personal accounts; you consent yourself at first sign-in.
 4. Do **not** create a client secret.
+   Optional: to also allow work/school accounts choose "any organizational directory and personal
+   Microsoft accounts" in step 1 and add `msal.audience=common` to `cloud.properties`
+   (`organizations` = work/school only; default `consumers` = personal only). It must match the
+   registration or Microsoft rejects the sign-in.
 5. Copy **Application (client) ID** from Overview, then create `cloud.properties` in the project
    root (it is gitignored):
    ```properties
@@ -68,9 +77,35 @@ for personal accounts; to remove the grant entirely use <https://account.live.co
 4. **Credentials → Create credentials → OAuth client ID → Android**:
    - Package name `com.example.mimic`
    - SHA-1 `78:0E:4B:F7:03:93:19:BB:F0:99:D5:F7:A2:3B:C6:9C:00:5A:5F:F9`
-5. Nothing to put in the app: Google matches the installed APK by package + SHA-1.
+5. Nothing to put in the app: Google matches the installed APK by package + SHA-1. No client
+   secret, no `google-services.json`, no Web client ID are needed for this flow (MImic does not
+   use Google *sign-in* / ID tokens — only Drive authorization through `AuthorizationClient`).
+   The Android OAuth client, the Drive API and the consent screen must all be in the **same**
+   Cloud project. Changes can take from a few minutes to a few hours to apply.
    Settings → Music Sources → Google Drive → **Connect account** → pick your account → Google
    shows "Google hasn't verified this app" (expected for a Testing-mode app) → Continue → allow.
+
+### Troubleshooting Google sign-in (MImic 3.3)
+
+Before 3.3, MImic threw away the result of Google's account chooser whenever it was not
+`RESULT_OK`, so a rejected app looked like "I picked my account and nothing happened". 3.3 always
+reads the result and shows the reason on the Google Drive card:
+
+| What MImic shows | Meaning / fix |
+|---|---|
+| *DEVELOPER_ERROR, code 10* | No Android OAuth client matches **package + SHA-1** of the installed APK. Create it (step 4) with the SHA-1 shown in the message, in the project that has the Drive API enabled. |
+| *code 12500* | Consent screen incomplete (app name / support e-mail / scopes) or your Gmail address isn't a **test user** while the app is in Testing. |
+| *Google didn't complete sign-in…* | The chooser closed without a status: either you cancelled, or (on some Play services versions) the same client mismatch as code 10. |
+| *Google sign-in was cancelled* | You backed out (status 16). Nothing is stored. |
+| *Google Drive API has not been used in project … or it is disabled* | Step 2 is missing in that project. |
+| *Drive access wasn't granted* | The Drive checkbox on Google's consent screen was left unticked. |
+
+States on the card: Not connected → Connecting… → Choose a folder → Syncing… → Connected;
+Authorization required (sign-in failed), Connection expired (Google/Microsoft no longer issues a
+token — tap Reconnect, which re-authorizes the *same* account and keeps its folder), Setup required
+(no registration in this build).
+
+`adb logcat -s MImicGoogleAuth` prints the Play services status code (never tokens or e-mails).
 
 ### Why `drive.readonly` and not `drive.file` (please read)
 

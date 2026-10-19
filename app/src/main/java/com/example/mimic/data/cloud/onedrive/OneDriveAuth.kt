@@ -3,6 +3,7 @@ package com.example.mimic.data.cloud.onedrive
 import android.app.Activity
 import android.content.Context
 import com.example.mimic.BuildConfig
+import com.example.mimic.data.cloud.AppSignature
 import com.example.mimic.data.cloud.CloudException
 import com.example.mimic.data.cloud.CloudIdentity
 import com.microsoft.identity.client.AcquireTokenSilentParameters
@@ -43,12 +44,25 @@ class OneDriveAuth(private val context: Context) {
     private fun app(): ISingleAccountPublicClientApplication {
         app?.let { return it }
         if (!isConfigured) throw CloudException.NotConfigured(NOT_CONFIGURED)
+        signatureProblem()?.let { throw CloudException.NotConfigured(it) }
         synchronized(this) {
             app?.let { return it }
             val config = File(context.noBackupFilesDir, "msal_config.json")
-            config.writeText(configJson(clientId, BuildConfig.MSAL_SIGNATURE_HASH, context.packageName))
+            config.writeText(configJson(clientId, BuildConfig.MSAL_SIGNATURE_HASH, context.packageName, BuildConfig.MSAL_AUDIENCE))
             return PublicClientApplication.createSingleAccountPublicClientApplication(context, config).also { app = it }
         }
+    }
+
+    /**
+     * The browser redirect only comes back to an APK whose signing certificate matches the hash
+     * baked into the redirect URI (and registered in Entra). A mismatch otherwise fails late and
+     * obscurely inside MSAL, so it is checked up front with the real hash in the message.
+     */
+    fun signatureProblem(): String? {
+        val actual = AppSignature.of(context)?.base64Sha1 ?: return null
+        return if (actual == BuildConfig.MSAL_SIGNATURE_HASH) null else
+            "This APK is signed with signature hash $actual, but the build expects ${BuildConfig.MSAL_SIGNATURE_HASH}. " +
+                "Set msal.signatureHash=$actual in cloud.properties and add it as an Android redirect in the Entra app registration."
     }
 
     /** Interactive sign-in in the browser. Replaces any previous OneDrive session (single-account). */
@@ -113,8 +127,13 @@ class OneDriveAuth(private val context: Context) {
         const val NOT_CONFIGURED =
             "OneDrive sign-in isn't set up in this build yet: it needs a Microsoft app registration (see docs/CLOUD_SETUP.md)."
 
-        /** MSAL configuration: personal Microsoft accounts, browser sign-in, no broker, no secret. */
-        fun configJson(clientId: String, signatureHash: String, packageName: String): String = JSONObject()
+        /**
+         * MSAL configuration: browser sign-in, no broker, no secret. [audience] comes from
+         * cloud.properties `msal.audience` and must match the registration's "supported account
+         * types": consumers (personal accounts, default), common (personal + work/school) or
+         * organizations (work/school only).
+         */
+        fun configJson(clientId: String, signatureHash: String, packageName: String, audience: String = "consumers"): String = JSONObject()
             .put("client_id", clientId)
             .put("authorization_user_agent", "DEFAULT")
             .put("redirect_uri", "msauth://$packageName/" + URLEncoder.encode(signatureHash, "UTF-8"))
@@ -123,10 +142,15 @@ class OneDriveAuth(private val context: Context) {
             .put(
                 "authorities",
                 JSONArray().put(
-                    JSONObject().put("type", "AAD").put("default", true)
-                        .put("audience", JSONObject().put("type", "PersonalMicrosoftAccount").put("tenant_id", "consumers")),
+                    JSONObject().put("type", "AAD").put("default", true).put("audience", audienceJson(audience)),
                 ),
             )
             .toString()
+
+        fun audienceJson(audience: String): JSONObject = when (audience.trim().lowercase()) {
+            "common" -> JSONObject().put("type", "AzureADandPersonalMicrosoftAccount").put("tenant_id", "common")
+            "organizations" -> JSONObject().put("type", "AzureADMultipleOrgs").put("tenant_id", "organizations")
+            else -> JSONObject().put("type", "PersonalMicrosoftAccount").put("tenant_id", "consumers")
+        }
     }
 }

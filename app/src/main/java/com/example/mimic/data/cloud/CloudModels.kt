@@ -112,6 +112,8 @@ sealed class CloudException(message: String) : Exception(message) {
     class Offline(message: String = "No internet connection") : CloudException(message)
     class Throttled(val retryAfterSec: Long) : CloudException("The provider asked MImic to slow down; retrying in ${retryAfterSec}s")
     class NotConfigured(message: String) : CloudException(message)
+    /** The user backed out of the provider's sign-in UI (or it closed without a result). */
+    class Cancelled(message: String = "Sign-in was cancelled") : CloudException(message)
     class Http(val code: Int, message: String) : CloudException(message)
 }
 
