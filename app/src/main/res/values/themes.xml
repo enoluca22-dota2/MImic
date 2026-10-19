@@ -1,5 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.MImic" parent="android:Theme.Material.Light.NoActionBar" />
+    <style name="Theme.MImic" parent="Theme.AppCompat.Light.NoActionBar">
+        <!-- Google's Cast device picker (MediaRouter, 4.1) derives its dialog colors from these
+             AppCompat attributes; without them they read as transparent and the picker crashes.
+             MImic's own UI is drawn by Compose themes, so they change nothing else. -->
+        <item name="colorPrimary">#FF1E2A5A</item>
+        <item name="colorPrimaryDark">#FF0B0F24</item>
+        <item name="colorAccent">#FF6D7CFF</item>
+    </style>
 </resources>
