@@ -129,6 +129,35 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             .flowOn(kotlinx.coroutines.Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
+    // ---- Library scanning (4.3): phone songs before folder / minimum-length filtering ----
+
+    private val _rawLocal = MutableStateFlow<List<Song>>(emptyList())
+
+    val scanConfig: StateFlow<com.example.mimic.data.LibraryScanConfig> = settingsRepo.scanConfig
+        .stateIn(viewModelScope, SharingStarted.Eagerly, com.example.mimic.data.LibraryScanConfig())
+
+    /** Every folder with phone music (shown or hidden), for Settings → Library & Storage. */
+    val scanFolders: StateFlow<List<com.example.mimic.data.ScanFolder>> =
+        combine(_rawLocal, settingsRepo.scanConfig) { raw, c -> com.example.mimic.data.LibraryScan.folders(raw, c) }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    init {
+        viewModelScope.launch {
+            combine(_rawLocal, settingsRepo.scanConfig) { raw, c -> com.example.mimic.data.LibraryScan.filter(raw, c) }
+                .flowOn(kotlinx.coroutines.Dispatchers.Default)
+                .collect { _localSongs.value = it }
+        }
+    }
+
+    fun setScanConfig(c: com.example.mimic.data.LibraryScanConfig) {
+        viewModelScope.launch { settingsRepo.setScanConfig(c) }
+    }
+
+    /** Every song MImic knows, including hidden folders — for backups and restore matching. */
+    fun fullLibrary(): List<Song> =
+        com.example.mimic.data.UnifiedLibrary.merge(_rawLocal.value, _serverSongs.value, downloads.value)
+
     private val _uiState = MutableStateFlow(PlayerUiState())
     val uiState: StateFlow<PlayerUiState> = _uiState.asStateFlow()
 
@@ -477,7 +506,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun loadLibrary() {
         viewModelScope.launch {
             _loading.value = true
-            _localSongs.value = repository.loadSongs()
+            _rawLocal.value = repository.loadSongs()
             _loading.value = false
         }
     }

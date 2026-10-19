@@ -92,6 +92,17 @@ class ServerCredentialsRepository(private val context: Context) {
         context.serverStore.edit { it[Keys.STAY] = value }
     }
 
+    /** Saved user name (kept for a backup; never the password). */
+    val savedUser: Flow<String?> = context.serverStore.data.map { it[Keys.USER] }
+
+    /**
+     * Restore from a backup (4.3): fills in the server address for the sign-in screen when no
+     * server is set up yet. Never signs in and never touches an existing account.
+     */
+    suspend fun prefillServerIfEmpty(url: String) {
+        context.serverStore.edit { if (it[Keys.URL].isNullOrBlank()) { it[Keys.URL] = url; it[Keys.CONNECTED] = false } }
+    }
+
     /** Full sign-out: removes the account entirely (server address included). */
     suspend fun clear() {
         context.serverStore.edit { it.clear() }

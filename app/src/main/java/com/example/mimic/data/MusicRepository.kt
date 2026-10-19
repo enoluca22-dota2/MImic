@@ -34,10 +34,13 @@ class MusicRepository(private val context: Context) {
             add(MediaStore.Audio.Media.DISPLAY_NAME) // file name, for the missing-title fallback
             if (isQ) add(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME) // folder name
             if (isR) add(MediaStore.Audio.Media.GENRE) // genre, where available
+            // Folder path for include/exclude (4.3): RELATIVE_PATH on Android 10+, the file path before.
+            @Suppress("DEPRECATION")
+            add(if (isQ) MediaStore.Audio.Media.RELATIVE_PATH else MediaStore.Audio.Media.DATA)
         }.toTypedArray()
-        // Only real music files, skip tiny clips and ringtones.
-        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0 AND " +
-            "${MediaStore.Audio.Media.DURATION} >= 30000"
+        // Only music files (not ringtones/notifications). The minimum length and excluded folders
+        // are applied afterwards (LibraryScan, 4.3) so changing them never needs a rescan.
+        val selection = "${MediaStore.Audio.Media.IS_MUSIC} != 0"
         val sortOrder = "${MediaStore.Audio.Media.TITLE} COLLATE NOCASE ASC"
 
         val songs = mutableListOf<Song>()
@@ -54,6 +57,10 @@ class MusicRepository(private val context: Context) {
             // These may be absent on older OS versions; -1 means "not present".
             val folderCol = if (isQ) c.getColumnIndex(MediaStore.Audio.Media.BUCKET_DISPLAY_NAME) else -1
             val genreCol = if (isR) c.getColumnIndex(MediaStore.Audio.Media.GENRE) else -1
+            @Suppress("DEPRECATION")
+            val pathCol = c.getColumnIndex(if (isQ) MediaStore.Audio.Media.RELATIVE_PATH else MediaStore.Audio.Media.DATA)
+            @Suppress("DEPRECATION")
+            val storageRoot = android.os.Environment.getExternalStorageDirectory().absolutePath.trimEnd('/') + "/"
 
             while (c.moveToNext()) {
                 val id = c.getLong(idCol)
@@ -77,6 +84,10 @@ class MusicRepository(private val context: Context) {
                     // MediaStore's album id, not the title: two "Greatest Hits" stay two albums.
                     albumKey = "local:album:$albumId",
                     artistKey = MetadataFallback.artistKey(artist),
+                    folderPath = pathCol.takeIf { it >= 0 }?.let { c.getString(it) }?.let { p ->
+                        if (isQ) LibraryScan.normalize(p)
+                        else LibraryScan.normalize(p.substringBeforeLast('/', "").removePrefix(storageRoot.trimEnd('/')))
+                    }.orEmpty(),
                 )
             }
         }

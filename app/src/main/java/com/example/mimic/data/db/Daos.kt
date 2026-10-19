@@ -21,6 +21,12 @@ interface FavoriteDao {
 
     @Query("SELECT EXISTS(SELECT 1 FROM favorites WHERE songId = :songId)")
     suspend fun isFavorite(songId: Long): Boolean
+
+    @Query("SELECT * FROM favorites")
+    suspend fun allOnce(): List<FavoriteEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addAll(favorites: List<FavoriteEntity>)
 }
 
 @Dao
@@ -64,6 +70,12 @@ interface HistoryDao {
 
     @Query("DELETE FROM play_history WHERE playedAt < :cutoff")
     suspend fun pruneOlderThan(cutoff: Long)
+
+    @Query("SELECT * FROM play_history ORDER BY playedAt")
+    suspend fun allOnce(): List<PlayHistoryEntity>
+
+    @Insert
+    suspend fun insertAll(events: List<PlayHistoryEntity>)
 }
 
 @Dao
@@ -94,6 +106,9 @@ interface DownloadDao {
 interface FavoriteGroupDao {
     @Query("SELECT * FROM favorite_groups ORDER BY addedAt DESC")
     fun all(): Flow<List<FavoriteGroupEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addAllIfMissing(groups: List<FavoriteGroupEntity>)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun add(group: FavoriteGroupEntity)
@@ -133,6 +148,9 @@ interface CustomThemeDao {
 
     @Query("SELECT * FROM custom_themes WHERE id = :id")
     suspend fun get(id: String): CustomThemeEntity?
+
+    @Query("SELECT * FROM custom_themes")
+    suspend fun allOnce(): List<CustomThemeEntity>
 }
 
 @Dao

@@ -33,6 +33,11 @@ inside the app (Settings → App Updates).
   plays in MImic's player, videos play in-app. Merged from the ENAGELYUCA app.
 - **Design control** — Theme Studio (custom themes, JSON import/export), player layouts, liquid
   glass, home sections, library tabs.
+- **Backup & Restore** — favorites, playlists, history, themes, settings and radio in one file
+  you keep anywhere; restoring only adds, and works on a new phone (docs/BACKUP_FORMAT.md). No
+  passwords or music in the file.
+- **Library & Storage** — hide phone folders, minimum song length, refresh, and safe cache
+  clearing that never touches downloads.
 - **In-app updates** — Check for Updates downloads the newest release, verifies its checksum,
   package, version and **pinned signing certificate**, then Android's installer asks you to
   confirm. Stable and Beta channels; optional daily check (notification only).

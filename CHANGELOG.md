@@ -1,5 +1,26 @@
 # Changelog
 
+## 4.3.0-beta.1
+An audit release. MImic was checked against Namida's feature set, and only real gaps were filled.
+Everything that already worked is unchanged.
+
+- **Backup & Restore** (Settings): one JSON file in a place you pick (phone, SD card, or a cloud
+  app through Android's file picker). It holds favorites (songs, albums, artists), playlists,
+  listening history, custom themes, settings, radio countries and saved stations, and your
+  Navidrome address. It never holds passwords, tokens, music or downloads. Restore shows what's
+  inside first, lets you choose music data, settings & themes, and radio, and only adds. Nothing
+  you have is deleted or duplicated, and restoring twice changes nothing. Songs are matched by
+  Navidrome id, or by title, artist and length, so a backup works on a new phone. Format:
+  docs/BACKUP_FORMAT.md.
+- **Library & Storage** (Settings):
+  - Hide phone folders (for example WhatsApp audio or recordings), subfolders included.
+  - Choose the minimum song length (Off, 10 s, 30 s or 60 s; 30 s as before).
+  - Refresh the library.
+  - See the cache sizes and clear the temporary artwork and logo caches.
+  - Hidden songs keep their favorites, playlists and history. Clearing caches never touches
+    downloads or music files.
+- No new permissions, no database migration, no new libraries.
+
 ## 4.2.0-beta.1
 Radio: live stations from Albania by default, and any other country you add. Beta until tested on
 a phone.

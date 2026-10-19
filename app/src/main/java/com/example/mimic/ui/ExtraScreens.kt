@@ -31,6 +31,8 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Folder
+import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -109,6 +111,8 @@ fun SettingsScreen(
     onOpenPlayback: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
     onOpenRadioCountries: () -> Unit = {},
+    onOpenLibraryStorage: () -> Unit = {},
+    onOpenBackup: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val current by vm.activeTheme.collectAsStateWithLifecycle()
@@ -229,6 +233,34 @@ fun SettingsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Radio Countries", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                 Text("Add, remove and reorder the countries shown on Radio", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenLibraryStorage).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Icon(androidx.compose.material.icons.Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Library & Storage", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                Text("Folders, minimum song length, refresh library, caches", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenBackup).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Icon(androidx.compose.material.icons.Icons.Default.SettingsBackupRestore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Backup & Restore", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                Text("Save or restore favorites, playlists, history, themes and settings", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Row(

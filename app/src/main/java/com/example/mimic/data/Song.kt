@@ -48,6 +48,8 @@ data class Song(
     val fileMissing: Boolean = false,
     /** disc * 1000 + track when known (album track order), else 0. */
     val trackNo: Int = 0,
+    /** LOCAL only: the file's folder relative to the storage root ("Music/WhatsApp/"), for folder exclusion (4.3). */
+    val folderPath: String = "",
 ) {
     /** Playable without a network connection. */
     val isOffline: Boolean get() = source == SongSource.LOCAL || (source == SongSource.DOWNLOADED && !fileMissing)

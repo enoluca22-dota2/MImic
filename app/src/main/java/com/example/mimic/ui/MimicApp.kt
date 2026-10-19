@@ -327,6 +327,12 @@ fun MimicApp(viewModel: PlayerViewModel) {
             composable("radio/add") {
                 InsetScreen(innerPadding) { com.example.mimic.ui.radio.AddRadioCountryScreen(onBack = back) }
             }
+            composable("settings/library") {
+                InsetScreen(innerPadding) { com.example.mimic.ui.settings.LibraryStorageScreen(viewModel, onBack = back) }
+            }
+            composable("settings/backup") {
+                InsetScreen(innerPadding) { com.example.mimic.ui.settings.BackupRestoreScreen(viewModel, onBack = back) }
+            }
             composable("radio/countries") {
                 InsetScreen(innerPadding) {
                     com.example.mimic.ui.radio.RadioCountriesSettingsScreen(onBack = back, onAddCountry = { navController.navigate("radio/add") })
@@ -367,6 +373,8 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenPlayback = { navController.navigate("playback") },
                     onOpenUpdates = { navController.navigate("updates") },
                     onOpenRadioCountries = { navController.navigate("radio/countries") },
+                    onOpenLibraryStorage = { navController.navigate("settings/library") },
+                    onOpenBackup = { navController.navigate("settings/backup") },
                 )
             }
             composable("updates") {

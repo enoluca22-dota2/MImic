@@ -79,6 +79,10 @@ interface RadioDao {
 
     @Query("DELETE FROM radio_stations WHERE favorite = 0 AND lastPlayedAt IS NULL")
     suspend fun deleteUnused()
+
+    /** Favorites + recently played (what a backup keeps). */
+    @Query("SELECT * FROM radio_stations WHERE favorite = 1 OR lastPlayedAt IS NOT NULL")
+    suspend fun saved(): List<RadioStationEntity>
 }
 
 private val Context.radioPrefs by preferencesDataStore(name = "radio_prefs")
@@ -98,6 +102,9 @@ class RadioCountryStore(private val context: Context) {
     suspend fun move(code: String, up: Boolean) = update { RadioCountryList.move(it, code, up) }
     suspend fun restoreDefault() = update { RadioCountryList.restoreDefault(it) }
     suspend fun current(): List<String> = countries.first()
+
+    /** Adds [codes] after the current countries (restore from backup; nothing is removed). */
+    suspend fun mergeIn(codes: List<String>) = update { cur -> codes.fold(cur) { acc, c -> RadioCountryList.add(acc, c) } }
 }
 
 /**

@@ -80,7 +80,32 @@ class SettingsRepository(private val context: Context) {
         val LIB_SONGS_REVERSED = booleanPreferencesKey("library_songs_reversed")
         val LIB_GROUP_SORT = stringPreferencesKey("library_group_sort")
         val LIB_GROUPS_REVERSED = booleanPreferencesKey("library_groups_reversed")
+        // Library scanning (4.3)
+        val SCAN_EXCLUDED = androidx.datastore.preferences.core.stringSetPreferencesKey("scan_excluded_folders")
+        val SCAN_MIN_SEC = intPreferencesKey("scan_min_duration_sec")
     }
+
+    /** Which phone music is shown (folders, minimum length) — 4.3. */
+    val scanConfig: Flow<LibraryScanConfig> = context.dataStore.data.map { p ->
+        LibraryScanConfig(
+            excludedFolders = p[Keys.SCAN_EXCLUDED].orEmpty(),
+            minDurationSec = (p[Keys.SCAN_MIN_SEC] ?: LibraryScanConfig.DEFAULT_MIN_SEC).coerceIn(0, 600),
+        )
+    }
+
+    suspend fun setScanConfig(c: LibraryScanConfig) {
+        context.dataStore.edit {
+            it[Keys.SCAN_EXCLUDED] = c.excludedFolders
+            it[Keys.SCAN_MIN_SEC] = c.minDurationSec
+        }
+    }
+
+    /** All app settings as backup entries (4.3). */
+    suspend fun backupPrefs() = com.example.mimic.data.backup.PrefsBackup.snapshot(context.dataStore)
+
+    /** Restores backed-up settings over the current ones (keys not in the backup stay). */
+    suspend fun restorePrefs(values: Map<String, com.example.mimic.data.backup.BackupPref>) =
+        com.example.mimic.data.backup.PrefsBackup.restore(context.dataStore, values)
 
     private fun decodeTabs(csv: String?): List<LibraryTab> =
         csv?.split(",")?.mapNotNull { runCatching { LibraryTab.valueOf(it) }.getOrNull() } ?: emptyList()

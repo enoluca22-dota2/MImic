@@ -129,6 +129,9 @@ abstract class MimicDatabase : RoomDatabase() {
          * v6 → v7 (MImic 4.2): saved / recently played radio stations. Purely additive — every
          * existing table and row (songs, playlists, favorites, history, downloads) is untouched.
          */
+        /** Every upgrade step, in order — used by the app AND the migration tests, so they can't drift apart. */
+        val ALL_MIGRATIONS: Array<Migration> by lazy { arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7) }
+
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL(
@@ -151,7 +154,7 @@ abstract class MimicDatabase : RoomDatabase() {
                     MimicDatabase::class.java,
                     "mimic.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+                    .addMigrations(*ALL_MIGRATIONS)
                     .build()
                     .also { instance = it }
             }

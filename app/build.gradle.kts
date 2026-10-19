@@ -31,7 +31,7 @@ android {
         // ── App version: change ONLY versionName for a release (see docs/RELEASING.md). versionCode
         // is derived from it (4.1.2 → 400_100_299; betas get their own lower codes), so every
         // release is higher than the last and installs over it. 3.3 was versionCode 19.
-        versionName = "4.2.0-beta.1"
+        versionName = "4.3.0-beta.1"
         versionCode = versionCodeFor(versionName!!)
 
         // In-app updater: the public repository whose GitHub Releases MImic trusts (docs/RELEASING.md).

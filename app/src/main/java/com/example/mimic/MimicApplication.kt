@@ -41,6 +41,14 @@ class AppContainer(application: Application) {
     }
 
     /** Google Cast (4.1): one controller + LAN media server per process. */
+    /** Backup & Restore to a user-picked file (4.3). */
+    val backupManager: com.example.mimic.data.backup.BackupManager by lazy {
+        com.example.mimic.data.backup.BackupManager(
+            application, database, settingsRepository, radioRepository.countries, serverCredentialsRepository,
+            com.example.mimic.BuildConfig.VERSION_NAME,
+        )
+    }
+
     val castController: com.example.mimic.cast.CastController by lazy { com.example.mimic.cast.CastController(application) }
 
     /** GitHub Releases updater (Settings → App Updates, MImic 4.0). */
