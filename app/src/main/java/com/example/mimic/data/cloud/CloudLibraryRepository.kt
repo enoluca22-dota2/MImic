@@ -168,6 +168,11 @@ class CloudLibraryRepository(
 
     fun googleTokenFromConsent(resultCode: Int, data: Intent?): String = googleAuth.resultFromIntent(resultCode, data)
 
+    /** Google, alternate route: blocking token for [email] or the consent screen to show. */
+    fun googleAlternateToken(email: String): GoogleDriveAuth.AltStep = googleAuth.alternateToken(email)
+
+    fun googleChooseAccountIntent(): Intent = googleAuth.chooseAccountIntent()
+
     /** Debug builds only: connect a test account served by a local mock API (adb reverse). */
     suspend fun connectMock(provider: CloudProviderType, apiBase: String): CloudAccountEntity {
         check(BuildConfig.DEBUG) { "Mock accounts are debug-only" }

@@ -35,10 +35,27 @@ import kotlin.coroutines.resumeWithException
  */
 class OneDriveAuth(private val context: Context) {
 
-    val clientId: String = BuildConfig.MSAL_CLIENT_ID
+    /**
+     * The Entra "Application (client) ID": entered in the app (Settings → Music Sources → OneDrive)
+     * or baked in from cloud.properties. It is a public identifier, not a secret — a mobile app has
+     * no client secret — so plain app-private preferences are the right place for it.
+     */
+    private val prefs = context.getSharedPreferences("cloud_config", Context.MODE_PRIVATE)
+
+    val clientId: String get() = prefs.getString(KEY_CLIENT_ID, null)?.takeIf { it.isNotBlank() } ?: BuildConfig.MSAL_CLIENT_ID
+    val audience: String get() = prefs.getString(KEY_AUDIENCE, null) ?: BuildConfig.MSAL_AUDIENCE
     val isConfigured: Boolean get() = clientId.isNotBlank()
 
     @Volatile private var app: ISingleAccountPublicClientApplication? = null
+
+    /** Store a client ID / audience typed into the app; the MSAL client is rebuilt on next use. */
+    @Synchronized
+    fun configure(clientId: String, audience: String) {
+        val id = clientId.trim()
+        require(isValidClientId(id)) { "That isn't an Application (client) ID — it looks like 00000000-0000-0000-0000-000000000000" }
+        prefs.edit().putString(KEY_CLIENT_ID, id.lowercase()).putString(KEY_AUDIENCE, audience).apply()
+        app = null
+    }
 
     /** Blocking; never call on the main thread. */
     private fun app(): ISingleAccountPublicClientApplication {
@@ -48,7 +65,7 @@ class OneDriveAuth(private val context: Context) {
         synchronized(this) {
             app?.let { return it }
             val config = File(context.noBackupFilesDir, "msal_config.json")
-            config.writeText(configJson(clientId, BuildConfig.MSAL_SIGNATURE_HASH, context.packageName, BuildConfig.MSAL_AUDIENCE))
+            config.writeText(configJson(clientId, BuildConfig.MSAL_SIGNATURE_HASH, context.packageName, audience))
             return PublicClientApplication.createSingleAccountPublicClientApplication(context, config).also { app = it }
         }
     }
@@ -124,8 +141,13 @@ class OneDriveAuth(private val context: Context) {
 
     companion object {
         val SCOPES = listOf("Files.Read")
+        private const val KEY_CLIENT_ID = "msal_client_id"
+        private const val KEY_AUDIENCE = "msal_audience"
+        private val GUID = Regex("^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$")
+
+        fun isValidClientId(id: String) = GUID.matches(id.trim())
         const val NOT_CONFIGURED =
-            "OneDrive sign-in isn't set up in this build yet: it needs a Microsoft app registration (see docs/CLOUD_SETUP.md)."
+            "OneDrive needs a one-time Microsoft app registration. Register MImic in Microsoft Entra with the values below, then paste its Application (client) ID here (full steps: docs/CLOUD_SETUP.md)."
 
         /**
          * MSAL configuration: browser sign-in, no broker, no secret. [audience] comes from

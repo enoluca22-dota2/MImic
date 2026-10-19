@@ -79,6 +79,7 @@ private fun BottomBar(navController: NavHostController, navStyle: NavStyle, onRe
     // Recompose on every back-stack change; the owning tab is derived from the whole stack, so a
     // pushed screen (Album, Account, ...) keeps its tab highlighted.
     val entry by navController.currentBackStackEntryAsState()
+    @android.annotation.SuppressLint("RestrictedApi") // whole-stack read for the tab rules (see TopLevelNavigation)
     val routes = remember(entry) { navController.currentBackStack.value.map { it.destination.route } }
     val owner = TopLevelNavigation.owningTab(routes)
     val goTo: (TopLevel) -> Unit = { tab -> TopLevelNavigation.navigate(navController, tab)?.let(onReselect) }
@@ -86,14 +87,14 @@ private fun BottomBar(navController: NavHostController, navStyle: NavStyle, onRe
     if (navStyle == NavStyle.GLASS) {
         GlassNavBar(
             items = glassTabs,
-            selectedIndex = TopLevel.entries.indexOf(owner),
-            onSelect = { goTo(TopLevel.entries[it]) },
+            selectedIndex = TopLevel.visible.indexOf(owner),
+            onSelect = { goTo(TopLevel.visible[it]) },
             modifier = Modifier.navigationBarsPadding(),
         )
         return
     }
     val content: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {
-        TopLevel.entries.forEach { tab ->
+        TopLevel.visible.forEach { tab ->
             NavigationBarItem(
                 selected = tab == owner,
                 onClick = { goTo(tab) },
@@ -115,7 +116,7 @@ private fun BottomBar(navController: NavHostController, navStyle: NavStyle, onRe
     }
 }
 
-private val glassTabs = TopLevel.entries.map { GlassNavItem(it.label, it.icon) }
+private val glassTabs = TopLevel.visible.map { GlassNavItem(it.label, it.icon) }
 
 /**
  * Hosts a pushed sub-screen. The top is inset below the status bar; the bottom is NOT padded:
@@ -190,6 +191,22 @@ fun MimicApp(viewModel: PlayerViewModel) {
             addToPlaylist = { addSongs = it },
             back = { navController.popBackStack() },
         )
+    }
+
+    // The "update available" notification opens Settings → App Updates.
+    val openUpdates by viewModel.openUpdatesRequest.collectAsStateWithLifecycle()
+    LaunchedEffect(openUpdates) {
+        if (openUpdates) {
+            TopLevelNavigation.navigate(navController, TopLevel.SETTINGS)
+            navController.navigate("updates")
+            viewModel.consumeOpenUpdates()
+        }
+    }
+
+    // A link shared/opened into MImic (full edition) opens the Downloads tab, which analyzes it.
+    val sharedLink by viewModel.sharedLink.collectAsStateWithLifecycle()
+    LaunchedEffect(sharedLink) {
+        if (sharedLink != null) TopLevelNavigation.navigate(navController, TopLevel.DOWNLOADS)
     }
 
     // Download results etc. — short, non-blocking confirmations.
@@ -293,6 +310,17 @@ fun MimicApp(viewModel: PlayerViewModel) {
             composable(TopLevel.HOME.route) { HomeScreen(viewModel, innerPadding, nav) }
             composable(TopLevel.SEARCH.route) { SearchScreen(viewModel, innerPadding, nav) }
             composable(TopLevel.LIBRARY.route) { LibraryScreen(viewModel, innerPadding, nav) }
+            composable(TopLevel.DOWNLOADS.route) {
+                val shared by viewModel.sharedLink.collectAsStateWithLifecycle()
+                com.example.mimic.downloader.Downloader.Tab(
+                    contentPadding = innerPadding,
+                    sharedText = shared,
+                    onSharedTextConsumed = viewModel::consumeSharedLink,
+                    playAudio = viewModel::playDownloadedFile,
+                    pauseMusic = viewModel::pause,
+                    showMessage = viewModel::showMessage,
+                )
+            }
             composable(TopLevel.SETTINGS.route) {
                 SettingsScreen(
                     viewModel,
@@ -303,7 +331,11 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenMusicServer = { navController.navigate("musicserver") },
                     onOpenMusicSources = { navController.navigate("sources") },
                     onOpenPlayback = { navController.navigate("playback") },
+                    onOpenUpdates = { navController.navigate("updates") },
                 )
+            }
+            composable("updates") {
+                InsetScreen(innerPadding) { com.example.mimic.ui.update.AppUpdatesScreen(onBack = back) }
             }
 
             // ---- Pushed screens (Back pops them; the owning tab stays highlighted) ----

@@ -1,0 +1,64 @@
+# MImic CI — every push and pull request: unit tests for both editions, lint, and a debug build.
+#
+# Publishing is NOT done here: releases are signed on the maintainer's machine (the signing key
+# never leaves it) and published with scripts/release.sh --publish after these checks pass.
+# See docs/RELEASING.md.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Version sanity
+        run: |
+          VERSION=$(sed -nE 's/^\s*versionName = "([^"]+)".*/\1/p' app/build.gradle.kts | head -1)
+          echo "versionName = $VERSION"
+          grep -q "^## $VERSION" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## $VERSION' section"; exit 1; }
+
+      - name: Unit tests (full + standard)
+        run: ./gradlew --no-daemon :app:testFullDebugUnitTest :app:testStandardDebugUnitTest
+
+      - name: Lint
+        run: ./gradlew --no-daemon :app:lintFullDebug
+
+      - name: Debug build (unsigned by any release key)
+        run: ./gradlew --no-daemon :app:assembleStandardDebug
+
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          path: app/build/reports/
+          retention-days: 7

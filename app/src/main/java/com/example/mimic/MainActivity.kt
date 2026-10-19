@@ -43,6 +43,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         handleDevIntent(intent)
+        if (savedInstanceState == null) handleSharedLink(intent)
         enableEdgeToEdge()
         setContent {
             val viewModel: PlayerViewModel = playerViewModel
@@ -64,6 +65,16 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         handleDevIntent(intent)
+        handleSharedLink(intent)
+    }
+
+    /** Full edition: a YouTube/TikTok link shared or opened into MImic goes to the Downloads tab. */
+    private fun handleSharedLink(intent: android.content.Intent?) {
+        com.example.mimic.downloader.Downloader.sharedText(intent)?.let(playerViewModel::offerSharedLink)
+        if (intent?.getBooleanExtra(com.example.mimic.update.UpdateCheckWorker.EXTRA_OPEN_UPDATES, false) == true) {
+            intent.removeExtra(com.example.mimic.update.UpdateCheckWorker.EXTRA_OPEN_UPDATES)
+            playerViewModel.requestOpenUpdates()
+        }
     }
 
     /**

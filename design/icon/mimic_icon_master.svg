@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="1080" height="1080">
+  <!-- MImic icon master (generated from background.svg + the selected foreground). -->
+
+  
+  <defs>
+    <linearGradient id="babase" x1="20" y1="0" x2="88" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#151D4C"/>
+      <stop offset="0.55" stop-color="#0A0F2E"/>
+      <stop offset="1" stop-color="#05060F"/>
+    </linearGradient>
+    <radialGradient id="baglowC" cx="28" cy="24" r="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3EE" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="baglowV" cx="84" cy="88" r="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8B5CF6" stop-opacity="0.36"/>
+      <stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="108" height="108" fill="url(#babase)"/>
+  <rect width="108" height="108" fill="url(#baglowC)"/>
+  <rect width="108" height="108" fill="url(#baglowV)"/>
+
+  
+  <defs>
+    <linearGradient id="caink" x1="30" y1="36" x2="82" y2="80" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="0.5" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <radialGradient id="cahalo" cx="54" cy="56" r="34" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#3B82F6" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#3B82F6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="caring" x1="26" y1="24" x2="82" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.05"/>
+    </linearGradient>
+  </defs>
+  <circle cx="54" cy="55" r="32" fill="url(#cahalo)"/>
+  <circle cx="54" cy="55" r="32" fill="#FFFFFF" fill-opacity="0.04" stroke="url(#caring)" stroke-width="0.9"/>
+  <path d="M33,72 L33,40 L54,61 L75,40 L75,67" fill="none" stroke="url(#caink)" stroke-width="8.6" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M75,40 C82.5,41.5 86.5,47 84.5,54" fill="none" stroke="url(#caink)" stroke-width="5" stroke-linecap="round"/>
+  <ellipse cx="67.2" cy="70.6" rx="9.2" ry="6.8" transform="rotate(-22 67.2 70.6)" fill="url(#caink)"/>
+  <path d="M30.8,45 L30.8,65" stroke="#FFFFFF" stroke-opacity="0.38" stroke-width="1.7" stroke-linecap="round"/>
+  <ellipse cx="63.9" cy="68.2" rx="3.9" ry="1.6" transform="rotate(-22 63.9 68.2)" fill="#FFFFFF" fill-opacity="0.5"/>
+</svg>

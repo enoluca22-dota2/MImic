@@ -56,6 +56,38 @@ class CloudConnectTest {
         assertEquals(CloudConnectState.Kind.AUTH, CloudConnectState.failed(IllegalStateException()).kind)
     }
 
+    @Test fun internal_error_8_is_retried_through_the_alternate_route() {
+        val e8 = GoogleAuthErrors.toException(GoogleAuthErrors.INTERNAL_ERROR, pkg, sha1, "Unknown")
+        assertTrue(e8 is CloudException.ProviderError)
+        assertTrue(GoogleAuthErrors.retryWithAlternate(e8))
+        assertTrue(e8.message!!.contains("code 8"))
+        // Actionable statuses are shown, not retried blindly.
+        assertTrue(!GoogleAuthErrors.retryWithAlternate(GoogleAuthErrors.toException(GoogleAuthErrors.DEVELOPER_ERROR, pkg, sha1)))
+        assertTrue(!GoogleAuthErrors.retryWithAlternate(GoogleAuthErrors.toException(GoogleAuthErrors.CANCELED, pkg, sha1)))
+    }
+
+    @Test fun google_auth_util_reasons_become_concrete_fixes() {
+        val unreg = GoogleAuthErrors.fromAuthUtil("UNREGISTERED_ON_API_CONSOLE", pkg, sha1)
+        assertTrue(unreg is CloudException.NotConfigured)
+        assertTrue(unreg.message!!.contains(sha1) && unreg.message!!.contains(pkg))
+        assertTrue(GoogleAuthErrors.fromAuthUtil("ServiceDisabled", pkg, sha1) is CloudException.NotConfigured)
+        assertTrue(GoogleAuthErrors.fromAuthUtil("BadAuthentication", pkg, sha1) is CloudException.AuthRequired)
+        assertTrue(GoogleAuthErrors.fromAuthUtil("NetworkError", pkg, sha1) is CloudException.Offline)
+        assertTrue(GoogleAuthErrors.fromAuthUtil("access_denied", pkg, sha1).message!!.contains("test user"))
+        val unknown = GoogleAuthErrors.fromAuthUtil("SomethingNew", pkg, sha1)
+        assertTrue(unknown is CloudException.ProviderError && unknown.message!!.contains("SomethingNew"))
+        // An unknown reason from the alternate route must not loop back into the alternate route forever:
+        // the VM passes allowAlternate=false there, but the classification itself stays retry-eligible.
+        assertTrue(GoogleAuthErrors.retryWithAlternate(unknown))
+    }
+
+    @Test fun onedrive_client_id_must_look_like_an_entra_application_id() {
+        assertTrue(OneDriveAuth.isValidClientId("0f4c2a5e-1b2c-4d3e-8f9a-0b1c2d3e4f5a"))
+        assertTrue(OneDriveAuth.isValidClientId(" 0F4C2A5E-1B2C-4D3E-8F9A-0B1C2D3E4F5A "))
+        assertTrue(!OneDriveAuth.isValidClientId("my-app"))
+        assertTrue(!OneDriveAuth.isValidClientId("eA5L9wOTGbvwmdX3ojvGnABaX/k="))
+    }
+
     private fun acct(folder: String? = "F", lastError: String? = null) =
         CloudAccountEntity("gdrive:1", "gdrive", "1", "Me", "me@x", folder, folder?.let { "Music" }, null, 0, lastError, 0)
 

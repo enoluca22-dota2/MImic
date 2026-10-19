@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108">
+  <!-- Concept B — premium eighth note: glass-orb head, slim stem, sweeping flag, faint glass ring. -->
+  <defs>
+    <linearGradient id="ink" x1="40" y1="30" x2="78" y2="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3EE"/>
+      <stop offset="0.5" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#A855F7"/>
+    </linearGradient>
+    <radialGradient id="orb" cx="42" cy="64" r="16" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7DE7F7"/>
+      <stop offset="0.45" stop-color="#3B82F6"/>
+      <stop offset="1" stop-color="#7C3AED"/>
+    </radialGradient>
+    <linearGradient id="ring" x1="24" y1="24" x2="84" y2="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.30"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.06"/>
+    </linearGradient>
+  </defs>
+  <circle cx="54" cy="54" r="31" fill="#FFFFFF" fill-opacity="0.05" stroke="url(#ring)" stroke-width="1"/>
+  <rect x="54" y="32" width="5.5" height="40" rx="2.75" fill="url(#ink)"/>
+  <path d="M56.5,32 C66,33 77,40 76,54 C75,61 72,64 70,66 C72,58 70,50 59.5,46 Z" fill="url(#ink)"/>
+  <circle cx="46" cy="71" r="12" fill="url(#orb)"/>
+  <ellipse cx="42" cy="66.5" rx="5.5" ry="3" transform="rotate(-30 42 66.5)" fill="#FFFFFF" fill-opacity="0.55"/>
+  <circle cx="51.5" cy="76" r="1.6" fill="#FFFFFF" fill-opacity="0.35"/>
+</svg>

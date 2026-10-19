@@ -14,7 +14,8 @@ import okio.ByteString.Companion.toByteString
 sealed interface CloudConnectState {
     data object Idle : CloudConnectState
     data class Connecting(val step: String) : CloudConnectState
-    data class Failed(val message: String, val kind: Kind) : CloudConnectState
+    /** [code] = the provider's status code when it gave one (Google's 8, 10, …). */
+    data class Failed(val message: String, val kind: Kind, val code: Int? = null) : CloudConnectState
 
     enum class Kind { CANCELLED, NOT_CONFIGURED, OFFLINE, AUTH }
 
@@ -23,6 +24,7 @@ sealed interface CloudConnectState {
             is CloudException.NotConfigured -> Failed(e.message ?: "Not set up", Kind.NOT_CONFIGURED)
             is CloudException.Offline -> Failed(e.message ?: "No internet connection", Kind.OFFLINE)
             is CloudException.Cancelled -> Failed(e.message ?: "Sign-in was cancelled", Kind.CANCELLED)
+            is CloudException.ProviderError -> Failed(e.message ?: "Couldn't connect", Kind.AUTH, e.code)
             is CloudException -> Failed(e.message ?: "Couldn't connect", Kind.AUTH)
             else -> Failed("Couldn't connect (${e.javaClass.simpleName})", Kind.AUTH)
         }
@@ -43,7 +45,16 @@ object GoogleAuthErrors {
     const val SIGN_IN_FAILED = 12500
     const val SIGN_IN_CANCELLED = 12501
 
-    fun toException(statusCode: Int, packageName: String, sha1: String?): CloudException = when (statusCode) {
+    /**
+     * Statuses after which MImic tries the alternate route (account chooser + GoogleAuthUtil)
+     * automatically: they carry no actionable reason, and the other route reports one.
+     */
+    fun retryWithAlternate(e: Throwable): Boolean =
+        e is CloudException.ProviderError && (e.code == INTERNAL_ERROR || e.code == UNKNOWN_STATUS)
+
+    const val UNKNOWN_STATUS = -1
+
+    fun toException(statusCode: Int, packageName: String, sha1: String?, detail: String? = null): CloudException = when (statusCode) {
         NETWORK_ERROR, TIMEOUT -> CloudException.Offline("Google couldn't be reached — check your connection and try again")
         CANCELED, SIGN_IN_CANCELLED -> CloudException.Cancelled("Google sign-in was cancelled")
         DEVELOPER_ERROR -> CloudException.NotConfigured(
@@ -56,8 +67,36 @@ object GoogleAuthErrors {
                 "isn't listed as a test user. See docs/CLOUD_SETUP.md.",
         )
         SIGN_IN_REQUIRED -> CloudException.AuthRequired("Google needs you to sign in again")
-        INTERNAL_ERROR -> CloudException.AuthRequired("Google Play services had an internal error (code 8) — try again")
-        else -> CloudException.AuthRequired("Google authorization failed (status $statusCode)")
+        INTERNAL_ERROR -> CloudException.ProviderError(
+            INTERNAL_ERROR,
+            "Google Play services reported an internal error (code 8)" + (detail?.let { ": $it" } ?: "") + ".",
+        )
+        else -> CloudException.ProviderError(statusCode, "Google authorization failed (status $statusCode)" + (detail?.let { ": $it" } ?: ""))
+    }
+
+    /**
+     * GoogleAuthUtil's reason strings (GoogleAuthException.message) → what to fix. These are the
+     * documented/observed values; anything else is shown verbatim.
+     */
+    fun fromAuthUtil(reason: String?, packageName: String, sha1: String?): CloudException {
+        val r = reason.orEmpty()
+        val register = "an Android OAuth client for package $packageName with SHA-1 ${sha1 ?: "(unknown)"}"
+        return when {
+            r.contains("UNREGISTERED_ON_API_CONSOLE") || r.contains("INVALID_AUDIENCE") || r.contains("INVALID_CLIENT_ID") ->
+                CloudException.NotConfigured("Google says this app isn't registered ($r). Create $register in the Google Cloud project that has the Drive API enabled (docs/CLOUD_SETUP.md).")
+            r.contains("ServiceDisabled") ->
+                CloudException.NotConfigured("This Google account isn't allowed to use Drive with third-party apps (ServiceDisabled) — e.g. a school/work or child account restricted by its administrator.")
+            r.contains("BadAuthentication") || r.contains("BadUsername") ->
+                CloudException.AuthRequired("Android's saved sign-in for this Google account is out of date ($r). Open Settings → Passwords & accounts, re-enter the account's password, then try again.")
+            r.contains("DeviceManagementRequired") ->
+                CloudException.NotConfigured("This account requires device management before apps can use it ($r).")
+            r.contains("INVALID_SCOPE") || r.contains("invalid_scope") ->
+                CloudException.NotConfigured("Google rejected the Drive scope ($r). Add …/auth/drive.readonly to the OAuth consent screen's data access.")
+            r.contains("access_denied") || r.contains("AccessDenied") ->
+                CloudException.NotConfigured("Google denied access ($r). While the app is in Testing, your Gmail address must be listed as a test user.")
+            r.contains("NetworkError") -> CloudException.Offline("Google couldn't be reached — check your connection and try again")
+            else -> CloudException.ProviderError(UNKNOWN_STATUS, "Google sign-in failed: ${r.ifBlank { "no reason given" }}")
+        }
     }
 
     /**

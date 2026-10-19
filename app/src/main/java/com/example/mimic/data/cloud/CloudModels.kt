@@ -114,6 +114,8 @@ sealed class CloudException(message: String) : Exception(message) {
     class NotConfigured(message: String) : CloudException(message)
     /** The user backed out of the provider's sign-in UI (or it closed without a result). */
     class Cancelled(message: String = "Sign-in was cancelled") : CloudException(message)
+    /** A provider failure with a status code but no more specific meaning (e.g. Google's 8). */
+    class ProviderError(val code: Int, message: String) : CloudException(message)
     class Http(val code: Int, message: String) : CloudException(message)
 }
 

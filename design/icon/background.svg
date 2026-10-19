@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 108 108" width="108" height="108">
+  <!-- MImic adaptive-icon background (shared by all candidates): midnight base with a cyan and a violet glow. -->
+  <defs>
+    <linearGradient id="base" x1="20" y1="0" x2="88" y2="108" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#151D4C"/>
+      <stop offset="0.55" stop-color="#0A0F2E"/>
+      <stop offset="1" stop-color="#05060F"/>
+    </linearGradient>
+    <radialGradient id="glowC" cx="28" cy="24" r="48" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#22D3EE" stop-opacity="0.26"/>
+      <stop offset="1" stop-color="#22D3EE" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowV" cx="84" cy="88" r="52" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8B5CF6" stop-opacity="0.36"/>
+      <stop offset="1" stop-color="#8B5CF6" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <rect width="108" height="108" fill="url(#base)"/>
+  <rect width="108" height="108" fill="url(#glowC)"/>
+  <rect width="108" height="108" fill="url(#glowV)"/>
+</svg>

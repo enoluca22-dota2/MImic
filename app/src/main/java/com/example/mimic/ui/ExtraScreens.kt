@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -104,6 +105,7 @@ fun SettingsScreen(
     onOpenMusicServer: () -> Unit,
     onOpenMusicSources: () -> Unit = {},
     onOpenPlayback: () -> Unit = {},
+    onOpenUpdates: () -> Unit = {},
 ) {
     val cloudAccounts by vm.cloudAccounts.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -208,6 +210,24 @@ fun SettingsScreen(
                         "ReplayGain ${a.replayGain.label.lowercase()}".takeIf { a.replayGain != com.example.mimic.data.ReplayGainMode.OFF },
                         com.example.mimic.ui.player.formatSpeed(a.speed).takeIf { a.speed != 1f },
                     ).joinToString(" · ") + " · equalizer, sleep fade, headphones",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenUpdates).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("App Updates", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                Text(
+                    "MImic ${com.example.mimic.BuildConfig.VERSION_NAME} · check GitHub for a newer version",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

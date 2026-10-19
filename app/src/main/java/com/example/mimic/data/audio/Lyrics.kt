@@ -35,7 +35,7 @@ data class Lyrics(val synced: Boolean, val lines: List<LyricLine>, val source: S
             val synced = ArrayList<LyricLine>()
             val plain = ArrayList<LyricLine>()
             for (raw in text.lineSequence()) {
-                val line = raw.trim().trimStart('﻿')
+                val line = raw.trim().trimStart('\uFEFF')
                 if (line.isEmpty()) continue
                 OFFSET.matchEntire(line)?.let { offset = it.groupValues[1].toLong(); return@let }
                 if (META.matches(line)) continue

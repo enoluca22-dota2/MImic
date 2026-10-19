@@ -35,6 +35,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
@@ -335,6 +336,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             restoreQueueIfIdle()
             refreshSleepState()
         }, MoreExecutors.directExecutor())
+    }
+
+    init {
+        // New downloads are ordinary phone songs: rescan (debounced) so they appear right away.
+        viewModelScope.launch {
+            @OptIn(kotlinx.coroutines.FlowPreview::class)
+            com.example.mimic.downloader.Downloader.completions(getApplication())
+                .debounce(1500)
+                .collect { loadLibrary() }
+        }
     }
 
     fun loadLibrary() {
@@ -870,17 +881,38 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val cloudStats: StateFlow<Map<String, com.example.mimic.data.cloud.CloudAccountStats>> = cloud.stats
     val oneDriveConfigured: Boolean get() = cloud.oneDriveAuth.isConfigured
 
-    /** Why OneDrive can't sign in with this build (no registration / signature mismatch), or null. */
-    val oneDriveSetupProblem: String? by lazy {
+    private val _oneDriveSetup = MutableStateFlow(computeOneDriveSetupProblem())
+
+    /** Why OneDrive can't sign in yet (no client ID / signature mismatch), or null when ready. */
+    val oneDriveSetupProblem: StateFlow<String?> = _oneDriveSetup.asStateFlow()
+
+    /** Save the Entra client ID typed on the OneDrive card. Returns an error message or null. */
+    fun configureOneDrive(clientId: String, audience: String): String? = try {
+        cloud.oneDriveAuth.configure(clientId, audience)
+        _oneDriveSetup.value = computeOneDriveSetupProblem()
+        _messages.tryEmit("OneDrive registration saved — tap Connect account")
+        null
+    } catch (e: IllegalArgumentException) {
+        e.message
+    }
+
+    fun oneDriveClientId(): String = cloud.oneDriveAuth.clientId
+    fun oneDriveAudience(): String = cloud.oneDriveAuth.audience
+
+    private fun computeOneDriveSetupProblem(): String? =
         if (!cloud.oneDriveAuth.isConfigured) {
             val fp = com.example.mimic.data.cloud.AppSignature.of(getApplication())
             com.example.mimic.data.cloud.onedrive.OneDriveAuth.NOT_CONFIGURED + (
-                fp?.let { "\n\nFor the registration: package ${getApplication<android.app.Application>().packageName} · signature hash ${it.base64Sha1}" } ?: ""
+                fp?.let {
+                    val pkg = getApplication<android.app.Application>().packageName
+                    "\n\nPlatform: Android\nPackage name: $pkg\nSignature hash: ${it.base64Sha1}\n" +
+                        "Redirect URI: msauth://$pkg/${java.net.URLEncoder.encode(it.base64Sha1, "UTF-8")}\n" +
+                        "API permission: Microsoft Graph → Delegated → Files.Read"
+                } ?: ""
                 )
         } else {
             cloud.oneDriveAuth.signatureProblem()
         }
-    }
 
     /** Pull-to-refresh / "Sync now": Navidrome catalog + every cloud account. */
     fun refreshAllSources() {
@@ -929,11 +961,160 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** The Activity-side launchers the Google flow may need (they live in the composable). */
+    class GoogleLaunchers(
+        val consent: (android.app.PendingIntent) -> Unit,
+        val chooser: (android.content.Intent) -> Unit,
+        val recover: (android.content.Intent) -> Unit,
+    )
+
+    private var pendingGoogleEmail: String? = null
+    private var lastGoogleFailure: String? = null
+
+    private fun googleFailed(e: Throwable, launchers: GoogleLaunchers, onDone: (String?) -> Unit, allowAlternate: Boolean = true) {
+        val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
+        lastGoogleFailure = (e as? com.example.mimic.data.cloud.CloudException)?.message ?: e.javaClass.simpleName
+        if (allowAlternate && com.example.mimic.data.cloud.GoogleAuthErrors.retryWithAlternate(e)) {
+            // No reason given (code 8): ask Google again through the other supported route,
+            // which reports a concrete one (or simply works).
+            setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Google gave no reason (${e.message}). Trying Android's account picker…"))
+            runCatching { launchers.chooser(cloud.googleChooseAccountIntent()) }.onFailure { connectFailed(p, it, onDone) }
+        } else {
+            connectFailed(p, e, onDone)
+        }
+    }
+
+    /** Manual "alternative sign-in" (also offered on the card after a failure). */
+    fun connectGoogleAlternate(launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
+        val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
+        setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Choose your Google account…"))
+        runCatching { launchers.chooser(cloud.googleChooseAccountIntent()) }.onFailure { connectFailed(p, it, onDone) }
+    }
+
+    /** Alternate route, step 1: Android's account picker returned. */
+    fun googleAccountChosen(resultCode: Int, data: android.content.Intent?, launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
+        val email = data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME)
+        if (resultCode != android.app.Activity.RESULT_OK || email.isNullOrBlank()) {
+            connectFailed(com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE, com.example.mimic.data.cloud.CloudException.Cancelled("No Google account was chosen"), onDone)
+            return
+        }
+        pendingGoogleEmail = email
+        runGoogleAlternate(email, launchers, onDone, afterConsent = false)
+    }
+
+    /** Alternate route, step 2: Google's consent screen returned. */
+    fun googleConsentReturned(resultCode: Int, launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
+        val email = pendingGoogleEmail
+        if (email == null) {
+            // The app process was recreated in between; the grant (if any) is kept by Google.
+            connectFailed(com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE, com.example.mimic.data.cloud.CloudException.Cancelled("Sign-in was interrupted — tap Try again"), onDone)
+            return
+        }
+        if (resultCode != android.app.Activity.RESULT_OK) {
+            connectFailed(com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE, com.example.mimic.data.cloud.CloudException.Cancelled("Google access wasn't approved"), onDone)
+            return
+        }
+        runGoogleAlternate(email, launchers, onDone, afterConsent = true)
+    }
+
+    private fun runGoogleAlternate(email: String, launchers: GoogleLaunchers, onDone: (String?) -> Unit, afterConsent: Boolean) {
+        val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
+        setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Asking Google for Drive access…"))
+        viewModelScope.launch {
+            runCatching { withContext(Dispatchers.IO) { cloud.googleAlternateToken(email) } }.fold(
+                onSuccess = { step ->
+                    when (step) {
+                        is com.example.mimic.data.cloud.google.GoogleDriveAuth.AltStep.Token -> finishGoogle(step.token, onDone)
+                        is com.example.mimic.data.cloud.google.GoogleDriveAuth.AltStep.NeedsConsent ->
+                            if (afterConsent) {
+                                googleFailed(com.example.mimic.data.cloud.CloudException.AuthRequired("Google still asks for approval — allow Drive access on Google's screen"), launchers, onDone, allowAlternate = false)
+                            } else {
+                                setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Waiting for Google's permission screen…"))
+                                runCatching { launchers.recover(step.intent) }.onFailure { connectFailed(p, it, onDone) }
+                            }
+                    }
+                },
+                onFailure = { googleFailed(it, launchers, onDone, allowAlternate = false) },
+            )
+        }
+    }
+
+    fun showMessage(text: String) {
+        _messages.tryEmit(text)
+    }
+
+    // ---- Media downloader (full edition, MImic 4.0) ----
+
+    private val _sharedLink = MutableStateFlow<String?>(null)
+
+    /** A link shared/opened into MImic, waiting for the Downloads tab to analyze it. */
+    val sharedLink: StateFlow<String?> = _sharedLink.asStateFlow()
+
+    fun offerSharedLink(text: String) {
+        _sharedLink.value = text
+    }
+
+    fun consumeSharedLink() {
+        _sharedLink.value = null
+    }
+
+    private val _openUpdates = MutableStateFlow(false)
+    val openUpdatesRequest: StateFlow<Boolean> = _openUpdates.asStateFlow()
+    fun requestOpenUpdates() { _openUpdates.value = true }
+    fun consumeOpenUpdates() { _openUpdates.value = false }
+
+    fun pause() {
+        controller?.pause()
+    }
+
+    /**
+     * Play a file the downloader just saved. Music is published to MediaStore (Music/MImic), so
+     * it is an ordinary phone song: the library's own entry (same MediaStore id → same song id,
+     * favorites and history) is used when the scan has it; otherwise an equivalent entry is built.
+     */
+    fun playDownloadedFile(uri: String, title: String, artist: String?) {
+        val mediaId = android.net.Uri.parse(uri).lastPathSegment?.toLongOrNull()
+        val known = _localSongs.value.firstOrNull { it.uri == uri || (mediaId != null && it.id == mediaId && uri.contains("/audio/")) }
+        val song = known ?: Song(
+            id = mediaId?.takeIf { uri.contains("/audio/") } ?: (uri.hashCode().toLong() and 0x7FFFFFFF) + (1L shl 40),
+            title = title,
+            artist = artist ?: "Unknown artist",
+            album = "MImic downloads",
+            durationMs = 0,
+            uri = uri,
+            albumArtUri = null,
+            dateAddedSec = System.currentTimeMillis() / 1000,
+            folder = "MImic",
+        )
+        play(listOf(song), 0)
+    }
+
+    /**
+     * Copyable report for diagnosing sign-in on a real phone: identity of the installed APK,
+     * Play services version and the last Google failure. No tokens, no account names.
+     */
+    fun cloudDiagnostics(): String {
+        val app = getApplication<android.app.Application>()
+        val fp = com.example.mimic.data.cloud.AppSignature.of(app)
+        val gms = runCatching { app.packageManager.getPackageInfo("com.google.android.gms", 0).versionName }.getOrNull()
+        return buildString {
+            appendLine("MImic ${com.example.mimic.BuildConfig.VERSION_NAME} (${com.example.mimic.BuildConfig.VERSION_CODE}) ${com.example.mimic.BuildConfig.BUILD_TYPE}")
+            appendLine("Package: ${app.packageName}")
+            appendLine("SHA-1: ${fp?.sha1 ?: "?"}")
+            appendLine("SHA-256: ${fp?.sha256 ?: "?"}")
+            appendLine("MS signature hash: ${fp?.base64Sha1 ?: "?"}")
+            appendLine("Google Play services: ${gms ?: "not installed"}")
+            appendLine("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}) · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+            appendLine("Drive scope: ${com.example.mimic.data.cloud.google.GoogleDriveAuth.SCOPE}")
+            append("Last Google error: ${lastGoogleFailure ?: "none"}")
+        }
+    }
+
     /**
      * Google step 1: either already authorized, or hands back Google's account chooser / consent
      * UI to launch. [email] = reconnect that same account.
      */
-    fun connectGoogle(email: String?, launchConsent: (android.app.PendingIntent) -> Unit, onDone: (String?) -> Unit) {
+    fun connectGoogle(email: String?, launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
         val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
         setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Opening Google…"))
         viewModelScope.launch {
@@ -942,24 +1123,24 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                     when (step) {
                         is com.example.mimic.data.cloud.google.GoogleDriveAuth.Step.NeedsConsent -> {
                             setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Waiting for Google…"))
-                            runCatching { launchConsent(step.intent) }.onFailure { connectFailed(p, it, onDone) }
+                            runCatching { launchers.consent(step.intent) }.onFailure { connectFailed(p, it, onDone) }
                         }
                         is com.example.mimic.data.cloud.google.GoogleDriveAuth.Step.Authorized -> finishGoogle(step.token, onDone)
                     }
                 },
-                onFailure = { connectFailed(p, it, onDone) },
+                onFailure = { googleFailed(it, launchers, onDone) },
             )
         }
     }
 
     /** Google step 2: the chooser/consent UI returned (with any result code — failures carry a status). */
-    fun completeGoogleConsent(resultCode: Int, data: android.content.Intent?, onDone: (String?) -> Unit) {
+    fun completeGoogleConsent(resultCode: Int, data: android.content.Intent?, launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
         val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
         setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Finishing Google authorization…"))
         viewModelScope.launch {
             runCatching { withContext(Dispatchers.IO) { cloud.googleTokenFromConsent(resultCode, data) } }.fold(
                 onSuccess = { finishGoogle(it, onDone) },
-                onFailure = { connectFailed(p, it, onDone) },
+                onFailure = { googleFailed(it, launchers, onDone) },
             )
         }
     }
@@ -969,7 +1150,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Checking Drive access…"))
         runCatching { cloud.finishGoogle(token) }.fold(
             onSuccess = { setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Idle); onDone(it.accountKey) },
-            onFailure = { connectFailed(p, it, onDone) },
+            onFailure = { lastGoogleFailure = it.message; connectFailed(p, it, onDone) },
         )
     }
 

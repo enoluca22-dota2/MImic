@@ -38,6 +38,7 @@ import com.google.common.util.concurrent.ListenableFuture
  * the play queue + position (so the app resumes where it left off) and the play history (so a song
  * that auto-advances with the app closed still counts).
  */
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 class PlaybackService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null

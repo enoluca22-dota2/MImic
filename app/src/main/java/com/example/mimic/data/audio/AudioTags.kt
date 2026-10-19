@@ -100,7 +100,7 @@ data class AudioTags(
         }
 
         private fun decode(b: ByteArray, from: Int, end: Int, enc: Int): String =
-            if (end <= from) "" else String(b, from, end - from, charsetOf(enc)).trimEnd('\u0000').trim('﻿')
+            if (end <= from) "" else String(b, from, end - from, charsetOf(enc)).trimEnd('\u0000').trim('\uFEFF')
 
         private fun uslt(b: ByteArray, at: Int, size: Int): String {
             val end = at + size

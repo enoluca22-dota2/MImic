@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_with_mimic">Download with MImic</string>
+    <string name="notification_channel_downloads_name">Downloads</string>
+    <string name="notification_channel_downloads_desc">Shows active download progress</string>
+    <string name="notification_channel_status_name">Download status</string>
+    <string name="notification_channel_status_desc">Completed and failed download alerts</string>
+    <string name="action_pause">Pause</string>
+    <string name="action_resume">Resume</string>
+    <string name="action_cancel">Cancel</string>
+    <string name="action_retry">Retry</string>
+    <string name="action_open">Open</string>
+</resources>

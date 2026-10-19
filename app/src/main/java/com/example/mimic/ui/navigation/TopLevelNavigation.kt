@@ -7,6 +7,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
@@ -32,7 +33,10 @@ fun ScrollToTopOnReselect(tab: TopLevel, state: LazyListState) {
     }
 }
 
-/** The four primary destinations (MImic 3.0). Everything else is pushed on top of one of them. */
+/**
+ * The primary destinations: Home | Search | Library | Downloads | Settings (Downloads since 4.0,
+ * full edition only — see [visible]). Everything else is pushed on top of one of them.
+ */
 enum class TopLevel(
     val route: String,
     val label: String,
@@ -43,11 +47,17 @@ enum class TopLevel(
     HOME("home", "Home", Icons.Default.Home, restoresState = false),
     SEARCH("search", "Search", Icons.Default.Search, restoresState = true),
     LIBRARY("library", "Library", Icons.Default.LibraryMusic, restoresState = true),
+    // Route "downloader": "downloads" is the Library's offline-songs screen.
+    DOWNLOADS("downloader", "Downloads", Icons.Default.Download, restoresState = true),
     SETTINGS("settings", "Settings", Icons.Default.Settings, restoresState = false),
     ;
 
     companion object {
         fun ofRoute(route: String?): TopLevel? = entries.firstOrNull { it.route == route }
+
+        /** Tabs shown in the navigation bar for this edition. */
+        val visible: List<TopLevel> =
+            entries.filter { it != DOWNLOADS || com.example.mimic.downloader.Downloader.AVAILABLE }
     }
 }
 
@@ -96,6 +106,7 @@ object TopLevelNavigation {
     }
 
     /** Applies the plan; returns the tab to scroll to the top when the user re-tapped its root. */
+    @android.annotation.SuppressLint("RestrictedApi") // currentBackStack: the only whole-stack view
     fun navigate(navController: NavController, target: TopLevel): TopLevel? {
         val routes = navController.currentBackStack.value.map { it.destination.route }
         when (val p = plan(target, routes)) {

@@ -40,6 +40,14 @@ class AppContainer(application: Application) {
     val cloudLibrary: CloudLibraryRepository by lazy {
         CloudLibraryRepository(application, database.cloudDao(), downloadRepository, settingsRepository)
     }
+
+    /** GitHub Releases updater (Settings → App Updates, MImic 4.0). */
+    val updateManager: com.example.mimic.update.UpdateManager by lazy {
+        com.example.mimic.update.UpdateManager(
+            application,
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default),
+        )
+    }
 }
 
 class MimicApplication : Application() {
@@ -49,5 +57,10 @@ class MimicApplication : Application() {
         super.onCreate()
         // Periodic background refresh of cloud libraries (survives reboots via WorkManager).
         CloudLibrarySyncWorker.schedule(this, enabled = true)
+        // Full edition: media downloader (unpacks yt-dlp once, resumes an interrupted queue).
+        com.example.mimic.downloader.Downloader.init(this)
+        // In-app updates: drop leftover update APKs; daily check (notification only) if enabled.
+        container.updateManager.cleanUpOldDownloads()
+        com.example.mimic.update.UpdateCheckWorker.schedule(this, container.updateManager.autoCheckEnabled)
     }
 }

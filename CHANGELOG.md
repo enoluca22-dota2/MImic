@@ -1,5 +1,35 @@
 # Changelog
 
+## 4.0.0-beta.1
+First "MImic Ultimate" build: ENAGELYUCA's downloader merged in, new brand, in-app updates.
+Beta: Google Drive / OneDrive sign-in still needs a real-phone test with your own app registrations.
+
+- **Downloads tab** (full edition): paste or share a YouTube/TikTok link (also "Open with MImic"),
+  see the real formats, download MP3/M4A audio or MP4 video at a chosen quality, whole playlists or
+  several links at once. Persistent queue with progress, speed, ETA, pause/resume/cancel/retry,
+  Wi-Fi-only and speed limit, history, duplicate warning, in-app yt-dlp update. Music is saved to
+  Music/MImic and appears in your Library (existing ENAGELYUCA downloads in Music/ENAGELYUCA too);
+  it plays in MImic's player, videos play in-app. Ported from ENAGELYUCA 0.3.0 (its own player,
+  library and radio were not merged — MImic's are used).
+- **Fixed** (inherited from ENAGELYUCA): yt-dlp's self-update could replace the binary while a link
+  was being analyzed ("bad local file header"); analysis and downloads now wait for it.
+- **Five tabs**: Home | Search | Library | Downloads | Settings.
+- **App Updates** (Settings): Check for Updates, what's new, download progress, install via
+  Android's confirmation; SHA-256 + package + versionCode + CPU + pinned signing certificate
+  checks; Stable/Beta channels; optional daily check that only notifies.
+- **New icon**: "M" monogram whose right leg is an eighth note, cyan → violet on midnight blue
+  (chosen from three candidates; SVG masters in design/icon, built with vdtoolkit).
+- **Google Drive**: a phone reported Play services INTERNAL_ERROR (code 8) from AuthorizationClient.
+  MImic now retries automatically through Android's account picker + GoogleAuthUtil (same OAuth
+  client), which reports concrete reasons (e.g. UNREGISTERED_ON_API_CONSOLE); background tokens use
+  GoogleAuthUtil; "Copy diagnostics" on the card (APK fingerprints, Play services version, last error).
+- **OneDrive**: paste the Entra Application (client) ID on the card — no rebuild needed; the card
+  lists the exact package, signature hash, redirect URI and permission to register.
+- **Editions**: `full` (with downloader, GitHub) and `standard` (no downloader / no GPL code).
+- Versioning: versionCode = (X·1e6+Y·1e3+Z)·100 + 99 (pre-releases lower), so betas get their own codes.
+- License: GPL-3.0 (the downloader uses GPL-3.0 youtubedl-android).
+- Tests: 152 JVM (both editions) + 95 ported downloader tests (full edition).
+
 ## 3.3 — New icon, Google Drive sign-in repair, OneDrive readiness
 - **New launcher icon**: dark navy field, frosted-glass disc, beamed eighth note in a cyan → blue →
   violet gradient. Vector adaptive icon (background + foreground + Android 13 themed monochrome),

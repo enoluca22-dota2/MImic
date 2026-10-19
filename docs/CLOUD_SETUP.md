@@ -55,8 +55,9 @@ If you ever sign MImic with a different keystore, both registrations must be upd
    ```properties
    msal.clientId=00000000-0000-0000-0000-000000000000
    ```
-6. Rebuild: `.\gradlew.bat :app:assembleDebug` and install the APK over the existing app.
-   Settings → Music Sources → OneDrive → **Connect account** now opens Microsoft's login page.
+6. Since 4.0 no rebuild is needed: paste the ID into Settings → Music Sources → OneDrive →
+   *Application (client) ID* → **Save registration**, then **Connect account** opens Microsoft's
+   login page. (The `cloud.properties` route above still works for builds you make yourself.)
 
 What MImic does with it: reads your chosen folder with `/items/{id}/delta` (only changes after the
 first sync), streams with `/items/{id}/content` → short-lived pre-authenticated URL (Range requests
@@ -84,6 +85,24 @@ for personal accounts; to remove the grant entirely use <https://account.live.co
    Cloud project. Changes can take from a few minutes to a few hours to apply.
    Settings → Music Sources → Google Drive → **Connect account** → pick your account → Google
    shows "Google hasn't verified this app" (expected for a Testing-mode app) → Continue → allow.
+
+### "Google Play services had an internal error (code 8)" (MImic 4.0)
+
+Status 8 (INTERNAL_ERROR) from `AuthorizationClient` carries no reason, so it can't be fixed by
+guessing. 4.0 handles it in two ways:
+
+1. MImic immediately tries Google's other supported route for the **same** OAuth client: Android's
+   own account picker, then `GoogleAuthUtil` requests the Drive scope (showing Google's consent
+   screen if needed). If the registration is fine, this simply connects.
+2. If that route fails too, MImic shows Google's concrete reason, e.g. `UNREGISTERED_ON_API_CONSOLE`
+   (no Android OAuth client for package + SHA-1 — create it, step 4), `access_denied` (your Gmail
+   isn't a test user), `ServiceDisabled` (account restricted by an administrator),
+   `BadAuthentication` (re-enter the account's password in Android Settings → Passwords & accounts).
+
+On the Google Drive card: **Use Android account picker** starts route 2 directly, and **Copy
+diagnostics** copies the installed APK's package/SHA-1/SHA-256, the Play services version, the
+Android version and the last error (no tokens). With the phone on USB:
+`adb logcat -s MImicGoogleAuth` shows the status codes.
 
 ### Troubleshooting Google sign-in (MImic 3.3)
 

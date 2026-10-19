@@ -26,8 +26,16 @@ colorpicker = "1.1.3"
 msal = "8.5.0"
 playServicesAuth = "22.0.0"
 work = "2.11.2"
+# MImic 4.0 media downloader (from ENAGELYUCA).
+youtubedlAndroid = "0.18.1"
+jacksonYtdl = "2.11.1"
+documentfile = "1.1.0"
 
 [libraries]
+youtubedl-library = { group = "io.github.junkfood02.youtubedl-android", name = "library", version.ref = "youtubedlAndroid" }
+youtubedl-ffmpeg = { group = "io.github.junkfood02.youtubedl-android", name = "ffmpeg", version.ref = "youtubedlAndroid" }
+jackson-databind-ytdl = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jacksonYtdl" }
+androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentfile" }
 msal = { group = "com.microsoft.identity.client", name = "msal", version.ref = "msal" }
 play-services-auth = { group = "com.google.android.gms", name = "play-services-auth", version.ref = "playServicesAuth" }
 androidx-work-runtime = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }

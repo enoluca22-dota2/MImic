@@ -46,7 +46,9 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -59,7 +61,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -97,18 +101,33 @@ fun MusicSourcesScreen(
     val serverStatus by vm.serverStatus.collectAsStateWithLifecycle()
     val creds by vm.serverCredentials.collectAsStateWithLifecycle()
     val connect by vm.cloudConnect.collectAsStateWithLifecycle()
-    val activity = LocalContext.current as Activity
+    val oneDriveSetup by vm.oneDriveSetupProblem.collectAsStateWithLifecycle()
+    val activity = androidx.activity.compose.LocalActivity.current ?: return
 
     /** A fresh account goes straight to folder selection; a reconnect keeps its folder. */
     fun afterConnect(key: String) {
         if (vm.cloudAccounts.value.firstOrNull { it.accountKey == key }?.folderId == null) onChooseFolder(key)
     }
 
-    // Google's chooser/consent result always goes to the VM: a RESULT_CANCELED still carries the
-    // failure status (3.3 — dropping it is why picking an account used to do nothing).
+    // Google needs up to three system screens. Each result always goes to the VM: a
+    // RESULT_CANCELED still carries the failure status (3.3 — dropping it is why picking an
+    // account used to do nothing). Launchers are re-registered after process recreation.
+    lateinit var launchers: PlayerViewModel.GoogleLaunchers
     val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
-        vm.completeGoogleConsent(result.resultCode, result.data) { key -> key?.let(::afterConnect) }
+        vm.completeGoogleConsent(result.resultCode, result.data, launchers) { key -> key?.let(::afterConnect) }
     }
+    val chooser = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        vm.googleAccountChosen(result.resultCode, result.data, launchers) { key -> key?.let(::afterConnect) }
+    }
+    val recover = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        vm.googleConsentReturned(result.resultCode, launchers) { key -> key?.let(::afterConnect) }
+    }
+    launchers = PlayerViewModel.GoogleLaunchers(
+        consent = { pi -> consent.launch(IntentSenderRequest.Builder(pi.intentSender).build()) },
+        chooser = { chooser.launch(it) },
+        recover = { recover.launch(it) },
+    )
+    val clipboard = LocalClipboardManager.current
 
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(bottom = LocalBarPadding.current)) {
         DetailTopBar("Music Sources", onBack)
@@ -128,17 +147,31 @@ fun MusicSourcesScreen(
                 state = account?.let { sync[it.accountKey] },
                 stats = account?.let { stats[it.accountKey] },
                 connect = connect[provider],
-                configured = provider != CloudProviderType.ONEDRIVE || vm.oneDriveSetupProblem == null || account?.apiBase != null,
-                setupHelp = if (provider == CloudProviderType.ONEDRIVE) vm.oneDriveSetupProblem else null,
+                configured = provider != CloudProviderType.ONEDRIVE || oneDriveSetup == null || account?.apiBase != null,
+                setupHelp = if (provider == CloudProviderType.ONEDRIVE) oneDriveSetup else null,
+                setupForm = if (provider == CloudProviderType.ONEDRIVE) {
+                    { OneDriveRegistrationForm(vm) }
+                } else {
+                    null
+                },
                 onConnect = {
                     when (provider) {
                         CloudProviderType.ONEDRIVE -> vm.connectOneDrive(activity) { key -> key?.let(::afterConnect) }
-                        CloudProviderType.GOOGLE_DRIVE -> vm.connectGoogle(
-                            email = account?.email,
-                            launchConsent = { pi -> consent.launch(IntentSenderRequest.Builder(pi.intentSender).build()) },
-                            onDone = { key -> key?.let(::afterConnect) },
-                        )
+                        CloudProviderType.GOOGLE_DRIVE -> vm.connectGoogle(account?.email, launchers) { key -> key?.let(::afterConnect) }
                     }
+                },
+                failureActions = if (provider == CloudProviderType.GOOGLE_DRIVE) {
+                    {
+                        OutlinedButton(onClick = { vm.connectGoogleAlternate(launchers) { key -> key?.let(::afterConnect) } }) {
+                            Text("Use Android account picker")
+                        }
+                        TextButton(onClick = {
+                            clipboard.setText(AnnotatedString(vm.cloudDiagnostics()))
+                            vm.showMessage("Diagnostics copied — paste them to whoever is helping you")
+                        }) { Text("Copy diagnostics") }
+                    }
+                } else {
+                    null
                 },
                 onDismissError = { vm.clearCloudConnectError(provider) },
                 onChooseFolder = { account?.let { onChooseFolder(it.accountKey) } },
@@ -261,6 +294,8 @@ private fun CloudSourceCard(
     setupHelp: String?,
     onConnect: () -> Unit,
     onDismissError: () -> Unit,
+    failureActions: (@Composable () -> Unit)?,
+    setupForm: (@Composable () -> Unit)?,
     onChooseFolder: () -> Unit,
     onSync: () -> Unit,
     onDisconnect: (removeDownloads: Boolean) -> Unit,
@@ -294,13 +329,19 @@ private fun CloudSourceCard(
 
         when (connect) {
             is CloudConnectState.Connecting -> Text(connect.step, style = MaterialTheme.typography.bodySmall, color = c.onSurfaceVariant)
-            is CloudConnectState.Failed -> MessageBox(connect.message, error = connect.kind != CloudConnectState.Kind.CANCELLED, onDismiss = onDismissError)
+            is CloudConnectState.Failed -> {
+                MessageBox(connect.message, error = connect.kind != CloudConnectState.Kind.CANCELLED, onDismiss = onDismissError)
+                if (failureActions != null && connect.kind != CloudConnectState.Kind.CANCELLED) {
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { failureActions() }
+                }
+            }
             else -> Unit
         }
 
         if (account == null) {
             if (!configured) {
                 MessageBox(setupHelp ?: "This build has no app registration for ${provider.label}.", error = false, onDismiss = null)
+                setupForm?.invoke()
             } else {
                 Text(
                     if (provider == CloudProviderType.GOOGLE_DRIVE) {
@@ -376,6 +417,37 @@ private fun CloudSourceCard(
             confirmButton = { TextButton(onClick = { confirm = false; onDisconnect(alsoDownloads) }) { Text("Disconnect") } },
             dismissButton = { TextButton(onClick = { confirm = false }) { Text("Cancel") } },
         )
+    }
+}
+
+/**
+ * Paste the Entra "Application (client) ID" after registering MImic — no rebuild needed. The
+ * audience must match the registration's "Supported account types".
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun OneDriveRegistrationForm(vm: PlayerViewModel) {
+    var id by remember { mutableStateOf(vm.oneDriveClientId()) }
+    var audience by remember { mutableStateOf(vm.oneDriveAudience()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedTextField(
+            value = id,
+            onValueChange = { id = it; error = null },
+            label = { Text("Application (client) ID") },
+            placeholder = { Text("00000000-0000-0000-0000-000000000000") },
+            singleLine = true,
+            isError = error != null,
+            supportingText = error?.let { { Text(it) } },
+            modifier = Modifier.fillMaxWidth(),
+        )
+        Text("Who can sign in (must match \"Supported account types\" in Entra)", style = MaterialTheme.typography.labelMedium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            for ((value, label) in listOf("consumers" to "Personal accounts", "common" to "Personal + work/school", "organizations" to "Work/school only")) {
+                FilterChip(selected = audience == value, onClick = { audience = value }, label = { Text(label) })
+            }
+        }
+        Button(onClick = { error = vm.configureOneDrive(id, audience) }, enabled = id.isNotBlank()) { Text("Save registration") }
     }
 }
 

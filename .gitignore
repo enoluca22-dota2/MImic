@@ -29,3 +29,8 @@ server/backups/
 
 # Cloud app-registration ids (MSAL client id etc.) — per-user, see docs/CLOUD_SETUP.md
 cloud.properties
+
+# Release outputs (APKs are published as GitHub Release assets, never committed)
+/dist/
+*.apk
+*.aab
