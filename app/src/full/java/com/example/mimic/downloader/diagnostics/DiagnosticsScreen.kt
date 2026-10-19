@@ -28,6 +28,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -52,7 +53,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.SimpleDateFormat
+import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
 
@@ -190,7 +191,7 @@ fun DiagnosticsScreen(onBack: () -> Unit) {
 private fun AttemptRow(a: DiagAttempt) {
     val c = MaterialTheme.colorScheme
     val ok = a.category == DiagCategory.OK
-    val time = SimpleDateFormat("MMM d, HH:mm:ss", Locale.getDefault()).format(Date(a.startedAt))
+    val time = remember(a.startedAt) { DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.MEDIUM).format(Date(a.startedAt)) }
     Column(
         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(12.dp))
             .background((if (ok) c.primary else if (a.category.isFailure) c.error else c.outline).copy(alpha = 0.10f))
