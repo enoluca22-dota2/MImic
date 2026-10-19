@@ -134,6 +134,10 @@ class DynamicActions(
     val onShare: () -> Unit,
     val onOpenLockView: () -> Unit,
     val onOpenSettings: () -> Unit,
+    /** 4.2 radio: restart the station after a stream failure. */
+    val onReconnect: () -> Unit = {},
+    /** 4.2 radio: the station's country flag. */
+    val radioFlag: String? = null,
 )
 
 /** The current song's scheme, animated between songs (once per artwork, never per frame). */
@@ -313,7 +317,8 @@ fun DynamicNowPlayingScreen(
                 }
             }
             Spacer(Modifier.height(12.dp))
-            PremiumSeekBar(state, scheme, glow = config.intensity != com.example.mimic.data.DynamicIntensity.SUBTLE, onSeek = actions.onSeek)
+            if (state.isLive) com.example.mimic.ui.radio.LiveRow(state, actions.radioFlag, scheme.onBackground, scheme.muted, scheme.accent, actions.onReconnect)
+            else PremiumSeekBar(state, scheme, glow = config.intensity != com.example.mimic.data.DynamicIntensity.SUBTLE, onSeek = actions.onSeek)
             Spacer(Modifier.height(8.dp))
 
             // Transport

@@ -20,6 +20,10 @@ inside the app (Settings → App Updates).
 - **Cast & share** — Google Cast to Chromecast / Google TV (the phone serves the music on your
   Wi-Fi; server logins never reach the TV); share the actual audio file through Android's
   Sharesheet.
+- **Radio** — live stations, Albania by default; add any country with **+**, remove with **−**
+  (Settings → Radio Countries to reorder). Built-in verified Albanian stations plus the free
+  Radio Browser directory; favorites, recently played, filters and search; plays in MImic's player
+  with a LIVE view and Reconnect.
 - **Player** — Media3 (ExoPlayer + MediaSession): background playback, notification/lock-screen
   controls, queue with resume, crossfade, ReplayGain, equalizer, speed/pitch, sleep timer with
   fade, lyrics (embedded or .lrc).

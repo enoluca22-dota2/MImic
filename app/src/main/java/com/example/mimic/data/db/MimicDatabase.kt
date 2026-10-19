@@ -19,8 +19,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         PendingStarEntity::class,
         CloudAccountEntity::class,
         CloudItemEntity::class,
+        com.example.mimic.data.radio.RadioStationEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class MimicDatabase : RoomDatabase() {
@@ -32,6 +33,7 @@ abstract class MimicDatabase : RoomDatabase() {
     abstract fun favoriteGroupDao(): FavoriteGroupDao
     abstract fun pendingStarDao(): PendingStarDao
     abstract fun cloudDao(): CloudDao
+    abstract fun radioDao(): com.example.mimic.data.radio.RadioDao
 
     companion object {
         @Volatile
@@ -123,6 +125,25 @@ abstract class MimicDatabase : RoomDatabase() {
             }
         }
 
+        /**
+         * v6 → v7 (MImic 4.2): saved / recently played radio stations. Purely additive — every
+         * existing table and row (songs, playlists, favorites, history, downloads) is untouched.
+         */
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `radio_stations` (" +
+                        "`id` TEXT NOT NULL, `name` TEXT NOT NULL, `countryCode` TEXT NOT NULL, `city` TEXT, " +
+                        "`genre` TEXT, `category` TEXT NOT NULL, `streamUrl` TEXT NOT NULL, `logoUrl` TEXT, " +
+                        "`websiteUrl` TEXT, `codec` TEXT, `bitrate` INTEGER, `hls` INTEGER NOT NULL DEFAULT 0, " +
+                        "`favorite` INTEGER NOT NULL DEFAULT 0, `favoritedAt` INTEGER, `lastPlayedAt` INTEGER, " +
+                        "`playCount` INTEGER NOT NULL DEFAULT 0, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_radio_stations_favorite` ON `radio_stations` (`favorite`)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_radio_stations_lastPlayedAt` ON `radio_stations` (`lastPlayedAt`)")
+            }
+        }
+
         fun get(context: Context): MimicDatabase =
             instance ?: synchronized(this) {
                 instance ?: Room.databaseBuilder(
@@ -130,7 +151,7 @@ abstract class MimicDatabase : RoomDatabase() {
                     MimicDatabase::class.java,
                     "mimic.db",
                 )
-                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                    .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                     .build()
                     .also { instance = it }
             }

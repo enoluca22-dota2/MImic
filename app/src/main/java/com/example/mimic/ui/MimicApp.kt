@@ -289,8 +289,9 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         ),
                         isBuffering = uiState.isBuffering,
                         error = uiState.playbackError,
+                        liveTitle = if (uiState.isLive) (uiState.liveTitle?.let { "LIVE · $it" } ?: "LIVE · ${current.artist}") else null,
                         onNext = { viewModel.next() },
-                        progress = if (uiState.durationMs > 0) uiState.positionMs.toFloat() / uiState.durationMs else null,
+                        progress = if (!uiState.isLive && uiState.durationMs > 0) uiState.positionMs.toFloat() / uiState.durationMs else null,
                         castingTo = castingTo,
                         castButton = { com.example.mimic.cast.CastButton(MaterialTheme.colorScheme.onBackground) },
                     )
@@ -320,6 +321,17 @@ fun MimicApp(viewModel: PlayerViewModel) {
             composable(TopLevel.HOME.route) { HomeScreen(viewModel, innerPadding, nav) }
             composable(TopLevel.SEARCH.route) { SearchScreen(viewModel, innerPadding, nav) }
             composable(TopLevel.LIBRARY.route) { LibraryScreen(viewModel, innerPadding, nav) }
+            composable(TopLevel.RADIO.route) {
+                com.example.mimic.ui.radio.RadioScreen(viewModel, innerPadding, onAddCountry = { navController.navigate("radio/add") })
+            }
+            composable("radio/add") {
+                InsetScreen(innerPadding) { com.example.mimic.ui.radio.AddRadioCountryScreen(onBack = back) }
+            }
+            composable("radio/countries") {
+                InsetScreen(innerPadding) {
+                    com.example.mimic.ui.radio.RadioCountriesSettingsScreen(onBack = back, onAddCountry = { navController.navigate("radio/add") })
+                }
+            }
             composable(TopLevel.DOWNLOADS.route) {
                 val shared by viewModel.sharedLink.collectAsStateWithLifecycle()
                 com.example.mimic.ui.library.DownloadsHubScreen(
@@ -354,6 +366,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenMusicSources = { navController.navigate("sources") },
                     onOpenPlayback = { navController.navigate("playback") },
                     onOpenUpdates = { navController.navigate("updates") },
+                    onOpenRadioCountries = { navController.navigate("radio/countries") },
                 )
             }
             composable("updates") {
@@ -458,7 +471,14 @@ fun MimicApp(viewModel: PlayerViewModel) {
 
     // Share the actual audio file (4.1): local files via the Sharesheet; streamed-only songs
     // offer a download first — a stream URL (with the server token) is never shared.
-    val shareSong: (Song) -> Unit = { song ->
+    val shareSong: (Song) -> Unit = share@{ song ->
+        viewModel.radioStationFor(song)?.let { st ->
+            val link = st.websiteUrl?.takeIf { it.startsWith("http") } ?: "https://www.radio-browser.info/history/${st.id}"
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                .putExtra(android.content.Intent.EXTRA_TEXT, "${st.flag} ${st.name} — live radio\n$link")
+            runCatching { context.startActivity(android.content.Intent.createChooser(send, "Share ${st.name}")) }
+            return@share
+        }
         when (val t = com.example.mimic.share.SongShare.target(context, song)) {
             is com.example.mimic.share.SongShare.Target.File ->
                 runCatching { context.startActivity(com.example.mimic.share.SongShare.intent(t, song)) }
@@ -491,6 +511,8 @@ fun MimicApp(viewModel: PlayerViewModel) {
                 onShare = { uiState.currentSong?.let(shareSong) },
                 onOpenLockView = { lockViewOpen = true },
                 onOpenSettings = { nowPlayingOpen = false; navController.navigate("playerstudio") },
+                onReconnect = viewModel::reconnectRadio,
+                radioFlag = viewModel.radioStationFor(uiState.currentSong)?.flag,
             ),
             castButton = { tint -> com.example.mimic.cast.CastButton(tint) },
         )
@@ -514,6 +536,8 @@ fun MimicApp(viewModel: PlayerViewModel) {
             speed = settings.audio.speed,
             sleepActive = sleepEndsAt != 0L,
             hapticSeek = settings.audio.hapticSeek,
+            radioFlag = viewModel.radioStationFor(uiState.currentSong)?.flag,
+            onReconnect = viewModel::reconnectRadio,
             topEndActions = {
                 com.example.mimic.cast.CastButton(MaterialTheme.colorScheme.onBackground)
                 IconButton(onClick = { uiState.currentSong?.let(shareSong) }) {

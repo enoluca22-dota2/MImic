@@ -108,6 +108,9 @@ fun NowPlayingScreen(
     hapticSeek: Boolean = true,
     /** 4.1: Cast + Share actions, top-right. */
     topEndActions: @Composable () -> Unit = {},
+    /** 4.2 radio: country flag of the station, and Reconnect after a stream failure. */
+    radioFlag: String? = null,
+    onReconnect: () -> Unit = {},
 ) {
     val song = state.currentSong
     // System back collapses (minimizes) the full-screen player — it never gets stuck open.
@@ -270,12 +273,14 @@ fun NowPlayingScreen(
                     .glassSurface(env.style.surfaceShape(1.1f), fallback = MaterialTheme.colorScheme.surfaceVariant)
                     .padding(horizontal = 14.dp, vertical = 12.dp),
             ) {
-                SeekBar(state, onSeek, hapticSeek)
+                if (state.isLive) com.example.mimic.ui.radio.LiveRow(state, radioFlag, MaterialTheme.colorScheme.onBackground, MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.error, onReconnect)
+                else SeekBar(state, onSeek, hapticSeek)
                 Spacer(Modifier.height(4.dp))
                 Controls(state, config, controls, onPlayPause, onNext, onPrevious, onShuffle, onRepeat)
             }
         } else {
-            SeekBar(state, onSeek, hapticSeek)
+            if (state.isLive) com.example.mimic.ui.radio.LiveRow(state, radioFlag, MaterialTheme.colorScheme.onBackground, MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.error, onReconnect)
+            else SeekBar(state, onSeek, hapticSeek)
             Spacer(Modifier.height(8.dp))
             Controls(state, config, controls, onPlayPause, onNext, onPrevious, onShuffle, onRepeat)
         }

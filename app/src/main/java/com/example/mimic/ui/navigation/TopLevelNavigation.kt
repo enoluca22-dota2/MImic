@@ -8,6 +8,7 @@ import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Download
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.Search
@@ -47,6 +48,7 @@ enum class TopLevel(
     HOME("home", "Home", Icons.Default.Home, restoresState = false),
     SEARCH("search", "Search", Icons.Default.Search, restoresState = true),
     LIBRARY("library", "Library", Icons.Default.LibraryMusic, restoresState = true),
+    RADIO("radio", "Radio", Icons.Default.Radio, restoresState = true),
     // Route "downloader": "downloads" is the Library's offline-songs screen.
     DOWNLOADS("downloader", "Downloads", Icons.Default.Download, restoresState = true),
     SETTINGS("settings", "Settings", Icons.Default.Settings, restoresState = false),

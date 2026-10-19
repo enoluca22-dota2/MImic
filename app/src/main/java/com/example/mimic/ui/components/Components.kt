@@ -227,6 +227,8 @@ fun MiniPlayer(
     progress: Float? = null,
     /** 4.1: "Casting to …" while a Cast session is active. */
     castingTo: String? = null,
+    /** 4.2: "LIVE · on air now" for radio. */
+    liveTitle: String? = null,
     /** 4.1: the Cast button. */
     castButton: (@Composable () -> Unit)? = null,
 ) {
@@ -262,6 +264,7 @@ fun MiniPlayer(
             val (subtitle, subtitleColor) = when {
                 error != null -> error to MaterialTheme.colorScheme.error
                 castingTo != null -> "Casting to $castingTo" to MaterialTheme.colorScheme.primary
+                liveTitle != null && !isBuffering -> liveTitle to MaterialTheme.colorScheme.error
                 isBuffering -> "Buffering…" to MaterialTheme.colorScheme.onSurfaceVariant
                 else -> song.artist to MaterialTheme.colorScheme.onSurfaceVariant
             }

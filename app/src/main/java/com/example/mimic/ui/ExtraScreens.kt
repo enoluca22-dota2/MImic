@@ -30,6 +30,7 @@ import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.SystemUpdate
+import androidx.compose.material.icons.filled.Radio
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -107,6 +108,7 @@ fun SettingsScreen(
     onOpenMusicSources: () -> Unit = {},
     onOpenPlayback: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
+    onOpenRadioCountries: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
     val current by vm.activeTheme.collectAsStateWithLifecycle()
@@ -213,6 +215,20 @@ fun SettingsScreen(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenRadioCountries).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Icon(androidx.compose.material.icons.Icons.Default.Radio, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Radio Countries", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                Text("Add, remove and reorder the countries shown on Radio", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Row(

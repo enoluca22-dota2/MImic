@@ -31,7 +31,7 @@ android {
         // ── App version: change ONLY versionName for a release (see docs/RELEASING.md). versionCode
         // is derived from it (4.1.2 → 400_100_299; betas get their own lower codes), so every
         // release is higher than the last and installs over it. 3.3 was versionCode 19.
-        versionName = "4.1.0-beta.1"
+        versionName = "4.2.0-beta.1"
         versionCode = versionCodeFor(versionName!!)
 
         // In-app updater: the public repository whose GitHub Releases MImic trusts (docs/RELEASING.md).
@@ -134,6 +134,8 @@ dependencies {
     implementation(libs.androidx.media3.ui)
     // Cast to Chromecast / Google TV (4.1).
     implementation(libs.androidx.media3.cast)
+    // Live radio: many stations (BBC, RTL, Rai…) stream as HLS (4.2).
+    implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.mediarouter)
     implementation(libs.androidx.appcompat) // Cast picker theme
     implementation(libs.androidx.fragment) // Cast picker dialog host (FragmentActivity)

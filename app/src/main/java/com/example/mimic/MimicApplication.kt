@@ -35,6 +35,11 @@ class AppContainer(application: Application) {
         FavoritesRepository(favoriteDao, favoriteGroupDao, pendingStarDao)
     }
 
+    /** Internet radio (4.2): bundled catalog + Radio Browser + saved stations + chosen countries. */
+    val radioRepository: com.example.mimic.data.radio.RadioRepository by lazy {
+        com.example.mimic.data.radio.RadioRepository(application, database.radioDao(), com.example.mimic.data.radio.RadioCountryStore(application))
+    }
+
     /** Google Cast (4.1): one controller + LAN media server per process. */
     val castController: com.example.mimic.cast.CastController by lazy { com.example.mimic.cast.CastController(application) }
 

@@ -72,6 +72,10 @@ data class PlayerUiState(
     val durationMs: Long = 0L,
     /** How far the player has loaded ahead (Media3 bufferedPosition), for the seek bar. */
     val bufferedPositionMs: Long = 0L,
+    /** 4.2: the current item is a live radio station (no seeking; LIVE instead of a timeline). */
+    val isLive: Boolean = false,
+    /** 4.2: what the station says is on air now (ICY "StreamTitle"), when it sends one. */
+    val liveTitle: String? = null,
     val shuffle: Boolean = false,
     val repeatMode: Int = Player.REPEAT_MODE_OFF,
     val isCurrentFavorite: Boolean = false,
@@ -279,6 +283,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             // Classify without leaking the stream URL (which carries the auth token).
             val current = _uiState.value.currentSong
+            if (current != null && com.example.mimic.data.radio.RadioIds.isRadio(current.id)) {
+                onRadioError(current, error)
+                return
+            }
             val reason = when (error.errorCode) {
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
@@ -306,7 +314,136 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         override fun onEvents(player: Player, events: Player.Events) {
             syncFromPlayer(player)
             rebuildQueue(player)
+            if (player.playbackState == Player.STATE_READY) radioRetries = 0
         }
+    }
+
+    // ---- Internet radio (4.2) ----
+
+    private val radioRepo = container.radioRepository
+
+    /** Stations known to the player by their (negative) player id. */
+    private val radioById = java.util.concurrent.ConcurrentHashMap<Long, com.example.mimic.data.radio.RadioStation>()
+    private var radioRetries = 0
+    private var radioRetryJob: Job? = null
+
+    val radioFavoriteIds: StateFlow<Set<String>> = radioRepo.favorites.map { l -> l.map { it.id }.toSet() }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
+
+    fun radioStationFor(song: Song?): com.example.mimic.data.radio.RadioStation? = song?.let { radioById[it.id] }
+
+    private fun radioSong(st: com.example.mimic.data.radio.RadioStation, url: String = st.streamUrl) = Song(
+        id = st.playerId,
+        title = st.name,
+        artist = st.subtitle,
+        album = "${st.flag} ${st.countryName} · Radio",
+        durationMs = 0,
+        uri = url,
+        albumArtUri = st.logoUrl,
+        dateAddedSec = 0,
+        folder = "Radio",
+        genre = st.genre,
+        source = com.example.mimic.data.SongSource.SERVER,
+        remoteId = com.example.mimic.data.radio.RadioIds.remoteId(st.id),
+    )
+
+    private fun radioMediaItem(st: com.example.mimic.data.radio.RadioStation, url: String): MediaItem = MediaItem.Builder()
+        .setMediaId(st.playerId.toString())
+        .setUri(url)
+        .apply { if (st.isHls) setMimeType(androidx.media3.common.MimeTypes.APPLICATION_M3U8) }
+        .setMediaMetadata(
+            MediaMetadata.Builder()
+                .setTitle(st.name)
+                .setArtist(st.subtitle)
+                .setStation(st.name)
+                .setAlbumTitle("${st.countryName} · Radio")
+                .setArtworkUri(st.logoUrl?.let(android.net.Uri::parse))
+                .setMediaType(MediaMetadata.MEDIA_TYPE_RADIO_STATION)
+                .setIsPlayable(true)
+                .build(),
+        )
+        .build()
+
+    /**
+     * Play [stations][index]; the rest become the queue, so Next / Previous switch stations. The
+     * directory is asked for the station's current stream first (stations move their streams).
+     */
+    fun playRadio(stations: List<com.example.mimic.data.radio.RadioStation>, index: Int) {
+        val chosen = stations.getOrNull(index) ?: return
+        radioRetryJob?.cancel()
+        radioRetries = 0
+        viewModelScope.launch {
+            val url = radioRepo.resolveStreamUrl(chosen)
+            val list = stations.map { if (it.id == chosen.id) it.copy(streamUrl = url) else it }
+            list.forEach { radioById[it.playerId] = it }
+            songsById = songsById + list.associate { it.playerId to radioSong(it) }
+            _uiState.update { it.copy(playbackError = null) }
+            val c = controller ?: return@launch
+            val items = list.map { radioMediaItem(it, it.streamUrl) }
+            val tv = castPlayerIfCasting()
+            if (tv != null) {
+                c.setMediaItems(items, index, 0L)
+                c.prepare()
+                tv.setMediaItems(list.mapNotNull { toCastItem(radioSong(it)) }, index, 0L)
+                tv.prepare(); tv.play()
+            } else {
+                c.setMediaItems(items, index, 0L)
+                c.prepare()
+                c.play()
+            }
+            radioRepo.recordPlayed(chosen)
+        }
+    }
+
+    /** "Reconnect": fetch the stream address again and restart the station (resets the retry budget). */
+    fun reconnectRadio() {
+        val song = _uiState.value.currentSong ?: return
+        val st = radioById[song.id] ?: return
+        radioRetries = 0
+        restartStation(st)
+    }
+
+    private fun restartStation(st: com.example.mimic.data.radio.RadioStation) {
+        val c = controller ?: return
+        viewModelScope.launch {
+            _uiState.update { it.copy(playbackError = null, isBuffering = true) }
+            val url = radioRepo.resolveStreamUrl(st)
+            val index = c.currentMediaItemIndex
+            if (index < 0 || c.currentMediaItem?.mediaId != st.playerId.toString()) return@launch
+            c.replaceMediaItem(index, radioMediaItem(st, url))
+            c.prepare()
+            c.play()
+        }
+    }
+
+    /**
+     * A dead or interrupted stream: retry twice (after 5 s and 15 s, with a fresh address), then
+     * stop and offer Reconnect — never an endless retry loop, never a silent jump to another station.
+     */
+    private fun onRadioError(song: Song, error: androidx.media3.common.PlaybackException) {
+        val st = radioById[song.id]
+        val offline = error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED ||
+            error.errorCode == androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT
+        android.util.Log.w("MImicRadio", "Station error ${error.errorCodeName}")
+        if (st != null && radioRetries < 2) {
+            radioRetries++
+            val wait = if (radioRetries == 1) 5_000L else 15_000L
+            _uiState.update { it.copy(isBuffering = true, playbackError = null) }
+            radioRetryJob?.cancel()
+            radioRetryJob = viewModelScope.launch { delay(wait); restartStation(st) }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                isBuffering = false,
+                playbackError = if (offline) "No connection to the station. Check your internet, then tap Reconnect."
+                else "This station isn't broadcasting right now (${error.errorCodeName.removePrefix("ERROR_CODE_").lowercase().replace('_', ' ')}). Try Reconnect or another station.",
+            )
+        }
+    }
+
+    fun toggleRadioFavorite(st: com.example.mimic.data.radio.RadioStation) {
+        viewModelScope.launch { radioRepo.setFavorite(st, st.id !in radioFavoriteIds.value) }
     }
 
     fun initController() {
@@ -437,7 +574,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 (runCatching { getApplication<Application>().contentResolver.getType(uri) }.getOrNull() ?: "audio/mpeg")
             "file" -> com.example.mimic.cast.LanMediaServer.Source.LocalFile(java.io.File(uri.path ?: return null)) to
                 com.example.mimic.share.SongShare.mimeFor(com.example.mimic.share.SongShare.extensionOf(song.uri))
-            "http", "https" -> com.example.mimic.cast.LanMediaServer.Source.Relay(song.uri + "&format=mp3&maxBitRate=320") to "audio/mpeg"
+            "http", "https" -> if (com.example.mimic.data.radio.RadioIds.isRadio(song.id)) {
+                val st = radioById[song.id]
+                val mime = if (st?.isHls == true) "application/x-mpegURL" else "audio/mpeg"
+                // A public radio stream carries no credentials: HTTPS goes straight to the TV.
+                if (song.uri.startsWith("https://")) {
+                    return androidx.media3.common.MediaItem.Builder().setMediaId(song.id.toString()).setUri(song.uri).setMimeType(mime)
+                        .setMediaMetadata(MediaMetadata.Builder().setTitle(song.title).setArtist(song.artist).setArtworkUri(song.albumArtUri?.let(android.net.Uri::parse)).build())
+                        .build()
+                }
+                com.example.mimic.cast.LanMediaServer.Source.Relay(song.uri) to mime
+            } else com.example.mimic.cast.LanMediaServer.Source.Relay(song.uri + "&format=mp3&maxBitRate=320") to "audio/mpeg"
             else -> return null
         }
         val url = server.publish(source, mime) ?: return null
@@ -599,6 +746,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Heart a song. Room updates first (Home/Library react at once); server tracks also star. */
     fun toggleFavorite(song: Song) {
+        radioById[song.id]?.let { toggleRadioFavorite(it); return }
         viewModelScope.launch {
             val account = serverCredentials.value?.let { SubsonicClient.accountKeyOf(it) }
             favoritesRepo.toggleSong(song, serverClient, account)
@@ -1270,15 +1418,20 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         // A sleep timer that just fired paused the player: pick up its new (off) state.
         if (!player.isPlaying && _uiState.value.isPlaying && _sleepEndsAt.value != 0L) refreshSleepState()
         _currentIndex.value = player.currentMediaItemIndex
+        val station = current?.let { radioById[it.id] }
+        // ICY "StreamTitle" replaces the static title in the player's metadata while on air.
+        val onAir = station?.let { st -> player.mediaMetadata.title?.toString()?.takeIf { t -> t.isNotBlank() && t != st.name } }
         _uiState.update {
             it.copy(
+                isLive = station != null,
+                liveTitle = onAir,
                 currentSong = current,
                 isPlaying = player.isPlaying,
                 isBuffering = buffering,
                 durationMs = player.duration.coerceAtLeast(0L),
                 shuffle = player.shuffleModeEnabled,
                 repeatMode = player.repeatMode,
-                isCurrentFavorite = fav,
+                isCurrentFavorite = if (station != null) station.id in radioFavoriteIds.value else fav,
                 // A successful play (or ready/ended state) clears a prior error.
                 playbackError = if (player.playbackState == Player.STATE_READY) null else it.playbackError,
             )
@@ -1303,8 +1456,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 if (!uiVisible.value) uiVisible.first { it }
                 activePlayer?.let { c ->
                     if (casting) { lastCastIndex = c.currentMediaItemIndex; lastCastPositionMs = c.currentPosition }
-                    val fav = c.currentMediaItem?.mediaId?.toLongOrNull()
-                        ?.let { favoriteIds.value.contains(it) } ?: false
+                    val curId = c.currentMediaItem?.mediaId?.toLongOrNull()
+                    val fav = curId?.let { id -> radioById[id]?.let { it.id in radioFavoriteIds.value } ?: favoriteIds.value.contains(id) } ?: false
                     _uiState.update {
                         it.copy(positionMs = c.currentPosition.coerceAtLeast(0L), bufferedPositionMs = c.bufferedPosition.coerceAtLeast(0L), isCurrentFavorite = fav)
                     }

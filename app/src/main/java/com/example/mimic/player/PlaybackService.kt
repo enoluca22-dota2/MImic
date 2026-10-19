@@ -160,6 +160,9 @@ class PlaybackService : MediaSessionService() {
          * the queue. The UI shows the error either way.
          */
         override fun onPlayerError(error: PlaybackException) {
+            // Radio (negative ids): the app retries the same station a bounded number of times;
+            // jumping to another station on its own would be surprising.
+            if ((player.currentMediaItem?.mediaId?.toLongOrNull() ?: 0L) < 0) return
             consecutiveErrors++
             if (consecutiveErrors <= MAX_SKIPS_ON_ERROR && player.hasNextMediaItem()) {
                 player.seekToNextMediaItem()
@@ -172,12 +175,15 @@ class PlaybackService : MediaSessionService() {
     private fun recordPendingPlay() {
         val songId = unrecordedMediaId?.toLongOrNull() ?: return
         unrecordedMediaId = null
+        if (songId < 0) return // live radio isn't a song play (stations keep their own Recently Played)
         scope.launch(Dispatchers.IO) {
             container.historyDao.record(PlayHistoryEntity(songId = songId, playedAt = System.currentTimeMillis()))
         }
     }
 
     private fun persistQueue(player: Player) {
+        // A radio session must not overwrite the music queue that Continue Listening restores.
+        if ((player.currentMediaItem?.mediaId?.toLongOrNull() ?: 0L) < 0) return
         val ids = (0 until player.mediaItemCount).mapNotNull { player.getMediaItemAt(it).mediaId.toLongOrNull() }
         val index = player.currentMediaItemIndex
         val position = player.currentPosition
@@ -186,6 +192,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun persistPosition(player: Player, on: CoroutineScope = scope) {
         if (player.mediaItemCount == 0) return
+        if ((player.currentMediaItem?.mediaId?.toLongOrNull() ?: 0L) < 0) return // radio: keep the music position
         val index = player.currentMediaItemIndex
         val position = player.currentPosition
         on.launch(Dispatchers.IO) { container.playbackStateStore.savePosition(index, position) }

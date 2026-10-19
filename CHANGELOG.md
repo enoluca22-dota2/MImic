@@ -1,5 +1,29 @@
 # Changelog
 
+## 4.2.0-beta.1
+Radio: live stations from Albania by default, and any other country you add. Beta until tested on
+a phone.
+
+- **New Radio tab** (between Library and Downloads). Shows only 🇦🇱 Albania at first: 15 built-in,
+  verified Albanian stations plus the rest of the country from the free Radio Browser directory
+  (logo, city, genre, codec and bitrate). Filters: All, Popular, Music, News, Entertainment, Local,
+  Favorites and Recently Played; sort by popularity or name; search the country or the whole
+  directory; Refresh.
+- **+ Add Country** opens a searchable list of every country the directory knows (with station
+  counts; "uk", "usa" and Kosovo work). A country can't be added twice.
+- **Edit countries** (✎) puts a − on each country; removing asks first and only hides that
+  country's stations — favorites, recently played, music, downloads and Navidrome are untouched.
+  Albania can be removed too; "Restore default" brings it back. Radio is never left empty.
+- **Settings → Radio Countries**: add, remove, reorder and restore the default. Choices are kept.
+- **Radio plays in MImic's player** — mini player, Classic and Dynamic players, notification, lock
+  screen and background playback. A LIVE badge with the country flag and "On air" title (when the
+  station sends one) replaces the seek bar; volume, favorite, share and Cast stay. HLS streams are
+  supported.
+- **Reliable**: stations load in the background and are cached for 30 minutes; if the directory is
+  unreachable the built-in stations still show. A dropped stream is retried twice (after 5 and 15
+  seconds), then Reconnect appears — no endless retrying. No new permissions.
+- Database version 7 (adds a radio table); upgrading keeps all existing data.
+
 ## 4.1.0-beta.1
 A redesign release: one music library (phone · Navidrome · offline), correct artwork everywhere,
 a new optional Dynamic player, casting and real audio sharing. Beta until tested on a phone.
