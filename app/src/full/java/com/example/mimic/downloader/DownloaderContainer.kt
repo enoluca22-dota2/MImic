@@ -20,6 +20,7 @@ import com.example.mimic.downloader.download.DownloadCompletionListener
 import com.example.mimic.downloader.download.DownloadEngine
 import com.example.mimic.downloader.download.DownloadNotifications
 import com.example.mimic.downloader.download.DownloadService
+import com.example.mimic.downloader.diagnostics.DownloadDiagnostics
 import com.yausername.ffmpeg.FFmpeg
 import com.yausername.youtubedl_android.YoutubeDL
 import kotlinx.coroutines.CompletableDeferred
@@ -44,6 +45,7 @@ class DownloaderContainer private constructor(private val appContext: Context) {
 
     /** Completed once the bundled yt-dlp/python/ffmpeg binaries are unpacked and initialized. */
     val engineReady = CompletableDeferred<Unit>()
+    @Volatile private var engineError: Throwable? = null
 
     private val database: DownloaderDatabase by lazy { DownloaderDatabase.build(appContext) }
     val downloadDao: DownloadDao by lazy { database.downloadDao() }
@@ -95,10 +97,21 @@ class DownloaderContainer private constructor(private val appContext: Context) {
             scope = applicationScope,
             requestForeground = { DownloadService.start(appContext) },
             completionListener = DownloadCompletionListener { _completed.emit(it) },
+            failureListener = { url, error -> diagnostics.downloadFailed(url, error) },
         ).also { it.start() }
     }
 
-    val analyzer: MediaAnalyzer by lazy { MediaAnalyzer(mediaProvider) }
+    /** Settings → Advanced → Download Diagnostics: local, sanitized records of link analyses. */
+    val diagnostics: DownloadDiagnostics by lazy { DownloadDiagnostics(appContext) }
+
+    val analyzer: MediaAnalyzer by lazy { MediaAnalyzer(mediaProvider, diagnostics) }
+
+    /** "Engine: …" line for the diagnostics report. */
+    fun engineState(): String = when {
+        engineError != null -> "FAILED to start: ${engineError?.javaClass?.simpleName}"
+        !engineReady.isCompleted -> "still starting (unpacking python/yt-dlp)"
+        else -> "ready"
+    }
     val downloadRepository: DownloadRepository by lazy { DownloadRepository(downloadDao, downloadEngine) }
     val historyRepository: HistoryRepository by lazy { HistoryRepository(appContext, historyDao) }
 
@@ -112,6 +125,7 @@ class DownloaderContainer private constructor(private val appContext: Context) {
             } catch (e: Throwable) {
                 // Throwable: a broken runtime unpack surfaces as an Error and must become a message.
                 Log.e(TAG, "Failed to initialize the download engine's native binaries", e)
+                engineError = e
                 engineReady.completeExceptionally(e)
                 return@launch
             }

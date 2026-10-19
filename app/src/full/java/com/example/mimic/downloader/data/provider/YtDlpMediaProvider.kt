@@ -5,6 +5,8 @@ import com.example.mimic.downloader.core.NetworkMonitor
 import com.example.mimic.downloader.core.UrlValidator
 import com.example.mimic.downloader.data.model.AnalysisResult
 import com.example.mimic.downloader.data.platform.DetectedPlatform
+import com.example.mimic.downloader.diagnostics.AnalysisTrace
+import com.example.mimic.downloader.diagnostics.DiagnosticText
 import com.yausername.youtubedl_android.YoutubeDL
 import com.yausername.youtubedl_android.YoutubeDLRequest
 import kotlinx.coroutines.CancellationException
@@ -39,13 +41,28 @@ class YtDlpMediaProvider(
 
     override suspend fun analyze(url: String, detected: DetectedPlatform) = withContext(Dispatchers.IO) {
         val normalized = UrlValidator.normalize(url) ?: throw ProviderException.InvalidUrl()
-        if (!networkMonitor.isOnline()) throw ProviderException.NoInternet()
+        // Download Diagnostics (4.3.1): present only while recording is on; then each step is
+        // timed and yt-dlp runs with -v so the report shows its version, clients and HTTP codes.
+        val trace = coroutineContext[AnalysisTrace]
+        val tStart = System.currentTimeMillis()
+        if (!networkMonitor.isOnline()) {
+            trace?.stage("check internet", tStart, "offline")
+            throw ProviderException.NoInternet()
+        }
+        trace?.stage("check internet", tStart, "online")
         val processId = "an-${UUID.randomUUID()}"
         // Counted as busy BEFORE waiting, so a yt-dlp self-update can't start in between and
         // replace the binary under this analysis (MImic 4.0 fix: "bad local file header").
         activeAnalyses.incrementAndGet()
         try {
-            awaitEngineReady()
+            val tEngine = System.currentTimeMillis()
+            try {
+                awaitEngineReady()
+            } catch (e: Exception) {
+                trace?.stage("wait for engine", tEngine, "failed: ${e.javaClass.simpleName}")
+                throw e
+            }
+            trace?.stage("wait for engine", tEngine, "ready")
             // One call for every kind of link: -J prints a single JSON document that is either one
             // item with its full format list or a collection; --flat-playlist keeps collections
             // fast (no per-item format lookups); --no-playlist makes "video inside a playlist" URLs
@@ -58,29 +75,54 @@ class YtDlpMediaProvider(
                 addOption("--no-playlist")
                 addOption("--retries", "3")
                 addOption("--socket-timeout", "20")
+                if (trace != null) addOption("-v")
             }
             // Cancellable (leaving the screen kills yt-dlp) and bounded: a stuck extractor
             // surfaces as a connection error instead of an endless spinner.
+            val tRun = System.currentTimeMillis()
             val response = try {
                 withTimeout(ANALYZE_TIMEOUT_MS) {
                     runKillable(processId) { YoutubeDL.execute(request, processId) }
                 }
             } catch (e: TimeoutCancellationException) {
                 YoutubeDL.destroyProcessById(processId)
+                trace?.stage("run yt-dlp", tRun, "timed out after ${ANALYZE_TIMEOUT_MS / 1000} s")
                 throw ProviderException.Timeout("analysis exceeded ${ANALYZE_TIMEOUT_MS / 1000}s")
+            } catch (e: CancellationException) {
+                trace?.stage("run yt-dlp", tRun, "cancelled")
+                throw e
+            } catch (e: Exception) {
+                trace?.let {
+                    it.stderr = e.message
+                    it.exitInfo = "failed (${e.javaClass.simpleName})"
+                    it.stage("run yt-dlp", tRun, "failed")
+                }
+                throw e
             }
+            trace?.let {
+                it.stderr = response.err
+                it.exitInfo = "exit code ${response.exitCode}, ${response.elapsedTime} ms"
+                it.stage("run yt-dlp", tRun, "finished")
+            }
+            val tRead = System.currentTimeMillis()
             val mapper = YoutubeDL.objectMapper
             val root = mapper.readTree(response.out.trim())
                 ?: throw ProviderException.NoFormatsAvailable("empty extractor output")
             when (val parsed = AnalysisJsonParser.parse(root, normalized, mapper)) {
                 is AnalysisJsonParser.Parsed.Single -> {
                     val media = FormatMapper.toMediaInfo(normalized, parsed.info)
+                    val best = media.videoFormats.mapNotNull { it.heightPx }.maxOrNull()
+                    trace?.formats = "${media.audioFormats.size} audio, ${media.videoFormats.size} video" + (best?.let { " (best ${it}p)" } ?: "")
                     if (media.videoFormats.isEmpty() && media.audioFormats.isEmpty()) {
+                        trace?.stage("read formats", tRead, "no formats")
                         throw ProviderException.NoFormatsAvailable()
                     }
+                    trace?.stage("read formats", tRead, "ok")
                     AnalysisResult.Single(media, detected)
                 }
                 is AnalysisJsonParser.Parsed.Collection -> {
+                    trace?.formats = "collection with ${parsed.playlist.entries.size} items"
+                    trace?.stage("read formats", tRead, if (parsed.playlist.entries.isEmpty()) "empty collection" else "ok")
                     if (parsed.playlist.entries.isEmpty()) throw ProviderException.NoFormatsAvailable("empty collection")
                     AnalysisResult.Collection(parsed.playlist, detected)
                 }
@@ -96,8 +138,11 @@ class YtDlpMediaProvider(
             Log.w(TAG, "analyze: I/O failure", e)
             throw ProviderException.NetworkError(e.message, e)
         } catch (e: Exception) {
-            Log.w(TAG, "analyze failed: ${e.message}", e)
-            throw ProviderException.classify(e.message, e)
+            // With diagnostics on, the text also holds yt-dlp's -v "[debug]" lines; they are left
+            // out here so the error is classified (and logged) exactly as in a normal run.
+            val text = DiagnosticText.withoutDebug(e.message)
+            Log.w(TAG, "analyze failed: $text", e)
+            throw ProviderException.classify(text, e)
         } finally {
             activeAnalyses.decrementAndGet()
         }

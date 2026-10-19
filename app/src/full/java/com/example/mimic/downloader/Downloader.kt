@@ -68,4 +68,8 @@ object Downloader {
         )
         video?.let { VideoPlayerDialog(it) { video = null } }
     }
+
+    /** Settings → Advanced → Download Diagnostics. */
+    @Composable
+    fun DiagnosticsScreen(onBack: () -> Unit) = com.example.mimic.downloader.diagnostics.DiagnosticsScreen(onBack)
 }

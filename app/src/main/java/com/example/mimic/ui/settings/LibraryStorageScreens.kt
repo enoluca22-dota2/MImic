@@ -331,7 +331,7 @@ fun LibraryStorageScreen(player: PlayerViewModel, onBack: () -> Unit) {
 // ---------------------------------------------------------------------------------------------
 
 @Composable
-private fun Header(title: String, onBack: () -> Unit) {
+internal fun Header(title: String, onBack: () -> Unit) {
     Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
         IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
         Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
@@ -339,12 +339,12 @@ private fun Header(title: String, onBack: () -> Unit) {
 }
 
 @Composable
-private fun Section(title: String) {
+internal fun Section(title: String) {
     Text(title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(start = 16.dp, top = 16.dp, bottom = 4.dp))
 }
 
 @Composable
-private fun Note(text: String) {
+internal fun Note(text: String) {
     Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp))
 }
 

@@ -38,6 +38,9 @@ inside the app (Settings → App Updates).
   passwords or music in the file.
 - **Library & Storage** — hide phone folders, minimum song length, refresh, and safe cache
   clearing that never touches downloads.
+- **Download Diagnostics** (full edition; Settings → Advanced): records why a YouTube/TikTok link
+  fails (device, network, yt-dlp version, each step and the exact error) and shares a TXT report.
+  No links beyond the video id, no IP addresses, cookies or tokens.
 - **In-app updates** — Check for Updates downloads the newest release, verifies its checksum,
   package, version and **pinned signing certificate**, then Android's installer asks you to
   confirm. Stable and Beta channels; optional daily check (notification only).

@@ -39,6 +39,13 @@ fun Throwable.toAnalysisError(detected: DetectedPlatform?): AnalysisErrorInfo {
             message ?: "Restart the app and try again.",
             setOf(ErrorAction.RETRY),
         )
+        is ProviderException.BotCheck -> AnalysisErrorInfo(
+            "$site asked for a bot check",
+            "$site asked to confirm this isn't a bot. This depends on your network, not on the video. " +
+                "Switch between Wi-Fi and mobile data, or turn off any VPN or Private DNS, then tap Try again. " +
+                "Settings → Advanced → Download Diagnostics can share a report.",
+            setOf(ErrorAction.RETRY, ErrorAction.COPY_URL),
+        )
         is ProviderException.AuthenticationRequired -> AnalysisErrorInfo(
             retrieveTitle,
             "This video needs a login (private, age-restricted or members-only), which the app can't access.",

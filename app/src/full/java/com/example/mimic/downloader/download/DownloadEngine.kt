@@ -69,6 +69,8 @@ class DownloadEngine(
     private val requestForeground: () -> Unit,
     /** Told about each published file (the Library); never able to fail the download. */
     private val completionListener: DownloadCompletionListener? = null,
+    /** Download Diagnostics (4.3.1): told about each download that failed for good. */
+    private val failureListener: ((sourceUrl: String, error: ProviderException) -> Unit)? = null,
 ) {
     companion object {
         private const val TAG = "DownloadEngine"
@@ -592,6 +594,7 @@ class DownloadEngine(
         val before = downloadDao.getById(id) ?: return
         if (!before.status.isActive) return
         downloadDao.markFailed(id, DownloadStatus.FAILED, error.message, System.currentTimeMillis())
+        failureListener?.let { listener -> runCatching { listener(before.sourceUrl, error) } }
         notifications.cancel(DownloadNotifications.notificationIdFor(id))
         val updated = downloadDao.getById(id) ?: return
         recordHistory(updated, DownloadStatus.FAILED, fileUri = null, sizeBytes = null, extension = updated.container, error = error.message)

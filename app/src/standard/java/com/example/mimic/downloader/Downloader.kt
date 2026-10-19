@@ -40,4 +40,8 @@ object Downloader {
             modifier = Modifier.padding(contentPadding).padding(24.dp),
         )
     }
+
+    /** Never shown in this edition (Settings → Advanced lists it only when [AVAILABLE]). */
+    @Composable
+    fun DiagnosticsScreen(onBack: () -> Unit) = Unit
 }

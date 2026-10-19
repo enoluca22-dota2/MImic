@@ -1,5 +1,27 @@
 # Changelog
 
+## 4.3.1-beta.1
+A diagnostics release for YouTube links that fail on some phones (reported on a Samsung Galaxy
+S25 Ultra while the same link works on a Xiaomi). It does not claim to fix that phone yet: it
+records why the link fails so the real cause can be found.
+
+- **Settings → Advanced → Download Diagnostics** (full edition): records each link analysis on
+  the phone: device and Android version, memory page size, app and yt-dlp version, network type
+  (Wi-Fi or mobile data, VPN, Private DNS, IPv6), each step with its timing, the YouTube clients
+  yt-dlp tried and YouTube's answer to each, HTTP status codes, and the exact yt-dlp error. It
+  keeps the last 15 attempts, plus downloads that failed for good. **Share Diagnostic Report**
+  sends a readable TXT file through Android's share sheet (no USB or computer needed); **Copy
+  report** and **Run a test** (a public YouTube video) are there too. Links are cut down to the
+  video id, and IP addresses, cookies, headers, tokens and passwords are removed. Nothing is sent
+  anywhere unless you share it, and recording can be turned off.
+- **Clearer bot-check error:** YouTube's "Sign in to confirm you're not a bot" was shown as "this
+  video needs a login (private, age-restricted or members-only)". That check depends on the
+  network or session, not the video, so it now has its own message: switch between Wi-Fi and
+  mobile data, or turn off any VPN or Private DNS, then try again. It isn't retried automatically.
+  YouTube's "This content isn't available, try again later" now counts as rate limiting.
+- No YouTube sign-in was added: MImic still never asks for Google passwords or cookies.
+- No new permissions, no database change, no new libraries.
+
 ## 4.3.0-beta.1
 An audit release. MImic was checked against Namida's feature set, and only real gaps were filled.
 Everything that already worked is unchanged.

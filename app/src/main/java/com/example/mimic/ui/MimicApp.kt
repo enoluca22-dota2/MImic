@@ -333,6 +333,14 @@ fun MimicApp(viewModel: PlayerViewModel) {
             composable("settings/backup") {
                 InsetScreen(innerPadding) { com.example.mimic.ui.settings.BackupRestoreScreen(viewModel, onBack = back) }
             }
+            composable("settings/advanced") {
+                InsetScreen(innerPadding) {
+                    com.example.mimic.ui.settings.AdvancedScreen(onBack = back, onOpenDownloadDiagnostics = { navController.navigate("settings/advanced/diagnostics") })
+                }
+            }
+            composable("settings/advanced/diagnostics") {
+                InsetScreen(innerPadding) { com.example.mimic.downloader.Downloader.DiagnosticsScreen(onBack = back) }
+            }
             composable("radio/countries") {
                 InsetScreen(innerPadding) {
                     com.example.mimic.ui.radio.RadioCountriesSettingsScreen(onBack = back, onAddCountry = { navController.navigate("radio/add") })
@@ -375,6 +383,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenRadioCountries = { navController.navigate("radio/countries") },
                     onOpenLibraryStorage = { navController.navigate("settings/library") },
                     onOpenBackup = { navController.navigate("settings/backup") },
+                    onOpenAdvanced = { navController.navigate("settings/advanced") },
                 )
             }
             composable("updates") {

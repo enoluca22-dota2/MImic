@@ -60,6 +60,18 @@ sealed class ProviderException(
     class RateLimited(detail: String? = null) :
         ProviderException("Too many requests to this website. Wait a few minutes and try again.", detail = detail)
 
+    /**
+     * YouTube's "Sign in to confirm you're not a bot". It depends on the network/IP and session,
+     * not on the video, so it is not the same as content that really needs an account. Not
+     * retried automatically: repeating the request right away doesn't pass the check.
+     */
+    class BotCheck(detail: String? = null) :
+        ProviderException(
+            "YouTube asked to confirm this isn't a bot. This depends on your network, not the video. " +
+                "Switch between Wi-Fi and mobile data, or turn off VPN/Private DNS, then try again.",
+            detail = detail,
+        )
+
     class AuthenticationRequired(detail: String? = null) :
         ProviderException("This content is private, age-restricted or members-only and can't be downloaded.", detail = detail)
 
@@ -117,6 +129,7 @@ sealed class ProviderException(
             return when {
                 lower.contains("no space left") || lower.contains("enospc") -> StorageFull(detail)
                 lower.contains("unsupported url") -> UnsupportedUrl(detail)
+                lower.contains("not a bot") || lower.contains("captcha") -> BotCheck(detail)
                 lower.contains("private video") || lower.contains("sign in") || lower.contains("confirm your age") ||
                     lower.contains("not granting access") || lower.contains("log in") || lower.contains("cookies") ||
                     lower.contains("members-only") || lower.contains("members only") ||
@@ -130,7 +143,9 @@ sealed class ProviderException(
                 lower.contains("no video formats found") || lower.contains("no video could be found") ||
                     lower.contains("no media found") || lower.contains("does not contain any video") -> NoFormatsAvailable(detail)
                 lower.contains("http error 404") || lower.contains("http error 410") -> VideoUnavailable(detail)
-                lower.contains("http error 429") || lower.contains("too many requests") -> RateLimited(detail)
+                lower.contains("http error 429") || lower.contains("too many requests") ||
+                    lower.contains("content isn't available, try again later") ||
+                    lower.contains("content isn’t available, try again later") -> RateLimited(detail)
                 lower.contains("http error 403") || lower.contains("forbidden") ||
                     lower.contains("ip address is blocked") || lower.contains("blocked from accessing") -> Blocked(detail)
                 HTTP_5XX.containsMatchIn(lower) -> ServerError(detail)

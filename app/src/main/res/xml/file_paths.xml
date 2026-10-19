@@ -2,6 +2,8 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- In-app updates: the verified APK handed to the system installer (fallback path). -->
     <cache-path name="updates" path="updates/" />
+    <!-- Download Diagnostics (full edition): the TXT report handed to the share sheet. -->
+    <cache-path name="diagnostics" path="diagnostics/" />
     <!-- Downloader (full edition): sharing/opening saved files. -->
     <external-path name="movies" path="Movies/" />
     <external-path name="music" path="Music/" />
