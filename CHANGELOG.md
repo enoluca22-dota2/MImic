@@ -1,5 +1,10 @@
 # Changelog
 
+## 4.0.0-beta.2
+- App Updates: "View all releases on GitHub" button.
+- Changelog: corrected the 4.0.0-beta.1 test counts.
+- Used to verify the in-app update path end to end (beta.1 → beta.2).
+
 ## 4.0.0-beta.1
 First "MImic Ultimate" build: ENAGELYUCA's downloader merged in, new brand, in-app updates.
 Beta: Google Drive / OneDrive sign-in still needs a real-phone test with your own app registrations.
@@ -28,7 +33,8 @@ Beta: Google Drive / OneDrive sign-in still needs a real-phone test with your ow
 - **Editions**: `full` (with downloader, GitHub) and `standard` (no downloader / no GPL code).
 - Versioning: versionCode = (X·1e6+Y·1e3+Z)·100 + 99 (pre-releases lower), so betas get their own codes.
 - License: GPL-3.0 (the downloader uses GPL-3.0 youtubedl-android).
-- Tests: 152 JVM (both editions) + 95 ported downloader tests (full edition).
+- Tests: 149 JVM tests (standard edition); 244 in the full edition including 95 ported
+  downloader tests; 12 instrumented.
 
 ## 3.3 — New icon, Google Drive sign-in repair, OneDrive readiness
 - **New launcher icon**: dark navy field, frosted-glass disc, beamed eighth note in a cyan → blue →

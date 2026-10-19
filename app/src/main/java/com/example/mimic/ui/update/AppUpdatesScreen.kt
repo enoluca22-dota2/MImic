@@ -125,6 +125,17 @@ fun AppUpdatesScreen(onBack: () -> Unit) {
                 Text("Beta releases may contain unfinished features. You also keep getting stable releases.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.tertiary)
             }
         }
+        TextButton(
+            onClick = {
+                runCatching {
+                    context.startActivity(
+                        android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(UpdateConfig.releasesPage))
+                            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+                    )
+                }
+            },
+            modifier = Modifier.padding(horizontal = 8.dp),
+        ) { Text("View all releases on GitHub") }
         Text(
             "Updates come only from ${UpdateConfig.releasesPage}. Every APK is checked (SHA-256, package, newer version, CPU, " +
                 "and MImic's own signing certificate) before Android's installer asks you to confirm. Your music, " +
