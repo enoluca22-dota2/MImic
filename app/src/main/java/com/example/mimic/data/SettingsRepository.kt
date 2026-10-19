@@ -17,12 +17,6 @@ data class AppSettings(
     val playerLayout: PlayerLayoutConfig = PlayerLayoutConfig(),
     val homeConfig: HomeConfig = HomeConfig(),
     val glassQuality: GlassQuality = GlassQuality.BALANCED,
-    /** Cloud data controls (MImic 3.1). Streaming always follows the user's taps. */
-    val wifiOnlyDownloads: Boolean = false,
-    /** Read embedded tags/artwork of cloud files over mobile data (a few hundred KB per song). */
-    val cellularTagReading: Boolean = false,
-    /** Periodic background library refresh (WorkManager, at most every few hours). */
-    val backgroundCloudSync: Boolean = true,
     /** Library tabs / views / sorting (MImic 3.2). */
     val libraryConfig: LibraryConfig = LibraryConfig(),
     /** Recent searches, newest first (MImic 3.2). Stays on the phone. */
@@ -54,9 +48,6 @@ class SettingsRepository(private val context: Context) {
         val PLAYER_BG = stringPreferencesKey("player_background")
         val CONTROL_STYLE = stringPreferencesKey("player_control_style")
         val GLASS_QUALITY = stringPreferencesKey("glass_quality")
-        val WIFI_ONLY_DOWNLOADS = booleanPreferencesKey("wifi_only_downloads")
-        val CELLULAR_TAGS = booleanPreferencesKey("cellular_tag_reading")
-        val BACKGROUND_SYNC = booleanPreferencesKey("background_cloud_sync")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
         val SPEED = floatPreferencesKey("audio_speed")
         val KEEP_PITCH = booleanPreferencesKey("audio_keep_pitch")
@@ -103,9 +94,6 @@ class SettingsRepository(private val context: Context) {
                 navStyle = decode(prefs[Keys.NAV_STYLE], NavStyle.AUTO),
             ),
             glassQuality = decode(prefs[Keys.GLASS_QUALITY], GlassQuality.safeDefault()),
-            wifiOnlyDownloads = prefs[Keys.WIFI_ONLY_DOWNLOADS] ?: false,
-            cellularTagReading = prefs[Keys.CELLULAR_TAGS] ?: false,
-            backgroundCloudSync = prefs[Keys.BACKGROUND_SYNC] ?: true,
             libraryConfig = LibraryConfig(
                 tabOrder = decodeTabs(prefs[Keys.LIB_ORDER]).ifEmpty { LibraryTab.entries },
                 hiddenTabs = decodeTabs(prefs[Keys.LIB_HIDDEN]).toSet(),
@@ -194,13 +182,5 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setGlassQuality(quality: GlassQuality) {
         context.dataStore.edit { it[Keys.GLASS_QUALITY] = quality.name }
-    }
-
-    suspend fun setCloudDataControls(wifiOnlyDownloads: Boolean, cellularTagReading: Boolean, backgroundSync: Boolean) {
-        context.dataStore.edit {
-            it[Keys.WIFI_ONLY_DOWNLOADS] = wifiOnlyDownloads
-            it[Keys.CELLULAR_TAGS] = cellularTagReading
-            it[Keys.BACKGROUND_SYNC] = backgroundSync
-        }
     }
 }

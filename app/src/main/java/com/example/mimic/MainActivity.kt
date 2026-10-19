@@ -42,7 +42,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        handleDevIntent(intent)
         if (savedInstanceState == null) handleSharedLink(intent)
         enableEdgeToEdge()
         setContent {
@@ -64,7 +63,6 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        handleDevIntent(intent)
         handleSharedLink(intent)
     }
 
@@ -77,23 +75,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /**
-     * DEBUG BUILDS ONLY — emulator testing against a local mock cloud API (no real account):
-     *   adb shell settings put global mimic_dev_cloud 1
-     *   adb shell am start -n com.example.mimic/.MainActivity --es mimic.devCloud onedrive|gdrive
-     *     --es mimic.devApi http://localhost:8790/v1.0
-     * Release builds ignore it. In debug builds it also needs the global setting above, which only
-     * adb (WRITE_SECURE_SETTINGS) can set — so another app on a phone can't inject a fake source.
-     */
-    private fun handleDevIntent(intent: android.content.Intent?) {
-        if (!BuildConfig.DEBUG || intent == null) return
-        if (android.provider.Settings.Global.getInt(contentResolver, "mimic_dev_cloud", 0) != 1) return
-        val provider = intent.getStringExtra("mimic.devCloud")?.let { com.example.mimic.data.cloud.CloudProviderType.of(it) } ?: return
-        val api = intent.getStringExtra("mimic.devApi") ?: return
-        if (!api.startsWith("http://localhost:") && !api.startsWith("http://127.0.0.1:")) return
-        playerViewModel.connectMockCloud(provider, api)
-        intent.removeExtra("mimic.devCloud")
-    }
 }
 
 private val audioPermission: String

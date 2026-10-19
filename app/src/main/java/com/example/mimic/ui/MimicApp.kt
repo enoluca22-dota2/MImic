@@ -366,13 +366,9 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         viewModel,
                         onBack = back,
                         onOpenNavidrome = { navController.navigate("musicserver") },
-                        onChooseFolder = { navController.navigate("cloudfolder/${enc(it)}") },
+                        onOpenDownloads = { navController.navigate("downloads") },
                     )
                 }
-            }
-            composable("cloudfolder/{key}") { entry ->
-                val key = entry.arguments?.getString("key")?.let(Uri::decode) ?: return@composable
-                InsetScreen(innerPadding) { com.example.mimic.ui.sources.CloudFolderPickerScreen(viewModel, key, onDone = back) }
             }
             composable("serverbrowse") {
                 InsetScreen(innerPadding) {

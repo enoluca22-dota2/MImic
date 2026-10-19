@@ -157,9 +157,6 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
     if (selectedIds != null) androidx.activity.compose.BackHandler { selectedIds = null }
     if (category != LibraryCategory.SONGS && selectedIds != null) selectedIds = null
 
-    // Opening the library picks up songs uploaded to the cloud since the last check.
-    androidx.compose.runtime.LaunchedEffect(Unit) { vm.refreshIfStale() }
-
     val listState = androidx.compose.foundation.lazy.rememberLazyListState()
     com.example.mimic.ui.navigation.ScrollToTopOnReselect(com.example.mimic.ui.navigation.TopLevel.LIBRARY, listState)
     RefreshableLibrary(vm, contentPadding) {
@@ -299,7 +296,7 @@ private fun LibraryCategory.opensInPlace() =
     this != LibraryCategory.GENRES && this != LibraryCategory.FOLDERS && this != LibraryCategory.SMART
 
 private fun emptyText(filter: String) =
-    if (filter == "All") "No music yet. Add audio files to your phone, or connect Google Drive / OneDrive in Settings → Music Sources."
+    if (filter == "All") "No music yet. Add audio files to your phone, or sign in to your Navidrome server in Settings → Music Sources."
     else "Nothing here with the \"$filter\" filter."
 
 private fun libraryCountLine(all: List<Song>, catalog: CatalogState): String {
@@ -307,9 +304,7 @@ private fun libraryCountLine(all: List<Song>, catalog: CatalogState): String {
     val dl = all.count { it.isDownloaded }
     val parts = buildList {
         add("${byProvider[com.example.mimic.data.MusicProvider.PHONE] ?: 0} on phone")
-        for (p in listOf(com.example.mimic.data.MusicProvider.GOOGLE_DRIVE, com.example.mimic.data.MusicProvider.ONEDRIVE, com.example.mimic.data.MusicProvider.NAVIDROME)) {
-            byProvider[p]?.let { add("$it ${p.label}") }
-        }
+        byProvider[com.example.mimic.data.MusicProvider.NAVIDROME]?.let { add("$it Navidrome") }
         add("$dl downloaded")
     }
     val base = parts.joinToString(" · ")

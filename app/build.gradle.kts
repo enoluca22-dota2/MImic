@@ -18,19 +18,6 @@ if (hasKeystore) {
     reader.close()
 }
 
-// Cloud sign-in configuration (MImic 3.1) from a gitignored cloud.properties. These are PUBLIC
-// client identifiers, not secrets (no client secret exists for a mobile app) — they are kept out
-// of git only because they belong to the user's own app registrations. See docs/CLOUD_SETUP.md.
-val cloudPropsFile = rootProject.file("cloud.properties")
-val cloudProps = Properties()
-if (cloudPropsFile.exists()) cloudPropsFile.reader().use { cloudProps.load(it) }
-val msalClientId: String = cloudProps.getProperty("msal.clientId", "").trim()
-// Base64 SHA-1 of the APK signing certificate; the default is this machine's debug keystore,
-// which signs every MImic APK installed so far (no release keystore exists).
-val msalSignatureHash: String = cloudProps.getProperty("msal.signatureHash", "eA5L9wOTGbvwmdX3ojvGnABaX/k=").trim()
-// Which Microsoft accounts may sign in; must match the Entra registration (consumers | common | organizations).
-val msalAudience: String = cloudProps.getProperty("msal.audience", "consumers").trim()
-
 android {
     namespace = "com.example.mimic"
     compileSdk {
@@ -56,10 +43,6 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        buildConfigField("String", "MSAL_CLIENT_ID", "\"$msalClientId\"")
-        buildConfigField("String", "MSAL_SIGNATURE_HASH", "\"$msalSignatureHash\"")
-        buildConfigField("String", "MSAL_AUDIENCE", "\"$msalAudience\"")
-        manifestPlaceholders["msalSignatureHash"] = msalSignatureHash
     }
 
     signingConfigs {
@@ -158,8 +141,6 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.androidx.media3.datasource.okhttp)
     implementation(libs.androidx.work.runtime)
-    implementation(libs.msal)
-    implementation(libs.play.services.auth)
     // Media downloader (full edition only) — ported from ENAGELYUCA.
     "fullImplementation"(libs.youtubedl.library)
     "fullImplementation"(libs.youtubedl.ffmpeg)

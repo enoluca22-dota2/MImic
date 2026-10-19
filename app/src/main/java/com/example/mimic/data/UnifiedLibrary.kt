@@ -5,17 +5,13 @@ enum class SourceFilter(val label: String) {
     ALL("All"),
     PHONE("Phone"),
     NAVIDROME("Navidrome"),
-    GOOGLE_DRIVE("Google Drive"),
-    ONEDRIVE("OneDrive"),
     DOWNLOADED("Downloaded");
 
-    /** Provider filters include that provider's downloads: a downloaded OneDrive song is still OneDrive. */
+    /** Provider filters include that provider's downloads: a downloaded Navidrome song is still Navidrome. */
     fun matches(song: Song): Boolean = when (this) {
         ALL -> true
         PHONE -> song.provider == MusicProvider.PHONE
         NAVIDROME -> song.provider == MusicProvider.NAVIDROME
-        GOOGLE_DRIVE -> song.provider == MusicProvider.GOOGLE_DRIVE
-        ONEDRIVE -> song.provider == MusicProvider.ONEDRIVE
         DOWNLOADED -> song.isDownloaded
     }
 }
@@ -51,7 +47,7 @@ data class ArtistGroup(
 object UnifiedLibrary {
 
     /**
-     * Merge on-device, remote-catalog (Navidrome + cloud drives) and downloaded songs. A remote
+     * Merge on-device, remote-catalog (Navidrome) and downloaded songs. A remote
      * track and its download share
      * one id, so the download *replaces* the streamed entry (one logical song, never two). A
      * download whose file is missing keeps its identity and, when the server catalog is loaded,

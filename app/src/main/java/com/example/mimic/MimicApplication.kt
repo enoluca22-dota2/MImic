@@ -5,8 +5,6 @@ import com.example.mimic.data.DownloadRepository
 import com.example.mimic.data.FavoritesRepository
 import com.example.mimic.data.MusicRepository
 import com.example.mimic.data.SettingsRepository
-import com.example.mimic.data.cloud.CloudLibraryRepository
-import com.example.mimic.data.sync.CloudLibrarySyncWorker
 import com.example.mimic.data.db.MimicDatabase
 import com.example.mimic.data.server.ServerCredentialsRepository
 
@@ -36,11 +34,6 @@ class AppContainer(application: Application) {
         FavoritesRepository(favoriteDao, favoriteGroupDao, pendingStarDao)
     }
 
-    /** Google Drive + OneDrive (MImic 3.1): shared by the UI, the player service and the sync worker. */
-    val cloudLibrary: CloudLibraryRepository by lazy {
-        CloudLibraryRepository(application, database.cloudDao(), downloadRepository, settingsRepository)
-    }
-
     /** GitHub Releases updater (Settings → App Updates, MImic 4.0). */
     val updateManager: com.example.mimic.update.UpdateManager by lazy {
         com.example.mimic.update.UpdateManager(
@@ -55,8 +48,8 @@ class MimicApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
-        // Periodic background refresh of cloud libraries (survives reboots via WorkManager).
-        CloudLibrarySyncWorker.schedule(this, enabled = true)
+        // 4.1 removed Google Drive / OneDrive: stop the old periodic cloud refresh if it was scheduled.
+        androidx.work.WorkManager.getInstance(this).cancelUniqueWork("mimic-cloud-sync")
         // Full edition: media downloader (unpacks yt-dlp once, resumes an interrupted queue).
         com.example.mimic.downloader.Downloader.init(this)
         // In-app updates: drop leftover update APKs; daily check (notification only) if enabled.

@@ -27,7 +27,7 @@ import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
-import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
@@ -107,7 +107,6 @@ fun SettingsScreen(
     onOpenPlayback: () -> Unit = {},
     onOpenUpdates: () -> Unit = {},
 ) {
-    val cloudAccounts by vm.cloudAccounts.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val current by vm.activeTheme.collectAsStateWithLifecycle()
     val status by vm.serverStatus.collectAsStateWithLifecycle()
@@ -240,13 +239,12 @@ fun SettingsScreen(
             Box(
                 Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
                 contentAlignment = Alignment.Center,
-            ) { Icon(Icons.Default.Cloud, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            ) { Icon(Icons.Default.LibraryMusic, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
             Column(Modifier.weight(1f)) {
                 Text("Music Sources", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                 Text(
-                    if (cloudAccounts.isEmpty()) "Google Drive, OneDrive, Navidrome, phone music"
-                    else cloudAccounts.joinToString(" · ") { (com.example.mimic.data.cloud.CloudProviderType.of(it.provider)?.label ?: it.provider) + (if (it.lastError != null) " (needs attention)" else "") },
+                    "Phone music, Navidrome, offline downloads",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -276,7 +274,7 @@ fun SettingsScreen(
         }
         Spacer(Modifier.height(16.dp))
         Text(
-            "MImic — a personal music player for the audio on this phone, your Google Drive / OneDrive music folder " +
+            "MImic — a personal music player for the audio on this phone, your Navidrome server " +
                 "and your own music server. No telemetry; nothing is sent anywhere except to the services you connect.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

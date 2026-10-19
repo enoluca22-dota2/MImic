@@ -53,10 +53,9 @@ class PlaybackService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        val cloud = (application as MimicApplication).container.cloudLibrary
-        // One player for every source: files/content/http as before, plus mimic-cloud:// songs
-        // (Google Drive / OneDrive) resolved and range-streamed by CloudDataSource.
-        val dataSources = MimicDataSourceFactory(this, cloud, cloud.httpClient)
+        // One player for every source: phone files (content://), offline downloads (file://) and
+        // Navidrome streams (http/https).
+        val dataSources = androidx.media3.datasource.DefaultDataSource.Factory(this)
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSources))
             .setAudioAttributes(
@@ -149,7 +148,7 @@ class PlaybackService : MediaSessionService() {
         }
 
         /**
-         * One unplayable song (deleted from the cloud, missing on the server, unsupported format)
+         * One unplayable song (deleted, missing on the server, unsupported format)
          * must not end the whole queue: skip to the next song. A run of failures in a row means
          * the problem isn't the song (e.g. no connection), so stop there instead of racing through
          * the queue. The UI shows the error either way.

@@ -41,7 +41,7 @@ sealed interface ServerStatus {
 fun remoteStableId(remoteId: String): Long =
     (remoteId.hashCode().toLong() and 0x7FFFFFFFL) or 0x100000000L // high bit marks "remote"
 
-/** The one song id for any remote id: cloud refs get collision-resistant 62-bit ids (MImic 3.1). */
+/** The one song id for any remote id (old cloud-drive downloads keep their 62-bit ids). */
 fun songIdForRemote(remoteId: String): Long =
-    if (com.example.mimic.data.cloud.CloudRef.parse(remoteId) != null) com.example.mimic.data.cloud.cloudStableId(remoteId)
+    if (com.example.mimic.data.LegacyCloudIds.isCloud(remoteId)) com.example.mimic.data.LegacyCloudIds.stableId(remoteId)
     else remoteStableId(remoteId)

@@ -1,17 +1,15 @@
 package com.example.mimic.data
 
 /**
- * Where a track's audio comes from right now. A downloaded server/cloud track is [DOWNLOADED];
- * [CLOUD] is streamed from Google Drive / OneDrive (MImic 3.1).
+ * Where a track's audio comes from right now. A downloaded server track is [DOWNLOADED].
+ * ([CLOUD] is kept only so old saved state still parses; nothing streams from a cloud drive since 4.1.)
  */
 enum class SongSource { LOCAL, SERVER, DOWNLOADED, CLOUD }
 
-/** Which library a track belongs to, whether it is streamed or downloaded (MImic 3.1). */
+/** Which library a track belongs to, whether it is streamed or downloaded. */
 enum class MusicProvider(val label: String) {
     PHONE("Phone"),
     NAVIDROME("Navidrome"),
-    GOOGLE_DRIVE("Google Drive"),
-    ONEDRIVE("OneDrive"),
 }
 
 /**
@@ -40,8 +38,8 @@ data class Song(
     val genre: String? = null,
     val source: SongSource = SongSource.LOCAL,
     /**
-     * Remote identity, null for on-device files: a Navidrome track id, or a namespaced cloud id
-     * "onedrive:<account>:<item>" / "gdrive:<account>:<file>" (see CloudRef).
+     * Remote identity, null for on-device files: a Navidrome track id (or, for songs downloaded
+     * from a cloud drive before 4.1, its old "onedrive:/gdrive:" id — see LegacyCloudIds).
      */
     val remoteId: String? = null,
     val albumKey: String = "album:" + album.trim().lowercase(),
@@ -54,14 +52,16 @@ data class Song(
     /** Playable without a network connection. */
     val isOffline: Boolean get() = source == SongSource.LOCAL || (source == SongSource.DOWNLOADED && !fileMissing)
     val isDownloaded: Boolean get() = source == SongSource.DOWNLOADED
-    /** Comes from a remote library (Navidrome or a cloud drive), so it can be downloaded. */
+    /** Comes from a remote library (Navidrome, or an old cloud-drive download), so it has a remote id. */
     val isFromServer: Boolean get() = remoteId != null
     val provider: MusicProvider get() = providerOf(remoteId)
 
     companion object {
         fun providerOf(remoteId: String?): MusicProvider = when {
             remoteId == null -> MusicProvider.PHONE
-            else -> com.example.mimic.data.cloud.CloudRef.parse(remoteId)?.provider?.musicProvider ?: MusicProvider.NAVIDROME
+            // A song downloaded from a (removed) cloud drive is simply a file on this phone now.
+            LegacyCloudIds.isCloud(remoteId) -> MusicProvider.PHONE
+            else -> MusicProvider.NAVIDROME
         }
     }
 }

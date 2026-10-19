@@ -134,17 +134,14 @@ fun SourceFilterRow(vm: PlayerViewModel, modifier: Modifier = Modifier) {
 }
 
 /**
- * Pull-to-refresh for the library tabs (MImic 3.1): re-checks the Navidrome catalog and every
- * cloud account (incremental — only changes are transferred). The spinner shows while any source
- * is still syncing, including syncs started elsewhere (Sync now, app launch).
+ * Pull-to-refresh for the library tabs: reloads the Navidrome catalog and rescans phone music.
+ * The spinner shows while the server catalog is loading.
  */
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun RefreshableLibrary(vm: PlayerViewModel, contentPadding: PaddingValues, content: @Composable () -> Unit) {
     val catalog by vm.catalogState.collectAsStateWithLifecycle()
-    val cloud by vm.cloudSyncState.collectAsStateWithLifecycle()
-    val refreshing = catalog == com.example.mimic.player.CatalogState.Loading ||
-        cloud.values.any { it is com.example.mimic.data.cloud.CloudSyncState.Syncing && it.phase.startsWith("Reading").not() }
+    val refreshing = catalog == com.example.mimic.player.CatalogState.Loading
     val state = androidx.compose.material3.pulltorefresh.rememberPullToRefreshState()
     androidx.compose.material3.pulltorefresh.PullToRefreshBox(
         isRefreshing = refreshing,

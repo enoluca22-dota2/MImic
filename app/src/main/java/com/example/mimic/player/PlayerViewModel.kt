@@ -88,7 +88,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val downloadRepo = container.downloadRepository
     private val favoritesRepo = container.favoritesRepository
-    private val cloud = container.cloudLibrary
 
     /** On-device (MediaStore) songs only. */
     private val _localSongs = MutableStateFlow<List<Song>>(emptyList())
@@ -111,9 +110,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * collections — derives from this single source of truth.
      */
     val songs: StateFlow<List<Song>> =
-        combine(_localSongs, _serverSongs, cloud.songs, downloads) { local, server, cloudSongs, dl ->
-            // Cloud songs merge exactly like server ones: a download replaces its streamed entry.
-            com.example.mimic.data.UnifiedLibrary.merge(local, server + cloudSongs, dl)
+        combine(_localSongs, _serverSongs, downloads) { local, server, dl ->
+            com.example.mimic.data.UnifiedLibrary.merge(local, server, dl)
         }
             .flowOn(kotlinx.coroutines.Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -272,8 +270,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
             // Classify without leaking the stream URL (which carries the auth token).
             val current = _uiState.value.currentSong
-            val cloudName = current?.remoteId?.let(com.example.mimic.data.cloud.CloudRef::parse)?.provider?.label
-            val reason = if (cloudName != null) cloudPlaybackError(error.errorCode, cloudName) else when (error.errorCode) {
+            val reason = when (error.errorCode) {
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
                 androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
                     "Can't reach the server. Check your connection (or Tailscale) and try again."
@@ -301,23 +298,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             syncFromPlayer(player)
             rebuildQueue(player)
         }
-    }
-
-    private fun cloudPlaybackError(code: Int, provider: String): String = when (code) {
-        androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
-        androidx.media3.common.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT ->
-            "Can't reach $provider. Check your internet connection — downloaded songs still play offline."
-        androidx.media3.common.PlaybackException.ERROR_CODE_IO_NO_PERMISSION ->
-            "$provider needs you to sign in again (Settings → Music Sources)."
-        androidx.media3.common.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND ->
-            "This song is no longer in your $provider music folder."
-        androidx.media3.common.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS ->
-            "$provider refused the request. Try again, or sync the library."
-        androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
-        androidx.media3.common.PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED,
-        androidx.media3.common.PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ->
-            "This file's format can't be played on this phone."
-        else -> "Couldn't play from $provider (${androidx.media3.common.PlaybackException.getErrorCodeName(code)})."
     }
 
     fun initController() {
@@ -636,9 +616,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 controller?.let { syncFromPlayer(it); rebuildQueue(it) }
             }
         }
-        // Cloud libraries: refresh on launch when stale (foreground refresh is the reliable path;
-        // the background worker is best-effort).
-        cloud.syncAllAsync(10 * 60_000L)
         // Back online after a failed load (airplane mode, tunnel, Wi-Fi switch): reload the server
         // catalog by itself, so server songs and their favorites reappear without a manual refresh.
         runCatching {
@@ -775,12 +752,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         startDownload(song)
     }
 
-    /** Download a library song that comes from the server or a cloud drive. No-op for on-device songs. */
+    /** Download a library song that comes from the server. No-op for on-device songs. */
     fun downloadSong(song: Song) {
-        if (song.remoteId?.let(com.example.mimic.data.cloud.CloudRef::parse) != null) {
-            startCloudDownload(song, announce = true)
-            return
-        }
         val remote = song.remoteId?.let { remoteById[it] }
         if (remote == null) {
             _messages.tryEmit("Connect to your server to download \"${song.title}\"")
@@ -792,17 +765,14 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     /** User-initiated "Download album": downloads the listed server tracks one at a time. */
     fun downloadAll(list: List<Song>) {
         val wanted = list.filter { it.isFromServer && (!it.isDownloaded || it.fileMissing) }
-        val (cloudSongs, serverSongs) = wanted.partition { s -> s.remoteId?.let(com.example.mimic.data.cloud.CloudRef::parse) != null }
-        val todo = serverSongs.mapNotNull { s -> s.remoteId?.let { remoteById[it] } }
-        if (todo.isEmpty() && cloudSongs.isEmpty()) {
+        val todo = wanted.mapNotNull { s -> s.remoteId?.let { remoteById[it] } }
+        if (todo.isEmpty()) {
             _messages.tryEmit("Nothing to download")
             return
         }
-        _messages.tryEmit("Downloading ${todo.size + cloudSongs.size} songs…")
+        _messages.tryEmit("Downloading ${todo.size} songs…")
         viewModelScope.launch {
             for (r in todo) download(r, announce = false)
-            // One at a time: bounded bandwidth, and Cancel stops exactly the current song.
-            for (s in cloudSongs) cloudDownload(s, announce = false)
         }
     }
 
@@ -811,37 +781,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     val downloadProgress: StateFlow<Map<String, Float>> = _downloadProgress.asStateFlow()
     private val downloadJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
 
-    private fun startCloudDownload(song: Song, announce: Boolean) {
-        viewModelScope.launch { cloudDownload(song, announce) }
-    }
-
-    private suspend fun cloudDownload(song: Song, announce: Boolean) {
-        val id = song.remoteId ?: return
-        if (id in _downloading.value) return
-        cloud.downloadBlockedReason()?.let { _messages.tryEmit("$it — \"${song.title}\" wasn't downloaded"); return }
-        _downloading.update { it + id }
-        _downloadProgress.update { it + (id to -1f) }
-        val job = viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            cloud.download(song) { done, total ->
-                val f = if (total > 0) (done.toFloat() / total).coerceIn(0f, 1f) else -1f
-                _downloadProgress.update { it + (id to f) }
-            }.fold(
-                onSuccess = { if (announce) _messages.tryEmit("Downloaded \"${song.title}\"") },
-                onFailure = { _messages.tryEmit("Download failed: ${it.message ?: "unknown error"}. Tap Download to retry.") },
-            )
-        }
-        downloadJobs[id] = job
-        try {
-            job.join()
-            if (job.isCancelled) _messages.tryEmit("Download cancelled")
-        } finally {
-            downloadJobs.remove(id)
-            _downloading.update { it - id }
-            _downloadProgress.update { it - id }
-        }
-    }
-
-    /** Cancel a running cloud download; the partial file is deleted, nothing is recorded. */
+    /** Cancel a running download; the partial file is deleted, nothing is recorded. */
     fun cancelDownload(song: Song) {
         song.remoteId?.let { downloadJobs[it]?.cancel() }
     }
@@ -864,179 +804,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Delete the offline copy only; the song stays on the server / in the cloud. */
+    /** Delete the offline copy only; the song stays on the server. */
     fun removeDownload(song: Song) {
         val remoteId = song.remoteId ?: return
         viewModelScope.launch {
             downloadRepo.remove(remoteId)
-            val where = com.example.mimic.data.cloud.CloudRef.parse(remoteId)?.provider?.label ?: "your server"
-            _messages.tryEmit("Removed download (still in $where)")
+            _messages.tryEmit(if (com.example.mimic.data.LegacyCloudIds.isCloud(remoteId)) "Removed download" else "Removed download (still on your server)")
         }
     }
 
-    // ---- Cloud sources: Google Drive / OneDrive (MImic 3.1) ----
-
-    val cloudAccounts: StateFlow<List<com.example.mimic.data.db.CloudAccountEntity>> = cloud.accounts
-    val cloudSyncState: StateFlow<Map<String, com.example.mimic.data.cloud.CloudSyncState>> = cloud.syncState
-    val cloudStats: StateFlow<Map<String, com.example.mimic.data.cloud.CloudAccountStats>> = cloud.stats
-    val oneDriveConfigured: Boolean get() = cloud.oneDriveAuth.isConfigured
-
-    private val _oneDriveSetup = MutableStateFlow(computeOneDriveSetupProblem())
-
-    /** Why OneDrive can't sign in yet (no client ID / signature mismatch), or null when ready. */
-    val oneDriveSetupProblem: StateFlow<String?> = _oneDriveSetup.asStateFlow()
-
-    /** Save the Entra client ID typed on the OneDrive card. Returns an error message or null. */
-    fun configureOneDrive(clientId: String, audience: String): String? = try {
-        cloud.oneDriveAuth.configure(clientId, audience)
-        _oneDriveSetup.value = computeOneDriveSetupProblem()
-        _messages.tryEmit("OneDrive registration saved — tap Connect account")
-        null
-    } catch (e: IllegalArgumentException) {
-        e.message
-    }
-
-    fun oneDriveClientId(): String = cloud.oneDriveAuth.clientId
-    fun oneDriveAudience(): String = cloud.oneDriveAuth.audience
-
-    private fun computeOneDriveSetupProblem(): String? =
-        if (!cloud.oneDriveAuth.isConfigured) {
-            val fp = com.example.mimic.data.cloud.AppSignature.of(getApplication())
-            com.example.mimic.data.cloud.onedrive.OneDriveAuth.NOT_CONFIGURED + (
-                fp?.let {
-                    val pkg = getApplication<android.app.Application>().packageName
-                    "\n\nPlatform: Android\nPackage name: $pkg\nSignature hash: ${it.base64Sha1}\n" +
-                        "Redirect URI: msauth://$pkg/${java.net.URLEncoder.encode(it.base64Sha1, "UTF-8")}\n" +
-                        "API permission: Microsoft Graph → Delegated → Files.Read"
-                } ?: ""
-                )
-        } else {
-            cloud.oneDriveAuth.signatureProblem()
-        }
-
-    /** Pull-to-refresh / "Sync now": Navidrome catalog + every cloud account. */
+    /** Pull-to-refresh / "Sync now": the Navidrome catalog (phone music is rescanned on load). */
     fun refreshAllSources() {
         refreshServerCatalog()
-        cloud.syncAllAsync(0)
-    }
-
-    /** Opening the library: refresh cloud accounts not synced in the last 10 minutes. */
-    fun refreshIfStale() = cloud.syncAllAsync(10 * 60_000L)
-
-    fun syncCloudAccount(accountKey: String) {
-        viewModelScope.launch { cloud.sync(accountKey) }
-    }
-
-    private fun cloudError(e: Throwable): String = when (e) {
-        is com.example.mimic.data.cloud.CloudException -> e.message ?: "Cloud error"
-        else -> "Couldn't connect (${e.javaClass.simpleName})"
-    }
-
-    private val _cloudConnect = MutableStateFlow<Map<com.example.mimic.data.cloud.CloudProviderType, com.example.mimic.data.cloud.CloudConnectState>>(emptyMap())
-
-    /** Per-provider sign-in progress / last failure for the Music Sources screen (3.3). */
-    val cloudConnect: StateFlow<Map<com.example.mimic.data.cloud.CloudProviderType, com.example.mimic.data.cloud.CloudConnectState>> = _cloudConnect.asStateFlow()
-
-    private fun setConnect(p: com.example.mimic.data.cloud.CloudProviderType, s: com.example.mimic.data.cloud.CloudConnectState) =
-        _cloudConnect.update { it + (p to s) }
-
-    private fun connectFailed(p: com.example.mimic.data.cloud.CloudProviderType, e: Throwable, onDone: (String?) -> Unit) {
-        val f = com.example.mimic.data.cloud.CloudConnectState.failed(e)
-        setConnect(p, f)
-        _messages.tryEmit(f.message)
-        onDone(null)
-    }
-
-    fun clearCloudConnectError(p: com.example.mimic.data.cloud.CloudProviderType) = setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Idle)
-
-    /** OneDrive sign-in (browser) -> returns the new account key for folder selection. */
-    fun connectOneDrive(activity: android.app.Activity, onDone: (String?) -> Unit) {
-        val p = com.example.mimic.data.cloud.CloudProviderType.ONEDRIVE
-        setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Waiting for Microsoft sign-in…"))
-        viewModelScope.launch {
-            runCatching { cloud.connectOneDrive(activity) }.fold(
-                onSuccess = { setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Idle); onDone(it.accountKey) },
-                onFailure = { connectFailed(p, it, onDone) },
-            )
-        }
-    }
-
-    /** The Activity-side launchers the Google flow may need (they live in the composable). */
-    class GoogleLaunchers(
-        val consent: (android.app.PendingIntent) -> Unit,
-        val chooser: (android.content.Intent) -> Unit,
-        val recover: (android.content.Intent) -> Unit,
-    )
-
-    private var pendingGoogleEmail: String? = null
-    private var lastGoogleFailure: String? = null
-
-    private fun googleFailed(e: Throwable, launchers: GoogleLaunchers, onDone: (String?) -> Unit, allowAlternate: Boolean = true) {
-        val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
-        lastGoogleFailure = (e as? com.example.mimic.data.cloud.CloudException)?.message ?: e.javaClass.simpleName
-        if (allowAlternate && com.example.mimic.data.cloud.GoogleAuthErrors.retryWithAlternate(e)) {
-            // No reason given (code 8): ask Google again through the other supported route,
-            // which reports a concrete one (or simply works).
-            setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Google gave no reason (${e.message}). Trying Android's account picker…"))
-            runCatching { launchers.chooser(cloud.googleChooseAccountIntent()) }.onFailure { connectFailed(p, it, onDone) }
-        } else {
-            connectFailed(p, e, onDone)
-        }
-    }
-
-    /** Manual "alternative sign-in" (also offered on the card after a failure). */
-    fun connectGoogleAlternate(launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
-        val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
-        setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Choose your Google account…"))
-        runCatching { launchers.chooser(cloud.googleChooseAccountIntent()) }.onFailure { connectFailed(p, it, onDone) }
-    }
-
-    /** Alternate route, step 1: Android's account picker returned. */
-    fun googleAccountChosen(resultCode: Int, data: android.content.Intent?, launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
-        val email = data?.getStringExtra(android.accounts.AccountManager.KEY_ACCOUNT_NAME)
-        if (resultCode != android.app.Activity.RESULT_OK || email.isNullOrBlank()) {
-            connectFailed(com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE, com.example.mimic.data.cloud.CloudException.Cancelled("No Google account was chosen"), onDone)
-            return
-        }
-        pendingGoogleEmail = email
-        runGoogleAlternate(email, launchers, onDone, afterConsent = false)
-    }
-
-    /** Alternate route, step 2: Google's consent screen returned. */
-    fun googleConsentReturned(resultCode: Int, launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
-        val email = pendingGoogleEmail
-        if (email == null) {
-            // The app process was recreated in between; the grant (if any) is kept by Google.
-            connectFailed(com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE, com.example.mimic.data.cloud.CloudException.Cancelled("Sign-in was interrupted — tap Try again"), onDone)
-            return
-        }
-        if (resultCode != android.app.Activity.RESULT_OK) {
-            connectFailed(com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE, com.example.mimic.data.cloud.CloudException.Cancelled("Google access wasn't approved"), onDone)
-            return
-        }
-        runGoogleAlternate(email, launchers, onDone, afterConsent = true)
-    }
-
-    private fun runGoogleAlternate(email: String, launchers: GoogleLaunchers, onDone: (String?) -> Unit, afterConsent: Boolean) {
-        val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
-        setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Asking Google for Drive access…"))
-        viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { cloud.googleAlternateToken(email) } }.fold(
-                onSuccess = { step ->
-                    when (step) {
-                        is com.example.mimic.data.cloud.google.GoogleDriveAuth.AltStep.Token -> finishGoogle(step.token, onDone)
-                        is com.example.mimic.data.cloud.google.GoogleDriveAuth.AltStep.NeedsConsent ->
-                            if (afterConsent) {
-                                googleFailed(com.example.mimic.data.cloud.CloudException.AuthRequired("Google still asks for approval — allow Drive access on Google's screen"), launchers, onDone, allowAlternate = false)
-                            } else {
-                                setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Waiting for Google's permission screen…"))
-                                runCatching { launchers.recover(step.intent) }.onFailure { connectFailed(p, it, onDone) }
-                            }
-                    }
-                },
-                onFailure = { googleFailed(it, launchers, onDone, allowAlternate = false) },
-            )
-        }
+        loadLibrary()
     }
 
     fun showMessage(text: String) {
@@ -1087,102 +867,6 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             folder = "MImic",
         )
         play(listOf(song), 0)
-    }
-
-    /**
-     * Copyable report for diagnosing sign-in on a real phone: identity of the installed APK,
-     * Play services version and the last Google failure. No tokens, no account names.
-     */
-    fun cloudDiagnostics(): String {
-        val app = getApplication<android.app.Application>()
-        val fp = com.example.mimic.data.cloud.AppSignature.of(app)
-        val gms = runCatching { app.packageManager.getPackageInfo("com.google.android.gms", 0).versionName }.getOrNull()
-        return buildString {
-            appendLine("MImic ${com.example.mimic.BuildConfig.VERSION_NAME} (${com.example.mimic.BuildConfig.VERSION_CODE}) ${com.example.mimic.BuildConfig.BUILD_TYPE}")
-            appendLine("Package: ${app.packageName}")
-            appendLine("SHA-1: ${fp?.sha1 ?: "?"}")
-            appendLine("SHA-256: ${fp?.sha256 ?: "?"}")
-            appendLine("MS signature hash: ${fp?.base64Sha1 ?: "?"}")
-            appendLine("Google Play services: ${gms ?: "not installed"}")
-            appendLine("Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT}) · ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-            appendLine("Drive scope: ${com.example.mimic.data.cloud.google.GoogleDriveAuth.SCOPE}")
-            append("Last Google error: ${lastGoogleFailure ?: "none"}")
-        }
-    }
-
-    /**
-     * Google step 1: either already authorized, or hands back Google's account chooser / consent
-     * UI to launch. [email] = reconnect that same account.
-     */
-    fun connectGoogle(email: String?, launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
-        val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
-        setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Opening Google…"))
-        viewModelScope.launch {
-            runCatching { cloud.beginGoogle(email) }.fold(
-                onSuccess = { step ->
-                    when (step) {
-                        is com.example.mimic.data.cloud.google.GoogleDriveAuth.Step.NeedsConsent -> {
-                            setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Waiting for Google…"))
-                            runCatching { launchers.consent(step.intent) }.onFailure { connectFailed(p, it, onDone) }
-                        }
-                        is com.example.mimic.data.cloud.google.GoogleDriveAuth.Step.Authorized -> finishGoogle(step.token, onDone)
-                    }
-                },
-                onFailure = { googleFailed(it, launchers, onDone) },
-            )
-        }
-    }
-
-    /** Google step 2: the chooser/consent UI returned (with any result code — failures carry a status). */
-    fun completeGoogleConsent(resultCode: Int, data: android.content.Intent?, launchers: GoogleLaunchers, onDone: (String?) -> Unit) {
-        val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
-        setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Finishing Google authorization…"))
-        viewModelScope.launch {
-            runCatching { withContext(Dispatchers.IO) { cloud.googleTokenFromConsent(resultCode, data) } }.fold(
-                onSuccess = { finishGoogle(it, onDone) },
-                onFailure = { googleFailed(it, launchers, onDone) },
-            )
-        }
-    }
-
-    private suspend fun finishGoogle(token: String, onDone: (String?) -> Unit) {
-        val p = com.example.mimic.data.cloud.CloudProviderType.GOOGLE_DRIVE
-        setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Connecting("Checking Drive access…"))
-        runCatching { cloud.finishGoogle(token) }.fold(
-            onSuccess = { setConnect(p, com.example.mimic.data.cloud.CloudConnectState.Idle); onDone(it.accountKey) },
-            onFailure = { lastGoogleFailure = it.message; connectFailed(p, it, onDone) },
-        )
-    }
-
-    /** Debug builds: connect a mock-API test account (local test server via adb reverse). */
-    fun connectMockCloud(provider: com.example.mimic.data.cloud.CloudProviderType, apiBase: String, onDone: (String?) -> Unit = {}) {
-        viewModelScope.launch {
-            runCatching { cloud.connectMock(provider, apiBase) }.fold(
-                onSuccess = { onDone(it.accountKey) },
-                onFailure = { _messages.tryEmit(cloudError(it)); onDone(null) },
-            )
-        }
-    }
-
-    suspend fun listCloudFolders(accountKey: String, parentId: String?): Result<List<com.example.mimic.data.cloud.CloudFolder>> =
-        runCatching { cloud.listFolders(accountKey, parentId) }
-
-    fun chooseCloudFolder(accountKey: String, folder: com.example.mimic.data.cloud.CloudFolder) {
-        viewModelScope.launch { cloud.chooseFolder(accountKey, folder) }
-    }
-
-    fun disconnectCloud(accountKey: String, removeDownloads: Boolean) {
-        viewModelScope.launch {
-            cloud.disconnect(accountKey, removeDownloads)
-            _messages.tryEmit(if (removeDownloads) "Disconnected and removed its downloads" else "Disconnected — downloaded songs are kept")
-        }
-    }
-
-    fun setCloudDataControls(wifiOnlyDownloads: Boolean, cellularTagReading: Boolean, backgroundSync: Boolean) {
-        viewModelScope.launch {
-            settingsRepo.setCloudDataControls(wifiOnlyDownloads, cellularTagReading, backgroundSync)
-            com.example.mimic.data.sync.CloudLibrarySyncWorker.schedule(getApplication(), backgroundSync)
-        }
     }
 
     // ---- Custom themes (Theme Studio) ----

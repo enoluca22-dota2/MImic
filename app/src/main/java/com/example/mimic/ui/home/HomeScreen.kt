@@ -294,9 +294,8 @@ private fun Greeting(all: List<Song>) {
         )
         val dl = all.count { it.isDownloaded }
         val device = all.count { it.source == SongSource.LOCAL }
-        val cloud = all.count { it.provider == com.example.mimic.data.MusicProvider.GOOGLE_DRIVE || it.provider == com.example.mimic.data.MusicProvider.ONEDRIVE }
         Text(
-            "$device on this phone · " + (if (cloud > 0) "$cloud in the cloud · " else "") + "$dl downloaded",
+            "$device on this phone · $dl downloaded",
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
