@@ -52,13 +52,9 @@ class TopLevelNavigationTest {
         assertEquals(Plan.SwitchTab(TopLevel.SETTINGS, restore = false), TopLevelNavigation.plan(TopLevel.SETTINGS, deepLibrary))
     }
 
-    @Test fun five_tabs_in_order_with_downloads_in_the_full_edition() {
-        val expected = if (com.example.mimic.downloader.Downloader.AVAILABLE) {
-            listOf(TopLevel.HOME, TopLevel.SEARCH, TopLevel.LIBRARY, TopLevel.DOWNLOADS, TopLevel.SETTINGS)
-        } else {
-            listOf(TopLevel.HOME, TopLevel.SEARCH, TopLevel.LIBRARY, TopLevel.SETTINGS)
-        }
-        assertEquals(expected, TopLevel.visible)
+    @Test fun five_tabs_in_order_in_every_edition() {
+        // Since 4.1 Downloads holds offline music too, so it is a tab in the standard edition as well.
+        assertEquals(listOf(TopLevel.HOME, TopLevel.SEARCH, TopLevel.LIBRARY, TopLevel.DOWNLOADS, TopLevel.SETTINGS), TopLevel.visible)
         // The downloader tab never collides with the Library's offline-songs screen ("downloads").
         assertEquals("downloader", TopLevel.DOWNLOADS.route)
         assertEquals(TopLevel.DOWNLOADS, TopLevelNavigation.owningTab(listOf(null, "home", "downloader")))

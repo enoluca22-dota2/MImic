@@ -13,6 +13,7 @@ import com.example.mimic.data.server.ServerCredentialsRepository
  * (fewer moving parts on this bleeding-edge AGP) while keeping singletons testable:
  * tests can construct [AppContainer] with an in-memory database.
  */
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class]) // CastController (4.1)
 class AppContainer(application: Application) {
     val database: MimicDatabase = MimicDatabase.get(application)
     val musicRepository: MusicRepository = MusicRepository(application)
@@ -35,7 +36,6 @@ class AppContainer(application: Application) {
     }
 
     /** Google Cast (4.1): one controller + LAN media server per process. */
-    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
     val castController: com.example.mimic.cast.CastController by lazy { com.example.mimic.cast.CastController(application) }
 
     /** GitHub Releases updater (Settings → App Updates, MImic 4.0). */

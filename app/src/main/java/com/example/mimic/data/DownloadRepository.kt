@@ -35,6 +35,14 @@ class DownloadRepository(context: Context, private val dao: DownloadDao) {
 
     val downloadedIds: Flow<Set<String>> = dao.downloadedIds().map { it.toSet() }
 
+    /** Space used by offline songs + their covers, and free space on that storage (4.1). */
+    data class Storage(val usedBytes: Long, val freeBytes: Long)
+
+    suspend fun storage(): Storage = kotlinx.coroutines.withContext(Dispatchers.IO) {
+        val used = dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+        Storage(used, dir.apply { mkdirs() }.usableSpace)
+    }
+
     /** Download [remote] for offline playback; returns the verified file size on success. */
     suspend fun download(client: SubsonicClient, remote: RemoteSong): Result<Long> {
         val ext = remote.suffix?.takeIf { it.isNotBlank() }?.let(::safeName) ?: "mp3"

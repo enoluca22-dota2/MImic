@@ -2,8 +2,8 @@
 
 # MImic
 
-A local-first Android music player: your phone's music, your own Navidrome server, your Google
-Drive and OneDrive folders, and (full edition) a downloader for media you're allowed to save —
+A local-first Android music player: your phone's music, your own Navidrome server and your
+offline downloads (plus, in the full edition, a downloader for media you're allowed to save) —
 all in one player with a fully customizable look.
 
 **Download:** [Releases](https://github.com/enoluca22-dota2/MImic/releases) — then update from
@@ -11,13 +11,19 @@ inside the app (Settings → App Updates).
 
 ## Features
 
-- **One library, many sources** — phone music (MediaStore), Navidrome/Subsonic, Google Drive,
-  OneDrive, offline downloads; source filters and unified search. Navidrome is optional: cloud
-  music streams straight from Google/Microsoft.
+- **One library, three sources** — phone music (MediaStore), your Navidrome/Subsonic server
+  (LAN or Tailscale) and offline downloads; source filters and unified search. Every phone song
+  shows its own artwork.
+- **Dynamic Now Playing** — an optional player whose gradient, glow and controls take their colors
+  from each song's artwork, with a premium seek bar and full-screen synced lyrics. The Classic,
+  Immersive and Compact players stay available.
+- **Cast & share** — Google Cast to Chromecast / Google TV (the phone serves the music on your
+  Wi-Fi; server logins never reach the TV); share the actual audio file through Android's
+  Sharesheet.
 - **Player** — Media3 (ExoPlayer + MediaSession): background playback, notification/lock-screen
   controls, queue with resume, crossfade, ReplayGain, equalizer, speed/pitch, sleep timer with
   fade, lyrics (embedded or .lrc).
-- **Downloads tab (full edition)** — paste or share a YouTube/TikTok link → real formats → MP3/M4A
+- **Downloads tab** — offline music with storage use; in the full edition also paste or share a YouTube/TikTok link → real formats → MP3/M4A
   audio or MP4 video at a chosen quality, playlists and multi-link batches, a persistent queue
   (progress, speed, ETA, pause/resume/cancel/retry), history; music lands in your library and
   plays in MImic's player, videos play in-app. Merged from the ENAGELYUCA app.
@@ -31,7 +37,7 @@ inside the app (Settings → App Updates).
 
 | | full | standard |
 |---|---|---|
-| Music player, cloud sources, Navidrome, themes, updates | ✓ | ✓ |
+| Music player, Navidrome, offline downloads, themes, cast, share, updates | ✓ | ✓ |
 | Media downloader (yt-dlp via youtubedl-android) | ✓ | — |
 | Intended distribution | GitHub Releases | any store |
 

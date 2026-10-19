@@ -26,7 +26,6 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -252,7 +251,7 @@ fun DynamicNowPlayingScreen(
             // Artwork — crossfades between songs; swipe sideways to skip.
             var dragX by remember { mutableFloatStateOf(0f) }
             val threshold = with(LocalDensity.current) { 72.dp.toPx() }
-            BoxWithConstraints(Modifier.weight(1f, fill = false), contentAlignment = Alignment.Center) {
+            Box(Modifier.weight(1f, fill = false), contentAlignment = Alignment.Center) {
                 AnimatedContent(
                     targetState = song,
                     contentKey = { it?.id },

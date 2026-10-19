@@ -1,5 +1,38 @@
 # Changelog
 
+## 4.1.0-beta.1
+A redesign release: one music library (phone · Navidrome · offline), correct artwork everywhere,
+a new optional Dynamic player, casting and real audio sharing. Beta until tested on a phone.
+
+- **Removed Google Drive and OneDrive.** Their screens, sign-in, background sync and libraries
+  (MSAL, Play services auth) are gone. Songs already downloaded from them stay on the phone as
+  offline songs — same ids, so favorites, playlists and history still point at them.
+- **Fixed: one song's cover showing on many songs.** Phone songs used Android's per-ALBUM art, and
+  Android groups every untagged file in a folder (e.g. all downloads) into one "album" named after
+  the folder — so they all got the same cover, also in the notification and on the lock screen.
+  Every phone song now shows its own embedded artwork (album art only for real album tags,
+  otherwise a neutral placeholder), cached per song and refreshed when the file changes.
+- **Dynamic Now Playing** (new, optional — Settings → Player Layout, or the card in Theme Studio):
+  colors extracted from the artwork drive a gradient, glow and optional blurred artwork that blend
+  between songs (500–900 ms; instant with reduced motion); text keeps ≥ 4.5:1 contrast; premium
+  seek bar (buffered range, drag/tap to seek, glow); full-screen synced lyrics (follow the song,
+  tap a line to jump, manual scroll pauses following); Lyrics · Queue · Cast · Share · More.
+  Settings: gradient, blur, animated background, intensity, artwork shape & size, glass controls,
+  brightness, automatic contrast, reduce motion. Classic, Immersive, Compact and all themes are
+  unchanged.
+- **Cast to a TV** (Google Cast: Chromecast, Google TV, TVs with Chromecast built-in) from the
+  player and the mini player. Play/pause, next/previous, seek, queue changes and TV volume work
+  while casting; stopping returns playback to the phone at the same position, paused.
+- **Share the audio file** from the player, a song's ⋮ menu or Downloads: Bluetooth, Quick Share,
+  WhatsApp, Telegram, e-mail… Streamed-only songs offer "download first".
+- **Lock-screen style view** (in the app, not Android's lock screen): Classic, Dynamic, Glass or
+  Minimal, with a large clock; keeps the screen on while open.
+- **Downloads tab** in every edition: offline music with storage used/free and live download
+  progress; the full edition adds "From a link".
+- **Mini player**: next button, real progress line, cast button, "Casting to …".
+- Battery: the position updates pause while MImic isn't visible.
+- Tests: 122 JVM (standard) / 217 (full); lint clean.
+
 ## 4.0.0-beta.2
 - App Updates: "View all releases on GitHub" button.
 - Changelog: corrected the 4.0.0-beta.1 test counts.

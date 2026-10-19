@@ -322,13 +322,25 @@ fun MimicApp(viewModel: PlayerViewModel) {
             composable(TopLevel.LIBRARY.route) { LibraryScreen(viewModel, innerPadding, nav) }
             composable(TopLevel.DOWNLOADS.route) {
                 val shared by viewModel.sharedLink.collectAsStateWithLifecycle()
-                com.example.mimic.downloader.Downloader.Tab(
+                com.example.mimic.ui.library.DownloadsHubScreen(
+                    vm = viewModel,
+                    nav = nav,
                     contentPadding = innerPadding,
-                    sharedText = shared,
-                    onSharedTextConsumed = viewModel::consumeSharedLink,
-                    playAudio = viewModel::playDownloadedFile,
-                    pauseMusic = viewModel::pause,
-                    showMessage = viewModel::showMessage,
+                    sharedLinkPending = shared != null,
+                    linkDownloader = if (com.example.mimic.downloader.Downloader.AVAILABLE) {
+                        { padding ->
+                            com.example.mimic.downloader.Downloader.Tab(
+                                contentPadding = padding,
+                                sharedText = shared,
+                                onSharedTextConsumed = viewModel::consumeSharedLink,
+                                playAudio = viewModel::playDownloadedFile,
+                                pauseMusic = viewModel::pause,
+                                showMessage = viewModel::showMessage,
+                            )
+                        }
+                    } else {
+                        null
+                    },
                 )
             }
             composable(TopLevel.SETTINGS.route) {

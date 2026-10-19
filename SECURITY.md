@@ -10,13 +10,12 @@ repository, not in public issues.
 | Area | Measure |
 |---|---|
 | Navidrome password | AES-256-GCM with a non-exportable Android Keystore key; only ciphertext is stored. |
-| Google Drive | No tokens stored by MImic: Google Play services issues and renews them (`drive.readonly`). |
-| OneDrive | MSAL public client, authorization code + PKCE, no client secret; MSAL's encrypted token cache. The Entra client ID is a public identifier. |
 | Logs | Never contain tokens, passwords, download URLs or account names (status codes only). |
-| Cloud files | Read-only: MImic never uploads, renames, moves, shares or deletes cloud files. |
+| Casting | While a Cast session runs, the phone serves only the queued songs on the local network, each under a random 128-bit token; Navidrome songs are fetched by the phone and relayed, so the server's login token never reaches the TV. The server stops when casting ends. Audio crosses the LAN unencrypted (Cast receivers fetch over plain HTTP). |
+| Sharing | Only local files are shared: phone songs by their MediaStore URI, offline downloads through a FileProvider limited to the downloads folder; the receiving app gets temporary read access to that one file. Stream URLs (which carry the server login) are never shared. |
 | Downloads | Files are written through MediaStore / the Storage Access Framework; names are sanitized. |
 | App updates | HTTPS to GitHub hosts only (every redirect checked); SHA-256 against `SHA256SUMS.txt`; package name, higher versionCode, minSdk and CPU checked; the APK must be signed with the **certificate pinned in the app** and the installed app's certificate. Android's installer always asks the user to confirm. Release notes are shown as plain text. |
-| Secrets in git | `keystore.properties`, keystores, `cloud.properties`, server credentials and `.env` are gitignored. Release signing happens only on the maintainer's machine. |
+| Secrets in git | `keystore.properties`, keystores, server credentials and `.env` are gitignored. Release signing happens only on the maintainer's machine. |
 
 ## Known limitations
 

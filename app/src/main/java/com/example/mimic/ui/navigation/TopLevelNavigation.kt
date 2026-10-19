@@ -35,7 +35,7 @@ fun ScrollToTopOnReselect(tab: TopLevel, state: LazyListState) {
 
 /**
  * The primary destinations: Home | Search | Library | Downloads | Settings (Downloads since 4.0,
- * full edition only — see [visible]). Everything else is pushed on top of one of them.
+ * offline music + the full edition's link downloader). Everything else is pushed on top of one of them.
  */
 enum class TopLevel(
     val route: String,
@@ -55,9 +55,8 @@ enum class TopLevel(
     companion object {
         fun ofRoute(route: String?): TopLevel? = entries.firstOrNull { it.route == route }
 
-        /** Tabs shown in the navigation bar for this edition. */
-        val visible: List<TopLevel> =
-            entries.filter { it != DOWNLOADS || com.example.mimic.downloader.Downloader.AVAILABLE }
+        /** Tabs shown in the navigation bar (Downloads holds offline music in every edition since 4.1). */
+        val visible: List<TopLevel> = entries.toList()
     }
 }
 

@@ -79,6 +79,7 @@ data class PlayerUiState(
     val playbackError: String? = null,
 )
 
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class]) // CastPlayer (4.1)
 class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val container: AppContainer = (app as MimicApplication).container
@@ -101,6 +102,12 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private val _catalogState = MutableStateFlow<CatalogState>(CatalogState.Idle)
     val catalogState: StateFlow<CatalogState> = _catalogState.asStateFlow()
+
+    /** Storage used by offline downloads (recomputed whenever the downloads change). */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val offlineStorage: StateFlow<com.example.mimic.data.DownloadRepository.Storage?> = downloadRepo.songs
+        .mapLatest { downloadRepo.storage() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** Offline downloads as songs (reactive: a finished download appears here immediately). */
     val downloads: StateFlow<List<Song>> = downloadRepo.songs
