@@ -1,5 +1,35 @@
 # Changelog
 
+## 4.5.0-beta.1
+Listen Together, lyrics that actually appear, and a new app icon. Everything else (Navidrome,
+radio, themes, downloads, online music, updater) is unchanged.
+
+- **New app icon**: the neon-glass "E" with play button and waveforms, on the launcher, app
+  drawer, App info, recents and the Android 12+ splash; adaptive (fits round, squircle and
+  rounded-square launchers), themed-icon silhouette for Android 13+.
+- **Lyrics — the cause of missing lyrics is fixed.** Measured against LRCLIB: songs from YouTube
+  uploads ("Artist - Song (Official Video)" by "ArtistVEVO") found nothing, LRCLIB's frequent
+  "service unavailable" answers were shown as "no lyrics", and lyrics were only looked up when the
+  lyrics screen was opened. Now titles/artists are cleaned the way lyrics databases name songs,
+  busy-service answers are retried (and shown as "couldn't reach", with Retry), and the lookup
+  starts as soon as a song plays.
+- Lyrics sources, in order: your own lyrics, saved lyrics, lyrics in the file, a `.lrc` next to
+  the song, Navidrome, LRCLIB. Found lyrics are saved and work offline. Live / remix / acoustic /
+  sped-up versions never get the original's lyrics; when several songs match, you choose.
+- **New full-screen lyrics**: big synced lines, current line highlighted, earlier ones dimmed,
+  smooth scrolling, tap a line to jump, artwork colours, playback controls, source shown. Plain
+  lyrics are labelled as not synced. Menu: Choose lyrics, add from a file, type/paste, search again.
+- **Downloads get lyrics automatically** (Navidrome, online and link downloads), in the background.
+- **Library → Lyrics → Find Missing Lyrics**: checks your existing music (no re-download, files
+  untouched), with progress, cancel, retry of failed lookups and a summary.
+- **Listen Together** (Settings → Listen Together): start a party, invite friends with a code or a
+  link, shared queue, play / pause / skip / seek for everyone, synchronized playback (measured
+  ~20 ms apart between two emulators), vote to skip, host-only control, remove listeners, leave /
+  end party, automatic reconnect. Each phone plays the song from its own music, Navidrome or
+  YouTube Music — no audio is sent between phones. Needs MImic's small party server
+  (`server/party`, from BitChord, GPL-3.0) running on your PC — see docs/LISTEN_TOGETHER.md.
+- Database v9 (adds a `lyrics` table; nothing else changes).
+
 ## 4.4.0-beta.1
 Online music inside MImic, built on BitChord's streaming and download code (GPL-3.0; see
 THIRD_PARTY_NOTICES.md). Phone music, Navidrome, radio, themes and the existing link downloader

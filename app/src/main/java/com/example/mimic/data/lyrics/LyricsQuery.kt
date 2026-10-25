@@ -1,7 +1,7 @@
 /*
  * Part of MImic (GPL-3.0). The credit / packaging patterns in [CREDITS] are adapted from BitChord's
  * data/lyrics/LyricsQuery.kt (Copyright (C) BitChord contributors, GPL-3.0,
- * https://github.com/KabirSinghBhatia/BitChord); the rest is MImic's own.
+ * https://github.com/kushagrasinghx/BitChord); the rest is MImic's own.
  */
 package com.example.mimic.data.lyrics
 

@@ -23,7 +23,18 @@ object PartyLibrary {
     @Volatile private var byId: Map<Long, Song> = emptyMap()
     private val extra = ConcurrentHashMap<Long, Song>()
 
+    @Volatile private var firstPublishAt = 0L
+
+    /**
+     * False until the UI has published a loaded library (the service can start first, and the
+     * library flow starts with an empty list before the scan finishes). A library that is still
+     * empty 15 s after the first publish really is empty.
+     */
+    val ready: Boolean
+        get() = songs.isNotEmpty() || (firstPublishAt > 0 && System.currentTimeMillis() - firstPublishAt > 15_000)
+
     fun publish(list: List<Song>) {
+        if (firstPublishAt == 0L) firstPublishAt = System.currentTimeMillis()
         songs = list
         byId = list.associateBy { it.id }
     }
@@ -105,6 +116,8 @@ object PartyTracks {
 
     /** Resolve [t] to something this device may play, or null ("not available on this device"). */
     suspend fun resolve(t: PartyTrack): Song? {
+        // The library isn't known yet (app just started): not a verdict, the caller retries.
+        if (!PartyLibrary.ready) throw IllegalStateException("library not loaded yet")
         val library = PartyLibrary.all()
         matchInLibrary(t, library)?.let { return it }
         if (!isMetaKey(t.videoId)) {

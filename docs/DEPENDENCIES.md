@@ -24,6 +24,16 @@ included. No proprietary (e.g. Spotify) code or assets are used.
 
 MImic's own source is intended to be released under the MIT License (`LICENSE`).
 
+## Added in 4.5
+
+| Dependency | License | Where | Why |
+|---|---|---|---|
+| gorilla/websocket 1.5.3 (Go) | BSD-2-Clause | `server/party` only (not in the APK) | Listen Together party server WebSockets (from BitChord's backend) |
+| golang:1.27-alpine, alpine:3.22 (Docker images) | BSD-3 / MIT and others | build/run of `server/party` | container for the party server |
+
+No new Android dependencies: the app side of Listen Together uses OkHttp (already present) and
+org.json; lyrics use OkHttp and Room.
+
 ## Version pinning (2.9)
 MImic builds with Kotlin 2.2.10 / Compose BOM 2026.02.01 (foundation 1.10.4, material3 1.4.0).
 The newest releases of these libraries (backdrop 2.0.x, colorpicker 1.2+/1.3, MaterialKolor 5.x)

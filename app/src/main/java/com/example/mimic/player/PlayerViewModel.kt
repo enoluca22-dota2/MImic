@@ -1796,6 +1796,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     private fun restoreQueueIfIdle() {
         val c = controller ?: return
         if (c.mediaItemCount > 0) return
+        // In a party the party decides what plays; restoring the old queue would be published
+        // to everyone as a new song (4.5).
+        if (com.example.mimic.party.ListenTogether.hasMembership()) return
         viewModelScope.launch {
             val snap = container.playbackStateStore.read() ?: return@launch
             val lib = kotlinx.coroutines.withTimeoutOrNull(8_000) {

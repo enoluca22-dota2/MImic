@@ -1,5 +1,5 @@
 // Part of MImic's Listen Together server. Derived from the BitChord backend
-// (https://github.com/KabirSinghBhatia/BitChord, backend/), Copyright (C) BitChord
+// (https://github.com/kushagrasinghx/BitChord, backend/), Copyright (C) BitChord
 // contributors, licensed GPL-3.0; modified for MImic (2026): module path, branding,
 // invite deep link (mimic://), host "endParty" and "voteSkip". MImic is GPL-3.0.
 

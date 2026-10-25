@@ -470,10 +470,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
                 }
             }
             composable("party") {
-                InsetScreen(innerPadding) { com.example.mimic.ui.party.ListenTogetherScreen(viewModel, onBack = back) }
+                InsetScreen(innerPadding, padBottom = true) { com.example.mimic.ui.party.ListenTogetherScreen(viewModel, onBack = back) }
             }
             composable("lyrics/missing") {
-                InsetScreen(innerPadding) { com.example.mimic.ui.player.MissingLyricsScreen(viewModel, onBack = back) }
+                InsetScreen(innerPadding, padBottom = true) { com.example.mimic.ui.player.MissingLyricsScreen(viewModel, onBack = back) }
             }
             composable("stats") { InsetScreen(innerPadding) { StatsScreen(viewModel, onBack = back) } }
             composable("playback") {

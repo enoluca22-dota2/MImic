@@ -26,7 +26,8 @@ music, a private Navidrome/OpenSubsonic server (reached over Tailscale), interne
 8. Protect credentials: never commit keystores, `keystore.properties`, `firebase.properties`,
    `cloud.properties`, `server/.env`, cookies or tokens; never log or export them (diagnostics go
    through `DiagnosticText.clean` + `OnlineDiagnostics.redact`).
-9. One playback service (`player/PlaybackService.kt`, Media3) and one download store per source
+9. One playback service (`player/PlaybackService.kt`, Media3; the session player is
+   `PartyPlayer` → `PartySync` for Listen Together) and one download store per source
    (Navidrome: `DownloadRepository`; online: `OnlineDownloadWorker` → `DownloadRepository.recordOnline`;
    links: the full-edition `downloader/`). Don't add competing ones.
 10. Database migrations are additive only (`MimicDatabase.ALL_MIGRATIONS`); add a migration test.
@@ -48,11 +49,27 @@ music, a private Navidrome/OpenSubsonic server (reached over Tailscale), interne
     `MImic-Development-Report.txt` after every session.
 18. Report blockers and untested features plainly (PASS / FAIL / BLOCKED / NOT TESTED). Never claim
     a physical-device or account test that didn't happen.
+19. Lyrics: never show lyrics that may belong to another recording (`data/lyrics/LyricsMatcher`
+    refuses rather than guesses; ambiguous → user chooses). Never fake-sync plain lyrics. Use only
+    open/permitted providers (LRCLIB, embedded, sidecar, Navidrome) — no scraped/unofficial APIs.
+    A lyrics failure must never fail a download. Credit the source on screen.
+20. Listen Together: each phone plays from its own authorized source; never relay audio, stream
+    URLs or Navidrome URLs/tokens through the party. The party token stays in app-private prefs,
+    is never logged or shown. Party server = `server/party` (own compose file; never touch the
+    Navidrome container). Don't enable Tailscale Funnel without asking.
+21. App icon: generated only from the owner's image `docs/icon/source/mimic-e-neon-source.png`
+    by `tools/icon/build_e_icon.py`; don't redesign it.
 
 ## Handy facts
 - Editions: `full` (default; yt-dlp downloader + online music, GPL code) and `standard` (no
   downloader / online music). Same application id.
 - Emulator text input: Gboard's stylus tutorial can swallow `adb shell input text`; run
   `adb shell settings put secure stylus_handwriting_enabled 0` first.
+- Party server from the emulators: use the PC's LAN address (`http://192.168.0.178:8000`);
+  `adb reverse` / 10.0.2.2 hit 127.0.0.1, which Docker Desktop doesn't answer on this PC.
+- Emulator internet can be dead after boot (ConnectException everywhere): toggle airplane mode
+  (`adb shell cmd connectivity airplane-mode enable/disable`).
+- From Git Bash, never set `MSYS_NO_PATHCONV=1` on the same command as `cmd //c ".\gradlew.bat …"`:
+  the build silently doesn't run. Check APK timestamps after a build.
 - YouTube Music's song catalogue answers "No results" from Albania; MImic then falls back to
   YouTube search (`online/YouTubeSearch.kt`). Do not spoof the region.

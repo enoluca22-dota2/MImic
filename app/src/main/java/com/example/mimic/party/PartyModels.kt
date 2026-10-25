@@ -1,7 +1,7 @@
 /*
  * Part of MImic (GPL-3.0). Adapted from BitChord's shared/.../data/listentogether/PartyModels.kt
  * and ServerClock.kt (Copyright (C) BitChord contributors, GPL-3.0,
- * https://github.com/KabirSinghBhatia/BitChord). Changes: org.json instead of
+ * https://github.com/kushagrasinghx/BitChord). Changes: org.json instead of
  * kotlinx-serialization (MImic's standard edition has no serialization plugin), MImic track keys,
  * skip-vote fields.
  */

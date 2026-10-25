@@ -140,4 +140,10 @@ class PartyTest {
         assertEquals("b", m!!.videoId)
         assertNull(detectSingleMove(listOf("a", "b"), listOf("b", "c")))
     }
+
+    @Test fun a_song_matches_its_own_party_track() {
+        val s = song(333, "Embedded Song", "MImic Test", 30_067)
+        val t = PartyTracks.fromSong(s)!!
+        assertEquals(s, PartyTracks.matchInLibrary(t, listOf(s)))
+    }
 }

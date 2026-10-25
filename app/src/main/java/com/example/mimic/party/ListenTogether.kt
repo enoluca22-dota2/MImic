@@ -1,6 +1,6 @@
 /*
  * Part of MImic (GPL-3.0). Adapted from BitChord's app/.../data/listentogether/ListenTogether.kt
- * (Copyright (C) BitChord contributors, GPL-3.0, https://github.com/KabirSinghBhatia/BitChord).
+ * (Copyright (C) BitChord contributors, GPL-3.0, https://github.com/kushagrasinghx/BitChord).
  * Changes for MImic: OkHttp WebSocket instead of Ktor (both editions), one user-chosen server
  * (no built-in default / fallback), identity from the optional MImic account or a nickname
  * (no YouTube sign-in required), membership kept across a process restart, end party, skip votes.
@@ -183,6 +183,9 @@ object ListenTogether {
         )
         connect()
     }
+
+    /** This device holds a party membership (possibly still reconnecting after a restart). */
+    fun hasMembership(): Boolean = _state.value.inParty || prefs?.getString(KEY_CODE, null) != null
 
     // ------------------------------------------------------------------ server address --
 

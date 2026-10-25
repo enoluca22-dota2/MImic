@@ -88,7 +88,7 @@ fun MissingLyricsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                         if (s != null && s.finished) {
                             Text(
                                 if (s.cancelled) "Cancelled." else "Done: ${s.found} found, ${s.unavailable} without lyrics, ${s.failed} failed, " +
-                                    "${s.choose} need a choice, ${s.skipped} already had lyrics.",
+                                    "${s.choose} need a choice, ${s.skipped} skipped (lyrics saved or checked recently).",
                                 style = MaterialTheme.typography.bodyMedium,
                                 modifier = Modifier.padding(bottom = 8.dp),
                             )

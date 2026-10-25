@@ -58,6 +58,33 @@ Notes:
 - Earlier libraries (youtubedl-android GPL-3.0, Media3, Room, Coil, OkHttp, kyant backdrop, …)
   are listed in `docs/DEPENDENCIES.md`.
 
+## Listen Together and lyrics code from BitChord (GPL-3.0) — MImic 4.5
+
+Same origin and license as above. Each file below carries a header naming its BitChord origin.
+
+| MImic file | BitChord original | Modification |
+|---|---|---|
+| `server/party/**` (Go) | `backend/` (clock, codes, config, hub, party, presence, protocol, main.go, tests) | module path, branding, `mimic://` invite deep link, host `endParty`, `voteSkip` (majority of connected devices), new tests `mimic_test.go` |
+| `app/src/main/java/com/example/mimic/party/ListenTogether.kt` | `data/listentogether/ListenTogether.kt` | OkHttp WebSocket instead of Ktor, one user-chosen server, identity from the MImic account or a nickname, membership kept across restarts, end party, skip votes |
+| `app/src/main/java/com/example/mimic/party/PartyModels.kt` | `shared/.../listentogether/PartyModels.kt`, `ServerClock.kt` | org.json instead of kotlinx-serialization; skip-vote fields |
+| `app/src/main/java/com/example/mimic/party/PartyInvite.kt` | `data/listentogether/JamInviteLink.kt` | MImic link shapes |
+| `app/src/main/java/com/example/mimic/player/PartySync.kt` | `playback/PartySync.kt`, `PartyPersonalQueueStash.kt` | resolution to each device's own source, MImic song ids, sync status, errors sit a song out |
+| `app/src/main/java/com/example/mimic/data/lyrics/LyricsQuery.kt` | `shared/.../lyrics/LyricsQuery.kt` (credit/packaging patterns) | extended (artist cleanup, version markers, "Artist - Title" readings) |
+
+The party server's only dependency: **gorilla/websocket 1.5.3** — BSD-2-Clause.
+
+## Services used (4.5)
+
+- **LRCLIB** (https://lrclib.net) — free community lyrics database with an open API. MImic sends
+  only title, artist, album and length, identifies itself in the User-Agent as LRCLIB asks, and
+  credits LRCLIB on every lyrics screen that shows its lyrics. BitChord's other lyrics providers
+  (unofficial Musixmatch / Genius / KuGou / Megalobiz endpoints) were deliberately not ported.
+
+## App icon (4.5)
+
+The neon-glass "E" icon is the owner's image (`docs/icon/source/mimic-e-neon-source.png`);
+`tools/icon/build_e_icon.py` only scales and centers it for Android's icon formats.
+
 ## Distribution (GPL-3.0)
 
 If you give the APK to anyone else, the GPL requires that they can get the complete corresponding

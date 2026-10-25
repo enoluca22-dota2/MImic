@@ -1,7 +1,7 @@
 /*
  * Part of MImic (GPL-3.0). Adapted from BitChord's app/.../playback/PartySync.kt and
  * PartyPersonalQueueStash.kt (Copyright (C) BitChord contributors, GPL-3.0,
- * https://github.com/KabirSinghBhatia/BitChord). Changes for MImic: party tracks are resolved to
+ * https://github.com/kushagrasinghx/BitChord). Changes for MImic: party tracks are resolved to
  * this device's own source (PartyTracks) asynchronously, songs are MImic songs (numeric media
  * ids), no queue tiers / crossfade player swap, a sync status for the UI, playback errors mark a
  * song unavailable on this device instead of skipping the party.
@@ -73,6 +73,8 @@ class PartySync(private val scope: CoroutineScope, private val player: () -> Pla
     private var startJob: Job? = null
     private val resolved = ConcurrentHashMap<String, Resolution>()
     private val resolving = ConcurrentHashMap.newKeySet<String>()
+    /** Lookups that failed for a transient reason and will be retried (not a "not available"). */
+    private val retrying = ConcurrentHashMap.newKeySet<String>()
     /** Party key of every song this device loaded for the party, so publishing never changes a track's identity. */
     private val keyBySongId = ConcurrentHashMap<Long, String>()
 
@@ -253,6 +255,7 @@ class PartySync(private val scope: CoroutineScope, private val player: () -> Pla
         val party = ListenTogether.state.value
         if (!party.inParty) return false
         val key = party.playback.track?.videoId ?: return true
+        Log.w(TAG, "playback error on the party song; sitting it out on this device")
         resolved[key] = Resolution.Unavailable
         updateStatus { it.copy(unavailableTitle = party.playback.track.title.ifBlank { "This song" }, sourceLabel = null) }
         return true
@@ -358,7 +361,8 @@ class PartySync(private val scope: CoroutineScope, private val player: () -> Pla
                 // Not playable here: stay quiet for this song instead of playing something else.
                 if (exo.playWhenReady) exo.pause()
                 deferredPlayPending = false
-                updateStatus { it.copy(unavailableTitle = track.title.ifBlank { "This song" }, resolving = false, sourceLabel = null, driftMs = null) }
+                val waiting = track.videoId in retrying
+                updateStatus { it.copy(unavailableTitle = if (waiting) null else track.title.ifBlank { "This song" }, resolving = waiting, sourceLabel = null, driftMs = null) }
                 return
             }
             null -> { resolveAsync(track); return }
@@ -444,11 +448,14 @@ class PartySync(private val scope: CoroutineScope, private val player: () -> Pla
             if (outcome.isFailure) {
                 // Couldn't look it up (offline, search failed): not a verdict — try again shortly.
                 Log.i(TAG, "party song lookup failed; retrying")
+                retrying += track.videoId
                 resolved[track.videoId] = Resolution.Unavailable
                 resolving.remove(track.videoId)
                 reconcile()
                 delay(RETRY_RESOLVE_MS)
+                retrying -= track.videoId
                 if (resolved[track.videoId] == Resolution.Unavailable) resolved.remove(track.videoId)
+                reconcile()
                 return@launch
             }
             if (song != null) {
@@ -468,6 +475,7 @@ class PartySync(private val scope: CoroutineScope, private val player: () -> Pla
     private fun load(party: ListenTogether.State, track: PartyTrack, song: Song) {
         if (loadingKey == track.videoId) return
         loadingKey = track.videoId
+        Log.i(TAG, "loading the party song from ${sourceOf(song)}")
         val exo = player() ?: run { loadingKey = null; return }
         val index = partyQueueIndexOf(party.queue, party.playback, track.videoId)
         val upcoming = if (index >= 0) party.queue.items.drop(index + 1).take(MAX_UPCOMING) else emptyList()
@@ -565,7 +573,7 @@ class PartySync(private val scope: CoroutineScope, private val player: () -> Pla
         const val INTENT_QUIET_MS = 4_500L
         const val MAX_UPCOMING = 25
         private const val DRIFT_LOG_EVERY_MS = 5_000L
-        private const val RETRY_RESOLVE_MS = 20_000L
+        private const val RETRY_RESOLVE_MS = 6_000L
     }
 }
 
