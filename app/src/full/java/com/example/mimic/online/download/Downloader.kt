@@ -233,7 +233,12 @@ object Downloader {
                 if (response.code !in 200..299) return@use false
                 val type = response.header("Content-Type").orEmpty().lowercase()
                 if ("mpegurl" in type || "vnd.apple.mpegurl" in type) return@use false
-                val head = response.body?.byteStream()?.readNBytes(32) ?: return@use false
+                val head = response.body?.byteStream()?.let { input ->
+                    val buf = ByteArray(32)
+                    var n = 0
+                    while (n < buf.size) { val r = input.read(buf, n, buf.size - n); if (r < 0) break; n += r }
+                    buf.copyOf(n)
+                } ?: return@use false
                 if (head.startsWith("#EXTM3U".toByteArray())) return@use false
                 when (format.codec?.lowercase()) {
                     "flac", "x-flac" -> head.startsWith("fLaC".toByteArray())

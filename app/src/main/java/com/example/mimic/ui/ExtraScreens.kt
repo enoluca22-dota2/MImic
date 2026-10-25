@@ -1,6 +1,8 @@
 package com.example.mimic.ui
 
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -114,6 +116,7 @@ fun SettingsScreen(
     onOpenRadioCountries: () -> Unit = {},
     onOpenLibraryStorage: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
+    onOpenAccounts: () -> Unit = {},
     onOpenAdvanced: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -249,6 +252,20 @@ fun SettingsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Library & Storage", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                 Text("Folders, minimum song length, refresh library, caches", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenAccounts).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Icon(androidx.compose.material.icons.Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Accounts & online music", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                Text("MImic account & sync, YouTube Music, streaming & download quality", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Row(
@@ -603,23 +620,27 @@ fun SongActionsSheet(
     onGoToAlbum: (() -> Unit)? = null,
     onGoToArtist: (() -> Unit)? = null,
     onShare: (() -> Unit)? = null,
+    /** Online songs (4.4): public link to copy / share. */
+    link: String? = null,
 ) {
     val sheetState = rememberModalBottomSheetState()
+    var showInfo by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-            Text(
-                song.title,
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
-            )
-            Text(
-                "${song.artist} · ${song.album}",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 24.dp, end = 24.dp, bottom = 8.dp),
-            )
+        Column(Modifier.fillMaxWidth().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(bottom = 24.dp)) {
+            // Header: the song's own artwork, title and artist (4.4).
+            Row(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                com.example.mimic.ui.components.AlbumArt(song, Modifier.size(56.dp), corner = 8)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(song.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface, maxLines = 2)
+                    Text(
+                        if (song.isOnline && song.album.startsWith("Unknown")) song.artist else "${song.artist} · ${song.album}",
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                    )
+                }
+            }
+            androidx.compose.material3.HorizontalDivider(Modifier.padding(vertical = 4.dp))
             ActionRow(if (isFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
                 if (isFavorite) "Remove from Liked Songs" else "Add to Liked Songs") { onToggleFavorite(); onDismiss() }
             ActionRow(Icons.Default.PlayArrow, "Play next") { onPlayNext(); onDismiss() }
@@ -635,7 +656,50 @@ fun SongActionsSheet(
             if (onShare != null) ActionRow(androidx.compose.material.icons.Icons.Default.Share, "Share audio file") { onShare(); onDismiss() }
             if (onGoToAlbum != null) ActionRow(androidx.compose.material.icons.Icons.Default.Album, "Go to album") { onGoToAlbum(); onDismiss() }
             if (onGoToArtist != null) ActionRow(androidx.compose.material.icons.Icons.Default.Person, "Go to artist") { onGoToArtist(); onDismiss() }
+            if (link != null) {
+                ActionRow(Icons.Default.ContentCopy, "Copy link") {
+                    val cm = context.getSystemService(android.content.ClipboardManager::class.java)
+                    cm?.setPrimaryClip(android.content.ClipData.newPlainText(song.title, link))
+                    onDismiss()
+                }
+                ActionRow(androidx.compose.material.icons.Icons.Default.Share, "Share link") {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(android.content.Intent.EXTRA_TEXT, "${song.title} — ${song.artist}\n$link")
+                    context.startActivity(android.content.Intent.createChooser(send, "Share song link"))
+                    onDismiss()
+                }
+            }
+            ActionRow(Icons.Outlined.Info, "Song info") { showInfo = true }
         }
+    }
+    if (showInfo) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showInfo = false },
+            title = { Text(song.title) },
+            text = {
+                val source = when {
+                    song.isDownloaded -> "Downloaded (${song.provider.label})"
+                    song.isOnline -> "Streams from YouTube Music / YouTube"
+                    song.provider == com.example.mimic.data.MusicProvider.NAVIDROME -> "Streams from your Navidrome server"
+                    else -> "File on this phone"
+                }
+                val format = song.uri.substringAfterLast('.', "").substringBefore('?').lowercase()
+                    .takeIf { song.isDownloaded || song.uri.startsWith("file:") }?.let {
+                        when (it) { "webm" -> "Opus in WebM (lossy)"; "m4a" -> "AAC in MP4 (lossy)"; "mp3" -> "MP3 (lossy)"; "flac" -> "FLAC (lossless)"; else -> it.uppercase() }
+                    }
+                Text(
+                    buildString {
+                        appendLine("Artist: ${song.artist}")
+                        appendLine("Album: ${song.album}")
+                        if (song.durationMs > 0) appendLine("Length: ${song.durationMs / 60000}:${"%02d".format((song.durationMs / 1000) % 60)}")
+                        appendLine("Source: $source")
+                        format?.let { appendLine("Format: $it") }
+                        com.example.mimic.data.online.OnlineIds.videoIdOf(song.remoteId)?.let { append("YouTube id: $it") }
+                    }.trim(),
+                )
+            },
+            confirmButton = { TextButton(onClick = { showInfo = false }) { Text("Close") } },
+        )
     }
 }
 

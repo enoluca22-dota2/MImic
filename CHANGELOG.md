@@ -1,5 +1,36 @@
 # Changelog
 
+## 4.4.0-beta.1
+Online music inside MImic, built on BitChord's streaming and download code (GPL-3.0; see
+THIRD_PARTY_NOTICES.md). Phone music, Navidrome, radio, themes and the existing link downloader
+are unchanged.
+
+- **Search → YouTube Music** (full edition): live suggestions, filters (All / Songs / Albums /
+  Artists / Playlists), artist / album / playlist pages, real titles, artists, lengths and each
+  track's own artwork. Where YouTube Music's song catalogue isn't offered (it answers "No results"
+  from Albania), songs come from YouTube's own search instead, clearly labelled, with "Load more".
+- **Streaming in MImic's own player**: online songs are queued like any other song and resolved
+  to a fresh audio stream only when played (BitChord's InnerTubeX → NewPipe resolver, with a
+  byte probe before playback and bounded retries). Background play, lock screen, notification,
+  queue, favorites and playlists work as for other songs. Quality: best or data saver,
+  separately for Wi-Fi and mobile data.
+- **Downloads**: ⋮ → Download for offline, or Download on an album / playlist. Runs in the
+  background with a notification (survives closing the app, waits for a connection, optional
+  Wi-Fi only), never saves a song twice, retries network failures up to 3 times. Files keep their
+  real format (Opus/WebM or AAC/M4A; optional real MP3 re-encode) with title, artist, album and
+  the track's own cover.
+- **Lyrics** now also come from LRCLIB when a song has none of its own, matched on title, artist
+  and length (a different recording gets no lyrics rather than wrong ones), cached for offline.
+- **Song menu**: artwork header, Copy link, Share link, Song info, and Go to artist / album for
+  online songs.
+- **Accounts & online music** (Settings): optional MImic account (Continue with Google + sync of
+  playlists, favorites, history, radio countries, themes between phones) — needs a Firebase
+  project first (docs/ACCOUNT_SETUP.md), so it shows "not set up" in this build; and optional
+  Connect YouTube Music (Google's own sign-in page; MImic never sees the password). The two are
+  separate. Guest mode remains the default.
+- Database v8 (adds `online_tracks`; nothing existing is changed). Kotlin 2.3.20, core-library
+  desugaring for Android 7.
+
 ## 4.3.1-beta.1
 A diagnostics release for YouTube links that fail on some phones (reported on a Samsung Galaxy
 S25 Ultra while the same link works on a Xiaomi). It does not claim to fix that phone yet: it

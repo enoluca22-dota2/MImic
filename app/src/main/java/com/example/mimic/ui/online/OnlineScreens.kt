@@ -102,6 +102,11 @@ fun LazyListScope.onlineResults(
     onOpened: () -> Unit,
     recent: List<String> = emptyList(),
     onRecent: (String) -> Unit = {},
+    /** Tracks from "Load more" pages, appended after the first page. */
+    moreTracks: List<com.example.mimic.data.online.OnlineTrack> = emptyList(),
+    canLoadMore: Boolean = false,
+    loadingMore: Boolean = false,
+    onLoadMore: () -> Unit = {},
 ) {
     item(key = "on_filters") {
         Row(
@@ -145,8 +150,16 @@ fun LazyListScope.onlineResults(
             }
             collectionRows(r.collections, nav, onOpened)
             if (r.tracks.isNotEmpty()) {
-                item(key = "on_songs_h") { SectionTitle("Songs") }
-                songItems(r.tracks.map { it.toSong() }, env, keyPrefix = "on")
+                item(key = "on_songs_h") { SectionTitle(if (r.tracksFromYouTube) "Songs · from YouTube" else "Songs") }
+                if (r.tracksFromYouTube) item(key = "on_yt_note") {
+                    InlineEmpty("YouTube Music's song catalog isn't available on this connection, so these are YouTube's own results.")
+                }
+                songItems((r.tracks + moreTracks).distinctBy { it.videoId }.map { it.toSong() }, env, keyPrefix = "on")
+                if (canLoadMore) item(key = "on_more") {
+                    Box(Modifier.fillMaxWidth().padding(12.dp), contentAlignment = Alignment.Center) {
+                        if (loadingMore) CircularProgressIndicator() else OutlinedButton(onClick = onLoadMore) { Text("Load more") }
+                    }
+                }
             }
         }
     }

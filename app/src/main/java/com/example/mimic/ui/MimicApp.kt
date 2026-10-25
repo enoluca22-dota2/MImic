@@ -334,6 +334,9 @@ fun MimicApp(viewModel: PlayerViewModel) {
             composable("settings/library") {
                 InsetScreen(innerPadding) { com.example.mimic.ui.settings.LibraryStorageScreen(viewModel, onBack = back) }
             }
+            composable("settings/accounts") {
+                InsetScreen(innerPadding) { com.example.mimic.ui.settings.AccountsScreen(viewModel, onBack = back) }
+            }
             composable("settings/backup") {
                 InsetScreen(innerPadding) { com.example.mimic.ui.settings.BackupRestoreScreen(viewModel, onBack = back) }
             }
@@ -387,6 +390,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenRadioCountries = { navController.navigate("radio/countries") },
                     onOpenLibraryStorage = { navController.navigate("settings/library") },
                     onOpenBackup = { navController.navigate("settings/backup") },
+                    onOpenAccounts = { navController.navigate("settings/accounts") },
                     onOpenAdvanced = { navController.navigate("settings/advanced") },
                 )
             }
@@ -616,9 +620,16 @@ fun MimicApp(viewModel: PlayerViewModel) {
             onRemoveDownload = if (song.isDownloaded) ({ viewModel.removeDownload(song) }) else null,
             downloadProgress = song.remoteId?.let { progress[it] },
             onCancelDownload = { viewModel.cancelDownload(song) },
-            onGoToAlbum = { nowPlayingOpen = false; nav.openAlbum(song.albumKey) },
-            onGoToArtist = { nowPlayingOpen = false; nav.openArtist(song.artistKey) },
+            onGoToAlbum = {
+                nowPlayingOpen = false
+                viewModel.onlineAlbumOf(song)?.takeIf { !song.isDownloaded || song.isOnline }?.let(nav.openOnline) ?: nav.openAlbum(song.albumKey)
+            },
+            onGoToArtist = {
+                nowPlayingOpen = false
+                viewModel.onlineArtistOf(song)?.let(nav.openOnline) ?: nav.openArtist(song.artistKey)
+            },
             onShare = { shareSong(song) },
+            link = viewModel.linkOf(song),
         )
     }
 

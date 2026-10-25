@@ -9,6 +9,13 @@ plugins {
 // Release signing is read from a gitignored keystore.properties at the project root.
 // When it is absent (e.g. a fresh clone or CI without secrets) the release build is
 // simply left unsigned instead of failing — no keys ever live in the repo.
+// MImic account (4.4): Firebase project values from a gitignored firebase.properties (see
+// docs/ACCOUNT_SETUP.md). Absent → sign-in shows "not configured"; nothing secret is in the repo.
+val firebaseProps = Properties().apply {
+    rootProject.file("firebase.properties").takeIf { it.exists() }?.reader()?.use { load(it) }
+}
+fun firebaseField(key: String) = "\"" + (firebaseProps.getProperty(key) ?: "").replace("\"", "") + "\""
+
 val keystorePropsFile = rootProject.file("keystore.properties")
 val hasKeystore = keystorePropsFile.exists()
 val keystoreProps = Properties()
@@ -31,7 +38,7 @@ android {
         // ── App version: change ONLY versionName for a release (see docs/RELEASING.md). versionCode
         // is derived from it (4.1.2 → 400_100_299; betas get their own lower codes), so every
         // release is higher than the last and installs over it. 3.3 was versionCode 19.
-        versionName = "4.3.1-beta.1"
+        versionName = "4.4.0-beta.1"
         versionCode = versionCodeFor(versionName!!)
 
         // In-app updater: the public repository whose GitHub Releases MImic trusts (docs/RELEASING.md).
@@ -42,6 +49,11 @@ android {
         buildConfigField("String", "RELEASE_CERT_SHA256", "\"C03C51075A49A049387185C775626074368AA9F4220EB5BA0E74CC4A4F88087D\"")
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        buildConfigField("String", "FIREBASE_API_KEY", firebaseField("firebase.apiKey"))
+        buildConfigField("String", "FIREBASE_APP_ID", firebaseField("firebase.appId"))
+        buildConfigField("String", "FIREBASE_PROJECT_ID", firebaseField("firebase.projectId"))
+        buildConfigField("String", "GOOGLE_WEB_CLIENT_ID", firebaseField("google.webClientId"))
 
     }
 
@@ -109,6 +121,8 @@ android {
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
+        // java.time / java.util.Base64 used by the ported BitChord code, on Android 7 (API 24-25).
+        isCoreLibraryDesugaringEnabled = true
     }
     buildFeatures {
         compose = true
@@ -121,6 +135,12 @@ android {
  * BitChord's patched copy at the same path. A release build merges all dex inputs and rejects the
  * duplicate, so the library's copy is stripped from the jar first (same approach as BitChord).
  */
+// Full edition: protobuf-javalite 4.x (NewPipe/BitChord) already contains the well-known types
+// that Firebase ships separately as protolite-well-known-types; keep one copy (the newer runtime).
+configurations.matching { it.name.startsWith("full") }.configureEach {
+    exclude(group = "com.google.firebase", module = "protolite-well-known-types")
+}
+
 val newPipeExtractorRaw: Configuration by configurations.creating {
     isTransitive = false
     isCanBeConsumed = false
@@ -138,6 +158,7 @@ val newPipeExtractorStripped = tasks.register<org.gradle.api.tasks.bundling.Jar>
 }
 
 dependencies {
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.compose.material3)
@@ -192,6 +213,13 @@ dependencies {
     "fullImplementation"("io.ktor:ktor-client-content-negotiation:3.5.2")
     "fullImplementation"("io.ktor:ktor-serialization-kotlinx-json:3.5.2")
     "fullImplementation"("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    // MImic account + sync (4.4): Sign in with Google via Credential Manager, Firebase Auth, Firestore.
+    implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
+    implementation("com.google.firebase:firebase-auth")
+    implementation("com.google.firebase:firebase-firestore")
+    implementation("androidx.credentials:credentials:1.3.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.3.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
     implementation(libs.kyant.backdrop)
     implementation(libs.kyant.shapes)
     implementation(libs.material.color.utilities)

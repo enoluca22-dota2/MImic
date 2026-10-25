@@ -96,7 +96,21 @@ class DiagnosticsViewModel(app: Application) : AndroidViewModel(app) {
             used != null -> "$used (bundled with MImic)"
             else -> null
         }
-        diag.report(version, c.ytDlpUpdater.lastCheckMillis, c.engineState())
+        diag.report(version, c.ytDlpUpdater.lastCheckMillis, c.engineState()) + "\n" + onlineSection()
+    }
+
+    /** 4.4: online music (BitChord resolver) outcomes — categories and sanitized messages only. */
+    private suspend fun onlineSection(): String = buildString {
+        val fmt = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.US)
+        appendLine("== Online music (streaming / downloads) ==")
+        appendLine("Stream quality: Wi-Fi ${com.example.mimic.online.OnlineQuality.wifi.label}, mobile ${com.example.mimic.online.OnlineQuality.mobile.label}; download format ${com.example.mimic.online.OnlineQuality.downloadFormat.label}")
+        val recent = com.example.mimic.online.OnlineDiagnostics.recent()
+        if (recent.isEmpty()) appendLine("No online playback or download attempts yet.")
+        recent.forEach { e -> appendLine("${fmt.format(java.util.Date(e.at))}  ${e.what}  ${e.videoId}  ${e.category}  ${e.message}") }
+        recent.firstOrNull { it.category != "ok" }?.let { appendLine("Last failure: ${fmt.format(java.util.Date(it.at))} (${it.category})") }
+        appendLine()
+        appendLine("-- Resolver log (sanitized) --")
+        append(com.example.mimic.online.OnlineDiagnostics.resolverLog(80))
     }
 
     suspend fun reportFile() = withContext(Dispatchers.IO) { diag.writeReportFile(reportText()) }

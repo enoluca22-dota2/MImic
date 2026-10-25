@@ -97,6 +97,10 @@ data class OnlineCollection(
 data class OnlineSearchResults(
     val tracks: List<OnlineTrack>,
     val collections: List<OnlineCollection>,
+    /** The tracks came from regular YouTube search (YouTube Music's catalog had none here). */
+    val tracksFromYouTube: Boolean = false,
+    /** Opaque token for the next page of tracks, or null when there is no more. */
+    val nextToken: String? = null,
 )
 
 /** What an album / playlist / artist page shows. */

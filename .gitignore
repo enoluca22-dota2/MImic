@@ -34,3 +34,7 @@ cloud.properties
 /dist/
 *.apk
 *.aab
+
+# Firebase project values for the MImic account (4.4) — per-user, see docs/ACCOUNT_SETUP.md
+firebase.properties
+google-services.json

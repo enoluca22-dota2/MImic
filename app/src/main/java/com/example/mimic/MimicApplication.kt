@@ -53,6 +53,12 @@ class AppContainer(application: Application) {
         )
     }
 
+    /** Optional MImic Google account + sync between phones (4.4). */
+    val mimicAccount: com.example.mimic.data.account.MimicAccount by lazy { com.example.mimic.data.account.MimicAccount(application) }
+    val accountSync: com.example.mimic.data.account.AccountSync by lazy {
+        com.example.mimic.data.account.AccountSync(application, mimicAccount, backupManager, onlineTracks)
+    }
+
     val castController: com.example.mimic.cast.CastController by lazy { com.example.mimic.cast.CastController(application) }
 
     /** GitHub Releases updater (Settings → App Updates, MImic 4.0). */

@@ -183,6 +183,9 @@ object StreamResolver {
 
     private val init by lazy { NewPipe.init(OkHttpDownloader()) }
 
+    /** MImic: makes sure NewPipe is initialised with this downloader (used by the YouTube search fallback). */
+    fun ensureNewPipe() { init }
+
     /**
      * The extractor's own leash on [Http.client].
      *

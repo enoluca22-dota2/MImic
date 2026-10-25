@@ -121,7 +121,7 @@ object OnlineMusic {
             OnlineSearchFilter.ARTISTS -> SearchFilter.ARTISTS
             OnlineSearchFilter.PLAYLISTS -> SearchFilter.PLAYLISTS
         }
-        return YtMusicRepository.searchPage(query, f).map { page ->
+        val catalog = YtMusicRepository.searchPage(query, f).map { page ->
             val tracks = ArrayList<OnlineTrack>()
             val collections = ArrayList<OnlineCollection>()
             for (row in page.rows) when (row) {
@@ -131,6 +131,22 @@ object OnlineMusic {
             }
             OnlineSearchResults(tracks.distinctBy { it.videoId }, collections.distinctBy { it.browseId })
         }
+        // YouTube Music's song catalog is region-limited (e.g. not offered in Albania). When it has
+        // no tracks for a song search, use YouTube's own results so the user still gets music.
+        val wantsTracks = filter == OnlineSearchFilter.ALL || filter == OnlineSearchFilter.SONGS
+        val r = catalog.getOrNull()
+        if (!wantsTracks || (r != null && r.tracks.isNotEmpty())) return catalog
+        val yt = runCatching { YouTubeSearch.search(query) }
+        return yt.fold(
+            onSuccess = { p -> Result.success(OnlineSearchResults(p.tracks.distinctBy { it.videoId }, r?.collections.orEmpty(), true, p.nextToken)) },
+            onFailure = { e -> if (r != null) Result.success(r) else Result.failure(e) },
+        )
+    }
+
+    /** The next page of tracks for a [OnlineSearchResults.nextToken]. */
+    suspend fun searchMore(token: String): Result<OnlineSearchResults> = runCatching {
+        val p = YouTubeSearch.more(token)
+        OnlineSearchResults(p.tracks, emptyList(), true, p.nextToken)
     }
 
     suspend fun suggestions(input: String): List<String> =
@@ -143,7 +159,10 @@ object OnlineMusic {
                 title = page.name ?: c.title,
                 subtitle = page.monthlyListenerCount ?: page.subscriberCountText ?: c.subtitle,
                 artworkUrl = page.thumbnailUrl.artworkAt(720) ?: c.artworkUrl,
-                tracks = page.songs.map { it.toTrack() }.distinctBy { it.videoId },
+                tracks = page.songs.map { it.toTrack() }.distinctBy { it.videoId }.ifEmpty {
+                    // Region without YouTube Music's catalog: the artist's own YouTube results.
+                    runCatching { YouTubeSearch.search(page.name ?: c.title).tracks }.getOrDefault(emptyList())
+                },
                 related = page.sections.flatMap { shelf -> shelf.items.mapNotNull { it.toCollection() } }.distinctBy { it.browseId },
             )
         }

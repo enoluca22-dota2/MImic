@@ -57,6 +57,7 @@ import com.example.mimic.ui.components.SongRow
 import com.example.mimic.ui.designsystem.LocalGlass
 import com.example.mimic.ui.library.songItems
 import com.example.mimic.ui.online.onlineResults
+import kotlinx.coroutines.launch
 
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
@@ -103,6 +104,24 @@ fun SearchScreen(
             onSuccess = { com.example.mimic.ui.online.OnlineSearchState.Done(it) },
             onFailure = { com.example.mimic.ui.online.OnlineSearchState.Error(com.example.mimic.ui.online.onlineErrorText(it)) },
         )
+    }
+    // "Load more" pages for the current online search (reset whenever the search changes).
+    var moreTracks by remember(query, onlineFilter, onlineState) { mutableStateOf(emptyList<com.example.mimic.data.online.OnlineTrack>()) }
+    var moreToken by remember(query, onlineFilter, onlineState) {
+        mutableStateOf((onlineState as? com.example.mimic.ui.online.OnlineSearchState.Done)?.results?.nextToken)
+    }
+    var loadingMore by remember(query, onlineFilter, onlineState) { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
+    val loadMore: () -> Unit = {
+        val token = moreToken
+        if (token != null && !loadingMore) {
+            loadingMore = true
+            scope.launch {
+                vm.onlineSearchMore(token).onSuccess { moreTracks = moreTracks + it.tracks; moreToken = it.nextToken }
+                    .onFailure { moreToken = null }
+                loadingMore = false
+            }
+        }
     }
     val onlineSuggestions by androidx.compose.runtime.produceState(emptyList<String>(), online, query) {
         if (!online || query.isBlank()) { value = emptyList(); return@produceState }
@@ -179,6 +198,7 @@ fun SearchScreen(
                     suggestions = onlineSuggestions, onSuggestion = { query = it; focus.clearFocus() },
                     onRetry = { onlineAttempt++ }, env = env, nav = nav, onOpened = { saveQuery() },
                     recent = settings.recentSearches, onRecent = { query = it },
+                    moreTracks = moreTracks, canLoadMore = moreToken != null, loadingMore = loadingMore, onLoadMore = loadMore,
                 )
             }
             return@LazyColumn

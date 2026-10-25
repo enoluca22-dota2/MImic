@@ -21,6 +21,7 @@ object OnlineMusic {
 
     fun init(context: Context) = Unit
     suspend fun search(query: String, filter: OnlineSearchFilter): Result<OnlineSearchResults> = Result.failure(unavailable)
+    suspend fun searchMore(token: String): Result<OnlineSearchResults> = Result.failure(unavailable)
     suspend fun suggestions(input: String): List<String> = emptyList()
     suspend fun collection(c: OnlineCollection): Result<OnlineCollectionPage> = Result.failure(unavailable)
     fun wrap(upstream: DataSource.Factory): DataSource.Factory = upstream

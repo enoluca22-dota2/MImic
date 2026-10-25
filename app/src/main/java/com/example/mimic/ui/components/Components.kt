@@ -203,7 +203,7 @@ fun SourceIndicator(song: Song, isDownloading: Boolean = false) {
         song.isDownloaded -> Icon(Icons.Default.DownloadDone, contentDescription = "Downloaded", tint = scheme.primary, modifier = mod)
         song.source == SongSource.SERVER -> Icon(Icons.Default.CloudQueue, contentDescription = "On server", tint = scheme.onSurfaceVariant, modifier = mod)
         song.source == SongSource.CLOUD -> Icon(Icons.Default.Cloud, contentDescription = "In ${song.provider.label}", tint = scheme.onSurfaceVariant, modifier = mod)
-        song.source == SongSource.ONLINE -> Icon(Icons.Default.CloudQueue, contentDescription = "Streams from YouTube Music", tint = scheme.onSurfaceVariant, modifier = mod)
+        song.source == SongSource.ONLINE -> Icon(Icons.Default.CloudQueue, contentDescription = "Streams online", tint = scheme.onSurfaceVariant, modifier = mod)
         else -> Unit
     }
 }

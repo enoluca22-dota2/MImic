@@ -32,5 +32,11 @@ object OnlineDiagnostics {
     fun recent(): List<Entry> = entries.toList()
 
     /** Sanitized resolver log tail (BitChord's TrackLog), safe to include in a shared report. */
-    suspend fun resolverLog(lines: Int = 120): String = DiagnosticText.clean(TrackLog.recent(lines))
+    suspend fun resolverLog(lines: Int = 120): String = redact(DiagnosticText.clean(TrackLog.recent(lines)))
+
+    /** Masks anything token-shaped (visitor data, PoTokens, channel / session ids) and email addresses. */
+    internal fun redact(text: String): String = text
+        .replace(Regex("""[A-Za-z0-9_%=+/-]{28,}"""), "[redacted]")
+        .replace(Regex("""(?i)(pageId|dataSyncId|authUser|cookie|SAPISID\w*)=\S+"""), "$1=[redacted]")
+        .replace(Regex("""[\w.+-]+@[\w-]+\.[\w.]+"""), "[email]")
 }

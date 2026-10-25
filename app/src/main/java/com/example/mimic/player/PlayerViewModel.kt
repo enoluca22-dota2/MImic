@@ -655,6 +655,44 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnectCast() = castController.disconnect()
 
+    // ---- MImic account + sync (4.4) ----
+
+    val accountState: StateFlow<com.example.mimic.data.account.MimicAccount.State> get() = container.mimicAccount.state
+    val syncStatus: StateFlow<com.example.mimic.data.account.AccountSync.Status> get() = container.accountSync.status
+    val syncEnabled: Boolean get() = container.accountSync.enabled
+
+    fun signInMimic(activity: android.app.Activity) {
+        viewModelScope.launch {
+            container.mimicAccount.signIn(activity)
+            if (container.mimicAccount.uid != null) syncNow()
+        }
+    }
+
+    fun signOutMimic() { viewModelScope.launch { container.mimicAccount.signOut() } }
+
+    fun setSyncEnabled(on: Boolean) { container.accountSync.enabled = on; if (on) syncNow() }
+
+    fun syncNow() {
+        viewModelScope.launch {
+            if (container.mimicAccount.uid == null) return@launch
+            container.accountSync.syncNow(knownSongs.value)
+        }
+    }
+
+    fun restoreSyncedSettings() {
+        viewModelScope.launch {
+            val ok = runCatching { container.accountSync.restoreSettings(knownSongs.value) }.getOrDefault(false)
+            _messages.tryEmit(if (ok) "Settings restored from your other phone" else "No synced settings from another phone yet")
+        }
+    }
+
+    fun deleteCloudData() {
+        viewModelScope.launch {
+            val ok = runCatching { container.accountSync.deleteCloudData() }.getOrDefault(false)
+            _messages.tryEmit(if (ok) "Cloud copy deleted. Everything on this phone is unchanged." else "Couldn't delete the cloud copy")
+        }
+    }
+
     // ---- Online music (4.4): search, pages, downloads ----
 
     val onlineAvailable: Boolean get() = com.example.mimic.online.OnlineMusic.AVAILABLE
@@ -667,6 +705,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     suspend fun onlineSearch(query: String, filter: com.example.mimic.data.online.OnlineSearchFilter) =
         com.example.mimic.online.OnlineMusic.search(query, filter).onSuccess { r -> r.tracks.forEach { onlineSeen[it.videoId] = it } }
+
+    suspend fun onlineSearchMore(token: String) =
+        com.example.mimic.online.OnlineMusic.searchMore(token).onSuccess { r -> r.tracks.forEach { onlineSeen[it.videoId] = it } }
 
     suspend fun onlineSuggestions(input: String): List<String> = com.example.mimic.online.OnlineMusic.suggestions(input)
 
@@ -687,6 +728,21 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 durationMs = song.durationMs, artworkUrl = song.albumArtUri?.takeIf { it.startsWith("http") },
             )
     }
+
+    /** The YouTube Music artist / album pages behind an online song, when known. */
+    fun onlineArtistOf(song: Song): com.example.mimic.data.online.OnlineCollection? =
+        onlineTrackOf(song)?.takeIf { !it.artistId.isNullOrBlank() }?.let {
+            com.example.mimic.data.online.OnlineCollection(it.artistId!!, com.example.mimic.data.online.OnlineCollectionKind.ARTIST, it.artist, "Artist", null)
+        }
+
+    fun onlineAlbumOf(song: Song): com.example.mimic.data.online.OnlineCollection? =
+        onlineTrackOf(song)?.takeIf { !it.albumId.isNullOrBlank() }?.let {
+            com.example.mimic.data.online.OnlineCollection(it.albumId!!, com.example.mimic.data.online.OnlineCollectionKind.ALBUM, it.album ?: song.album, it.artist, song.albumArtUri)
+        }
+
+    /** Public link for an online song (YouTube Music watch page), or null for any other source. */
+    fun linkOf(song: Song): String? =
+        com.example.mimic.data.online.OnlineIds.videoIdOf(song.remoteId)?.let { "https://music.youtube.com/watch?v=$it" }
 
     private fun rememberOnline(list: List<Song>, inLibrary: Boolean = false) {
         val tracks = list.filter { it.isOnline }.mapNotNull(::onlineTrackOf)
@@ -1459,7 +1515,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    // ---- Lyrics (owned / local audio only; nothing is fetched from the internet) ----
+    // ---- Lyrics: imported .lrc → embedded in the file → LRCLIB (4.4, cached for offline) ----
 
     private val lyricsDir get() = java.io.File(getApplication<Application>().filesDir, "lyrics")
     private val lyricsReload = MutableStateFlow(0)
@@ -1471,7 +1527,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
             .flowOn(kotlinx.coroutines.Dispatchers.IO)
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LyricsState.Loading)
 
-    private fun loadLyrics(song: Song): LyricsState {
+    private suspend fun loadLyrics(song: Song): LyricsState {
         // 1. A .lrc file the user added for this song.
         val imported = java.io.File(lyricsDir, "${song.id}.lrc")
         if (imported.isFile) {
@@ -1486,9 +1542,24 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }.getOrNull()
             tags?.lyrics?.let { text -> com.example.mimic.data.audio.Lyrics.parse(text, "Embedded in the file")?.let { return LyricsState.Found(it) } }
-            return LyricsState.None("No lyrics in this file. Add a .lrc file to show them.")
         }
-        return LyricsState.None("Lyrics are read from files on this phone. Download the song, or add a .lrc file.")
+        // 3. LRCLIB, matched on title + artist + duration; the answer is cached so it works offline.
+        if (com.example.mimic.data.radio.RadioIds.isRadio(song.id)) return LyricsState.None("No lyrics for live radio.")
+        val cache = java.io.File(lyricsDir, "lrclib/${song.id}.lrc")
+        if (cache.isFile) {
+            com.example.mimic.data.audio.Lyrics.parse(cache.readText(), "LRCLIB")?.let { return LyricsState.Found(it) }
+        }
+        val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching { com.example.mimic.data.audio.LrcLib.find(song.title, song.artist, song.durationMs) }
+        }
+        found.getOrNull()?.let { text ->
+            com.example.mimic.data.audio.Lyrics.parse(text, "LRCLIB")?.let { lyrics ->
+                runCatching { cache.parentFile?.mkdirs(); cache.writeText(text) }
+                return LyricsState.Found(lyrics)
+            }
+        }
+        return if (found.isFailure) LyricsState.None("Couldn't reach the lyrics service. Check the connection, or add a .lrc file.")
+        else LyricsState.None("No lyrics found for this exact recording. You can add a .lrc file.")
     }
 
     /** Attach a user-picked .lrc / .txt file to the current song (copied into app storage). */
