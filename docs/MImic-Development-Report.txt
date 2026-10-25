@@ -1,0 +1,367 @@
+MIMIC — COMPLETE DEVELOPMENT REPORT
+===================================
+Last updated: 2026-10-25 (session: MImic x BitChord integration, release 4.4.0-beta.1)
+Keep this file current after every session. Plain text, written so it can be pasted into a
+new ChatGPT / Claude conversation without access to the repository.
+
+
+A. PROJECT IDENTITY
+-------------------
+App name ............ MImic
+Current version ..... 4.4.0-beta.1  (versionCode 400400034)
+Application ID ...... com.example.mimic  (never change)
+Repository .......... https://github.com/enoluca22-dota2/MImic  (PUBLIC — owner's decision on
+                      2026-10-25, because the in-app updater downloads release assets anonymously)
+Project location .... C:\Users\Eno\AndroidStudioProjects\MImic
+Default branch ...... main
+License ............. GPL-3.0 (LICENSE); third-party notices in THIRD_PARTY_NOTICES.md
+Stack ............... Kotlin 2.3.20, Jetpack Compose (BOM 2026.02.01, Material 3), AndroidX
+                      Media3 1.5.1 (ExoPlayer + MediaSessionService), Room 2.7.1 (KSP 2.3.6),
+                      DataStore, OkHttp 4.12, WorkManager 2.11, Coil 2.7, manual DI (AppContainer).
+                      AGP 9.4.1 with built-in Kotlin, Gradle 9.6, JDK = Android Studio jbr.
+minSdk / targetSdk .. 24 (Android 7.0) / 37; core-library desugaring on (java.time on API 24-25)
+Editions (flavors) .. full (default; yt-dlp link downloader + online music; GPL code) and
+                      standard (no downloader, no online music). Same application id.
+Signing ............. ~/.android/debug.keystore via gitignored keystore.properties; certificate
+                      SHA-256 C03C51075A49A049387185C775626074368AA9F4220EB5BA0E74CC4A4F88087D,
+                      SHA-1 78:0E:4B:F7:03:93:19:BB:F0:99:D5:F7:A2:3B:C6:9C:00:5A:5F:F9.
+                      Release builds are signed locally by scripts/release.sh; never regenerate.
+versionCode rule .... (X*1e6 + Y*1e3 + Z)*100 + suffix; stable 99, alpha N, beta 33+N, rc 66+N.
+
+
+B. ARCHITECTURE
+---------------
+UI: Compose, single activity (MainActivity, FragmentActivity for the Cast picker), navigation in
+  ui/MimicApp.kt (NavHost) + ui/navigation/TopLevelNavigation (tabs Home / Search / Library /
+  Radio / Downloads / Settings). Sub-screens are wrapped in InsetScreen for system insets.
+State: player/PlayerViewModel.kt (one AndroidViewModel) holds library flows, playback state,
+  downloads, online search, account actions. AppContainer (MimicApplication.kt) builds
+  repositories lazily.
+Playback: player/PlaybackService.kt — ONE Media3 MediaSessionService + ExoPlayer for every source.
+  Data source = OnlineMusic.wrap(DefaultDataSource): URIs content:// (phone), file:// (downloads),
+  http(s):// (Navidrome, radio) go to Media3's DefaultDataSource unchanged; mimic-yt://track?v=ID
+  (online) is resolved at open time by BitChord's StreamResolver and read in 2 MB ranges
+  (ChunkedDataSource). MediaSession gives notification, lock screen, Bluetooth/headset keys, audio
+  focus, becoming-noisy pause. The service records play history and persists the queue
+  (PlaybackStateStore: ids/index/position only). PlaybackEffects: speed/pitch, skip silence,
+  crossfade, ReplayGain, EQ, sleep timer.
+Library: data/UnifiedLibrary.merge(local, server, downloads, onlineSaved) is the single source of
+  truth (PlayerViewModel.songs). Song identity: phone = MediaStore id; Navidrome = hash of server
+  id with bit 32 set; legacy cloud downloads = 62-bit in [2^61,2^62); online YouTube = 62-bit
+  SHA-256 of "yt:<videoId>" in [2^62,2^63); radio = negative. A download shares its source's id.
+  PlayerViewModel.knownSongs = songs + online tracks only played (history / queue restore).
+Database: data/db/MimicDatabase.kt, Room v8. Tables: favorites, play_history, playlists,
+  playlist_songs, custom_themes, downloads, favorite_groups, pending_server_ops (stars),
+  cloud_accounts/cloud_items (legacy, unused), radio_stations, online_tracks (v8). Migrations are
+  additive and listed in MimicDatabase.ALL_MIGRATIONS (androidTest covers v4 → v8).
+Navidrome/OpenSubsonic: data/server/ (SubsonicClient salted-token auth with one salt per session,
+  ServerCredentialsRepository with the password AES-GCM encrypted by an Android Keystore key).
+  Remote access over Tailscale = just the server address (docs/REMOTE_ACCESS.md).
+Online music (full edition): app/src/full/java/com/example/mimic/online/ — see section D.
+Downloads: Navidrome → data/DownloadRepository.download (in-app, foreground of the VM);
+  online → OnlineDownloadWorker (WorkManager foreground dataSync) → DownloadRepository.recordOnline;
+  links (YouTube/TikTok URLs) → full-edition downloader/ (yt-dlp, own DB mimic_downloader.db,
+  DownloadService). All finished files live in app storage (filesDir/downloads, …/online).
+Lyrics: player/PlayerViewModel.loadLyrics: imported .lrc (filesDir/lyrics/<id>.lrc) → embedded
+  tags (data/audio/AudioTags) → LRCLIB (data/audio/LrcLib.kt, strict title/artist/±4 s duration
+  match, cached filesDir/lyrics/lrclib/<id>.lrc). ui/player/PlayerSheets LyricsSheet: synced line
+  highlight, auto-scroll, tap a line to seek, source shown.
+Accounts: data/account/MimicAccount.kt (Credential Manager "Sign in with Google" → Firebase Auth,
+  Firebase initialised from BuildConfig fields read from gitignored firebase.properties) and
+  data/account/AccountSync.kt (Firestore users/{uid}/devices/{deviceId} snapshots built with the
+  4.3 backup codec; additive merge via SongMatcher + RestorePlanner). YouTube Music connection is
+  separate: online/YouTubeMusicAccount.kt (BitChord WebView login on accounts.google.com, cookie
+  stored by AuthStore in encrypted prefs). UI: ui/settings/AccountsScreen.kt.
+Radio: data/radio/ (bundled stations + Radio Browser directory, countries list default Albania,
+  +/− add/remove, DataStore radio_prefs), ui/radio/.
+Themes: Theme Studio (14 presets + custom themes JSON v2, glass styles), Player Layout Studio
+  (Classic / Immersive / Compact / Dynamic), Home & navigation customisation, Album-Adaptive colours.
+Updater: update/ (UpdateManager, UpdateCheckWorker): reads GitHub Releases of the public repo,
+  picks the APK for the phone's CPU, verifies SHA-256 (SHA256SUMS.txt), package, version and the
+  pinned signing certificate, then hands it to Android's installer (user confirms).
+Cast: cast/ (Media3 CastPlayer + LanMediaServer token relay). Backup: data/backup/ (JSON file).
+Diagnostics: Settings → Advanced → Download Diagnostics (full): link-analysis attempts and, since
+  4.4, an "Online music" section (OnlineDiagnostics: categories + sanitized messages + redacted
+  resolver log). Shared as TXT through the share sheet.
+
+
+C. FEATURE INVENTORY (status as of 4.4.0-beta.1)
+--------------------------------------------------
+Statuses: WORKING (verified this or an earlier session) / PARTIAL / BLOCKED / NOT TESTED / PLANNED
+
+Phone music library (MediaStore, folders, min length) ........ WORKING (emulator)
+Navidrome streaming / browse / downloads / favorites sync .... WORKING (emulator, 3.0-4.3); NOT
+                                                                RE-TESTED this session (server not
+                                                                started); no Navidrome code changed
+Tailscale access ............................................. NOT TESTED in-app (just an address)
+Offline playback of downloads (incl. after restart) .......... WORKING (emulator, 4.4)
+Playlists (create/rename/delete/reorder/multi-select) ........ WORKING (earlier sessions)
+Smart Collections (Never/Least played, Forgotten fav, Random). WORKING (earlier sessions)
+Radio (Albania default, + / − countries, playback) ........... WORKING (emulator, after 4.4 update)
+Theme Studio / player layouts / Dynamic Now Playing .......... WORKING (earlier sessions); unchanged
+Online search (YouTube Music + YouTube fallback) ............. WORKING (emulator, Albania IP):
+   suggestions, artists, playlists, songs with real metadata/artwork, Load more.
+   Albums/songs from the YouTube Music catalogue: region-limited here (see I-1).
+Online streaming in MImic's player ........................... WORKING (emulator: PLAYING, seeking
+                                                                by position, ~2 s resolve, 141 kbps
+                                                                Opus via InnerTubeX)
+Online artist / album / playlist pages ....................... PARTIAL — artist pages open (YouTube
+                                                                Music data; songs fall back to
+                                                                YouTube search); not every page
+                                                                type exercised on the emulator
+Online downloads (single, album "Download", queue) ........... WORKING for single track (emulator:
+                                                                8 MB Opus/WebM in ~6 s, own cover,
+                                                                shown under Downloaded, plays in
+                                                                airplane mode). Multi-download,
+                                                                cancel, retry, Wi-Fi-only: code
+                                                                present, NOT TESTED
+MP3 conversion option (ffmpeg) ............................... NOT TESTED (needs a 4 KB-page device)
+Song ⋮ sheet (artwork header, download, queue, playlist,
+  favorite, copy/share link, song info, go to artist/album) .. PARTIAL — sheet verified; link/info
+                                                                actions NOT TESTED by tap
+LRCLIB lyrics ................................................ NOT TESTED on device (unit-tested
+                                                                matcher; network call untested)
+MImic Google account + sync .................................. BLOCKED (no Firebase project yet;
+                                                                code + rules + docs present; UI shows
+                                                                "not set up")
+YouTube Music connection ..................................... PARTIAL — Google's real sign-in page
+                                                                opens in MImic; real sign-in NOT
+                                                                TESTED (no credentials typed)
+In-app updater 4.3.1 → 4.4.0-beta.1 .......................... WORKING (emulator Pixel_10a: found,
+                                                                downloaded, verified, installed over,
+                                                                data kept)
+Download Diagnostics incl. online section ................... WORKING (compiles; report text unit-
+                                                                tested redaction); not exported on
+                                                                device this session
+Samsung S25 Ultra link-download issue ........................ NOT TESTED (no device); see section I-2
+
+
+D. BITCHORD INTEGRATION
+-----------------------
+Source: C:\Users\Eno\AndroidStudioProjects\BitChord-main (GPL-3.0, Kotlin 2.3.20, minSdk higher
+than MImic). Untouched. Studied: StreamResolver, InnerTubeXResolver, PlayerClient, Innertube,
+InnertubeParser, YtMusicRepository, PoToken (WebView BotGuard), ChunkedDataSource, PlaybackService
+resolver wiring, Downloader / MediaTagger / Mp4Tagger / WebmTagger / FlacTagger, Downloads /
+DownloadStore / DownloadService, AuthStore / WebSession / YtMusicLoginScreen / AccountSessions.
+
+Reused (copied, package com.music.bitchord → com.example.mimic.online, header notice in each):
+  data/innertube/* (Innertube, InnertubeParser, StreamResolver, InnerTubeXResolver, PlayerClient,
+  UploadedTracks, potoken/*), data/YtMusicRepository, Http, TrackLog, DebugLog, MonotonicClock,
+  LocaleTags, LikeState, data/model/*, data/sources/StreamFormat + TrackMatcher,
+  playback/ChunkedDataSource, download/Downloader + taggers + Mp4Boxes/Mp4Sidx,
+  auth/AuthStore + AccountSessions + DataSyncId + EncryptedPrefs + WebSession + YtMusicLoginScreen,
+  and BitChord's patched NewPipeExtractor Utils.java (with the same jar-strip Gradle task).
+Adapted: NerdStats removed; WebDAV interceptor removed; TrackLog read-back replaced by recent();
+  lyrics embedding dropped (MImic has its own lyrics); readNBytes replaced (API 24).
+MImic glue (new): online/OnlineMusic.kt (facade + Media3 data-source routing), OnlineDownloadWorker,
+  OnlineQuality, OnlineDiagnostics, YouTubeSearch (NewPipe search fallback), YouTubeMusicAccount,
+  OnlineSettings; main/data/online/OnlineModels.kt (ids, models, Room entity/DAO);
+  ui/online/OnlineScreens.kt; standard-edition stubs with the same API.
+Rejected (not ported): BitChord's PlaybackService / AudioCache / QueueCoordinator (MImic keeps its
+  own single service), source-module / plugin system, JioSaavn / addon sources, Spotify, Discord,
+  scrobbling, Automix/ONNX, SMB/WebDAV, TV/Wear apps, Listen Together backend, BitChord UI and
+  branding, BitChord's DownloadService/DownloadStore (replaced by WorkManager + MImic's downloads
+  table so there is one offline store).
+New dependencies (full edition unless noted): InnerTubeX 0.7.0 (GPL-3), NewPipeExtractor 0.26.3
+  (GPL-3, stripped jar), nanojson, Rhino 1.8.1 (MPL-2), quickjs-kt 1.0.14 (Apache), jsoup,
+  protobuf-javalite 4.35, jsr305, Ktor 3.5.2 + kotlinx-serialization 1.11 (Apache),
+  security-crypto 1.1.0-alpha06; both editions: Firebase BoM 33.7.0 auth+firestore, AndroidX
+  Credentials 1.3.0, googleid 1.1.1, desugar_jdk_libs 2.1.5. Kotlin bumped 2.2.10 → 2.3.20 because
+  InnerTubeX is built against the 2.4 stdlib. Full edition excludes Firebase's
+  protolite-well-known-types (duplicate of protobuf-javalite 4.x).
+
+
+E. CHANGES IN 4.4.0-beta.1
+--------------------------
+New: online search/stream/download, artist/album/playlist pages, YouTube-search fallback with Load
+more, LRCLIB lyrics, song sheet additions, Accounts & online music screen (MImic account + sync
+code, YouTube Music connect, quality/format/Wi-Fi-only settings), online section in diagnostics,
+THIRD_PARTY_NOTICES.md, CLAUDE.md, docs/ACCOUNT_SETUP.md, docs/firebase/firestore.rules.
+Database: v7 → v8 adds online_tracks (additive; tested on emulator upgrade and androidTest).
+Source filter gains "YouTube Music". Song model: SongSource.ONLINE, MusicProvider.YOUTUBE,
+Song.isOnline; isFromServer excludes YouTube tracks (they never reach Navidrome code).
+Removed: nothing.
+
+
+F. SCREENS
+----------
+Home: greeting, counts, source chips, quick access (Liked, Downloaded, albums), Continue
+  Listening, Recently Played, Smart Mixes, Albums row, Downloaded Music.
+Search: field + "My library" / "YouTube Music" switch. Library mode = unified local/server/download
+  search with Artists/Albums/Songs chips. YouTube Music mode = filter chips (All/Songs/Albums/
+  Artists/Playlists), suggestion chips, artist cards, album/playlist cards, songs (MImic rows:
+  tap plays, heart, ⋮ sheet), "from YouTube" note + Load more when the catalogue is missing.
+Online page (route online/{browseId}): artwork, title, subtitle, Play / Shuffle / Download, tracks,
+  related releases (artists).
+Library: Songs / Albums / Artists / Playlists / Favorites with sort, select, source filter.
+Album / Artist (library): grouped from the unified library; favorite album/artist.
+Now Playing: Classic / Immersive / Compact / Dynamic layouts, queue, lyrics, sleep, speed, cast,
+  stop & close; mini player above the nav bar.
+Lyrics sheet: synced highlight, tap-to-seek, Add .lrc, source label.
+Downloads tab: link downloader (full) + offline songs.
+Radio: country chips (+ add, edit), categories, stations, favorites, live player.
+Settings: Theme Studio, Player Layout, Home & Navigation, Playback & audio, Radio Countries,
+  Library & Storage, Accounts & online music (new), Backup & Restore, Advanced (Download
+  Diagnostics), Music server (Navidrome account), App Updates.
+Navigation: tabs keep their own back stacks; re-tapping a tab scrolls to top / pops to root;
+  Android Back pops sub-screens; mini player persists everywhere.
+
+
+G. SERVER AND BACKEND
+---------------------
+Navidrome: Docker container mimic-navidrome (server/docker-compose.yml), music from
+  MIMIC_MUSIC_DIR in gitignored server/.env (C:/Users/Eno/Music/mp3), LAN http://<pc>:4533,
+  remote via Tailscale. Docker Desktop must be started after a reboot.
+Online providers: YouTube Music InnerTube (WEB_REMIX) for search/browse; InnerTubeX client
+  catalogue + PoTokens minted in a hidden WebView; NewPipeExtractor fallback; YouTube search via
+  NewPipe when the YouTube Music catalogue is unavailable. Runtime fetch of zemer-cipher player
+  config from GitHub. LRCLIB for lyrics.
+Authentication types: Navidrome salted token (password encrypted at rest); YouTube Music cookie
+  (optional, encrypted prefs, never exported); MImic account = Firebase Auth via Google ID token.
+Firebase: NOT CREATED YET. Needs firebase.properties with firebase.apiKey, firebase.appId,
+  firebase.projectId, google.webClientId (docs/ACCOUNT_SETUP.md) and the rules in
+  docs/firebase/firestore.rules (each user only users/{uid}/**).
+Firestore layout: users/{uid}/devices/{random deviceId} {format, updatedAt, deviceName, snapshot
+  (backup-codec JSON without server address/user, history ≤ 5000)}.
+Environment variable names used in tooling: JAVA_HOME (Android Studio jbr), LOCALAPPDATA (SDK),
+  MIMIC_LIVE_PROBE=1 (opt-in live network probe test), MIMIC_WEBM (tagger probe), MIMIC_MUSIC_DIR
+  (Navidrome compose).
+
+
+H. TEST RESULTS (this session)
+------------------------------
+JVM unit tests ............ PASS — full 251 (2 opt-in probes skipped), standard 148
+Lint (fullDebug, standardDebug) PASS (0 errors after fixes)
+Release build + signing ... PASS — scripts/release.sh verified pinned certificate, package,
+                            versionCode 400400034, versionName on all 5 APKs
+Instrumented tests ........ NOT RUN this session (migration test extended to v8; DB upgrade was
+                            verified manually on two emulators instead)
+Emulator YTD_Test_4K (API 36, x86_64, 4 KB pages):
+  upgrade 4.3.1 → 4.4 debug, data kept ........................ PASS
+  "Justin Tim" suggestions + artists + playlists + songs ........ PASS
+  online playback (PLAYING, buffered ~2 min, 1.9 s resolve) ..... PASS
+  per-track artwork in rows / mini player / offline ............. PASS
+  ⋮ → Download: 8 MB Opus/WebM, cover saved, in Downloaded ...... PASS
+  file format check (ffprobe: opus, matroska/webm, 500 s) ....... PASS
+  embedded tags visible to ffprobe ............................... FAIL (tags are appended after the
+                                                                   clusters; MImic itself shows the
+                                                                   right metadata from its DB)
+  airplane mode + restart → downloaded song plays ............... PASS
+  release APK: Accounts screen, Google sign-in page loads ........ PASS (no credentials entered)
+  release APK: second search ("Dua Lipa Houdini"), playback,
+  Load more ....................................................... PASS
+Emulator Pixel_10a (API 37, 16 KB pages): in-app updater 4.3.1 → 4.4.0-beta.1 (check, download,
+  verify, Play Protect scan, install) ........................... PASS; data kept ............ PASS;
+  radio playback after update .................................... PASS
+Physical phones (Xiaomi, Samsung S25 Ultra) ...................... NOT TESTED (none connected)
+Google sign-in / sync / account isolation ........................ BLOCKED (no Firebase project)
+YouTube Music real sign-in ....................................... NOT TESTED
+Navidrome, Tailscale, Bluetooth, lock-screen controls, Cast ...... NOT TESTED this session
+Online-track error while offline ................................. PARTIAL (ends paused, no
+                                                                   stuck spinner; message not read)
+
+
+I. KNOWN ISSUES
+---------------
+I-1 YouTube Music catalogue unavailable in Albania. Severity: medium. Repro: Search → YouTube
+    Music → any song query from an Albanian IP → catalogue answers "No results" (visitor region AL).
+    Cause (confirmed by raw response): YouTube Music is not offered in the region. Workaround in
+    4.4: fall back to YouTube search (labelled). Albums from the catalogue rarely appear; artist
+    pages may lack top songs (fallback fills them). No region spoofing (by design).
+I-2 Samsung S25 Ultra link downloads ("sign in required"). Severity: high for that phone. Not
+    reproduced (no device). 4.3.1 diagnostics exist; 4.4 adds BitChord's resolver, which mints
+    BotGuard PoTokens in a WebView — the mechanism YouTube's bot check wants — but ONLY for online
+    search/streaming/downloads, not for the yt-dlp link downloader. Next: on the S25, (1) try
+    Search → YouTube Music → play + download a song; (2) Settings → Advanced → Download
+    Diagnostics → Share report. If (1) works where links fail, route link downloads of YouTube
+    videos through OnlineMusic's resolver.
+I-3 WebM/M4A tags written by BitChord's taggers are appended at the end of the file; ffprobe (and
+    possibly other apps) don't read them. Severity: low (MImic uses its DB). Next: add a SeekHead
+    entry or write Tags before Clusters.
+I-4 Sync never propagates deletions (additive merge). Severity: low (safe direction). Planned.
+I-5 The YouTube Music sign-in WebView sits inside the scrolling Accounts screen (small area).
+    Severity: low. Next: full-screen route.
+I-6 Online songs from YouTube fallback show album "Unknown Album". Severity: cosmetic.
+I-7 Play Protect asks to scan sideloaded updates; if left unanswered the install times out
+    (INSTALL_FAILED_VERIFICATION_FAILURE) — Android behaviour, documented.
+
+
+SAMSUNG S25 ULTRA TEST CHECKLIST (no USB needed)
+  1. Install MImic-v4.4.0-beta.1 (Settings → App Updates, or the APK from the Desktop folder
+     MImic-Releases copied to the phone). Confirm Settings shows 4.4.0-beta.1.
+  2. Wi-Fi on, VPN/Private DNS off. Search → YouTube Music → "Justin Timberlake".
+     Expected: suggestions and results within ~3 s. Note PASS/FAIL.
+  3. Tap a song. Expected: plays within ~5 s, lock-screen controls work, screen off keeps playing.
+  4. ⋮ → Download for offline. Expected: notification with progress, song under Library →
+     Downloaded, plays in airplane mode.
+  5. Repeat 2-4 on mobile data.
+  6. Downloads tab → paste the YouTube link that failed before. Note the result.
+  7. Settings → Advanced → Download Diagnostics → Share Diagnostic Report (send it to yourself)
+     and keep it for the next session.
+
+
+J. GITHUB AND RELEASE
+---------------------
+Version name / code ..... 4.4.0-beta.1 / 400400034
+Branch / commit ......... main @ 2b1d4c1 (feature/online-music merged fast-forward; this report
+                          is committed afterwards)
+Repository status ....... pushed; public
+Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.4.0-beta.1
+                          (pre-release; assets: full universal / arm64-v8a / armeabi-v7a / x86_64,
+                          standard, SHA256SUMS.txt, LICENSE.txt, THIRD_PARTY_NOTICES.md)
+SHA-256 ................. full-arm64-v8a 42bb4c43a20237cce76d085d0c90e36974f71b9df146df17965fd86b69df3329
+                          full (universal) 9b71dfae6b13c75f4c3d2c531e3c50f32b155fc14c7bc70257aa2212a4650319
+                          full-armeabi-v7a 1786421a3178ee6a961ca05fee36a9b9f1ff846d1ef3fb8ad75981469f0bd95c
+                          full-x86_64 4e2772cbd183ebb5cf58cac9ee738e0895bd44ee78553661cfa0dd743d9c48d8
+                          standard 2806239a853364f822ac9dbbd7163cad214a661ffa8251a7417b7abb8220a04a
+Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.4.0-beta.1-signed.apk
+                          (arm64-v8a, for almost every phone; hash identical to the GitHub asset)
+                          and MImic-v4.4.0-beta.1-signed-universal.apk (works on any CPU)
+Signing compatibility ... PASS (certificate C03C5107…087D; installs over 4.3.1 without uninstall)
+Updater verification .... PASS on emulator (4.3.1 → 4.4.0-beta.1)
+
+
+K. FUTURE DEVELOPMENT
+---------------------
+Priority next:
+  1. Create the Firebase project (docs/ACCOUNT_SETUP.md), then test sign-in, sync between two
+     emulators, offline sync, and account isolation (rules) — Firebase emulator suite optional.
+  2. Samsung S25 checklist results → decide whether to route YouTube link downloads through the
+     BitChord resolver.
+  3. Test YouTube Music sign-in for real (owner's account), and whether a signed-in session
+     restores catalogue results in Albania.
+  4. Tag placement fix for WebM/M4A (I-3); MP3 conversion test on a 4 KB-page device.
+  5. Full-screen YouTube Music login; online album pages polish; "Song radio" (BitChord
+     YtMusicRepository.radio) and personalised Home shelves.
+  6. Multi-download / cancel / retry / Wi-Fi-only tests; regression run with Navidrome + Tailscale.
+Technical debt: ported BitChord files are large and only partly used (kept whole to stay diffable
+  against upstream); LiveSearchProbe / WebmTagProbe are opt-in network tests; sync deletions.
+
+
+L. CONTINUATION INSTRUCTIONS
+----------------------------
+Read first: CLAUDE.md, this report, CHANGELOG.md (top section), THIRD_PARTY_NOTICES.md.
+Key files: app/build.gradle.kts; player/PlaybackService.kt; player/PlayerViewModel.kt;
+  data/UnifiedLibrary.kt; data/online/OnlineModels.kt; app/src/full/.../online/OnlineMusic.kt;
+  online/OnlineDownloadWorker.kt; online/YouTubeSearch.kt; ui/Screens.kt (Search);
+  ui/online/OnlineScreens.kt; data/account/*; ui/settings/AccountsScreen.kt; data/db/MimicDatabase.kt.
+Build/test: from Git Bash, JAVA_HOME="C:/Program Files/Android/Android Studio/jbr";
+  cmd //c ".\\gradlew.bat :app:testFullDebugUnitTest :app:testStandardDebugUnitTest :app:lintFullDebug".
+  Emulators: YTD_Test_4K (4 KB pages, downloads/ffmpeg), Pixel_10a (updater). adb install -r only.
+  Disable Gboard stylus: adb shell settings put secure stylus_handwriting_enabled 0.
+Release: bump versionName → CHANGELOG section → bash scripts/release.sh (dry run) →
+  bash scripts/release.sh --publish (tags, pushes, uploads, checks downloads) → test the updater
+  → copy the arm64 APK to Desktop\MImic-Releases and compare SHA-256 → update this report and copy
+  it to the Desktop → commit + push.
+Restrictions: keep application id + signing key; no plugin system; no Drive/OneDrive; no region
+  spoofing or DRM/auth bypass; never upload audio or credentials; additive migrations only;
+  report untested items honestly.
+
+
+HISTORY (short)
+---------------
+1.0 baseline → 2.x library, Theme Studio, layouts, Room → 2.5-2.8 Navidrome client, encryption,
+3.0 unified library + downloads, 3.1 cloud drives (removed in 4.1), 3.2 home/queue/effects/lyrics,
+3.3 icon, 4.0 yt-dlp downloader + GitHub updater + editions, 4.1 Dynamic player, Cast, per-track
+artwork, 4.2 Radio, 4.3 Backup & Restore + Library & Storage, 4.3.1 download diagnostics,
+4.4 online music (BitChord), LRCLIB lyrics, accounts & sync code.
