@@ -471,63 +471,18 @@ fun PremiumSeekBar(state: PlayerUiState, scheme: AnimatedScheme, glow: Boolean, 
 }
 
 /**
- * Full-screen lyrics on the song's own colors. Same data as the Lyrics sheet (embedded tags or the
- * user's .lrc); highlights and follows the current line, pauses following while the user scrolls,
- * and tapping a synced line seeks there. Nothing is fetched from the internet.
+ * Full-screen lyrics on the song's own colors — the same lyrics, states and actions as the lyrics
+ * screen (4.5: saved → device → Navidrome → LRCLIB, Retry / Add / Choose), drawn over the Dynamic
+ * background. Synced lines follow playback; tapping one seeks there.
  */
 @Composable
 fun DynamicLyrics(vm: PlayerViewModel, ui: PlayerUiState, scheme: AnimatedScheme, onClose: () -> Unit) {
-    val state by vm.lyrics.collectAsStateWithLifecycle()
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::importLyrics) }
     Column(Modifier.fillMaxSize().systemBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-            RoundAction(Icons.Default.Close, "Close lyrics", scheme, true, onClose)
-            Column(Modifier.weight(1f).padding(horizontal = 12.dp)) {
-                Text(ui.currentSong?.title.orEmpty(), color = scheme.onBackground, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                Text(ui.currentSong?.artist.orEmpty(), color = scheme.muted, style = MaterialTheme.typography.bodySmall, maxLines = 1)
-            }
-            TextButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Add .lrc", color = scheme.onBackground) }
-        }
-        when (val s = state) {
-            LyricsState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = scheme.accent) }
-            is LyricsState.None -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                Text(s.reason, color = scheme.muted, textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium)
-            }
-            is LyricsState.Found -> {
-                val lyrics = s.lyrics
-                val active = lyrics.activeIndex(ui.positionMs)
-                val list = rememberLazyListState()
-                var userScrolledAt by remember { mutableLongStateOf(0L) }
-                LaunchedEffect(list.isScrollInProgress) { if (list.isScrollInProgress) userScrolledAt = System.currentTimeMillis() }
-                LaunchedEffect(active) {
-                    // Follow the song unless the user scrolled in the last 4 seconds.
-                    if (active >= 0 && System.currentTimeMillis() - userScrolledAt > 4000) list.animateScrollToItem((active - 2).coerceAtLeast(0))
-                }
-                LazyColumn(state = list, contentPadding = PaddingValues(horizontal = 28.dp, vertical = 24.dp), modifier = Modifier.weight(1f)) {
-                    itemsIndexed(lyrics.lines) { i, line ->
-                        val isActive = i == active
-                        Text(
-                            line.text.ifBlank { "♪" },
-                            style = MaterialTheme.typography.headlineSmall,
-                            fontWeight = if (isActive) FontWeight.ExtraBold else FontWeight.SemiBold,
-                            color = when {
-                                !lyrics.synced -> scheme.onBackground
-                                isActive -> scheme.onBackground
-                                else -> scheme.onBackground.copy(alpha = 0.45f)
-                            },
-                            modifier = Modifier.fillMaxWidth()
-                                .then(if (line.timeMs != null) Modifier.clickable { vm.seekTo(line.timeMs) } else Modifier)
-                                .padding(vertical = 10.dp),
-                        )
-                    }
-                }
-                Text(
-                    (if (lyrics.synced) "Synced · tap a line to jump · " else "") + lyrics.source,
-                    color = scheme.muted,
-                    style = MaterialTheme.typography.labelMedium,
-                    modifier = Modifier.padding(horizontal = 28.dp, vertical = 12.dp),
-                )
-            }
-        }
+        com.example.mimic.ui.player.LyricsContent(
+            vm, ui,
+            com.example.mimic.ui.player.LyricsColors(background = scheme.bottom, onBackground = scheme.onBackground, muted = scheme.muted, accent = scheme.accent),
+            onClose = onClose,
+            modifier = Modifier.weight(1f),
+        )
     }
 }

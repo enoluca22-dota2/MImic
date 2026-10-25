@@ -45,6 +45,8 @@ class PlaybackService : MediaSessionService() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
     private var positionTicker: Job? = null
     private var effects: PlaybackEffects? = null
+    /** Listen Together (4.5): binds the party to this player; idle outside a party. */
+    private var partySync: PartySync? = null
 
     /** The item whose play hasn't been recorded yet (it was loaded but hasn't started playing). */
     private var unrecordedMediaId: String? = null
@@ -72,7 +74,10 @@ class PlaybackService : MediaSessionService() {
             .build()
         player.addListener(playerListener(player))
         effects = PlaybackEffects(this, player, scope, container.settingsRepository.settings.map { it.audio })
-        mediaSession = MediaSession.Builder(this, player)
+        com.example.mimic.party.ListenTogether.init(this)
+        val sync = PartySync(scope) { player }.also { it.start() }
+        partySync = sync
+        mediaSession = MediaSession.Builder(this, PartyPlayer(player, sync))
             .setCallback(sessionCallback())
             // Notification / lock-screen artwork: per-track art for phone songs (4.1), cached.
             .setBitmapLoader(
@@ -121,6 +126,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun playerListener(player: Player) = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) partySync?.onAutoAdvance()
             unrecordedMediaId = mediaItem?.mediaId
             effects?.onMediaItemTransition(mediaItem)
             // A queue replaced by the app (play / restore) is "loaded", not yet "played": record it
@@ -152,6 +158,12 @@ class PlaybackService : MediaSessionService() {
 
         override fun onPlaybackStateChanged(playbackState: Int) {
             if (playbackState == Player.STATE_READY) consecutiveErrors = 0
+            // The last song this device had finished, but the party may have more.
+            if (playbackState == Player.STATE_ENDED) partySync?.onAutoAdvance()
+        }
+
+        override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            partySync?.onPlayWhenReadyChanged(playWhenReady, reason)
         }
 
         /**
@@ -164,6 +176,8 @@ class PlaybackService : MediaSessionService() {
             // Radio (negative ids): the app retries the same station a bounded number of times;
             // jumping to another station on its own would be surprising.
             if ((player.currentMediaItem?.mediaId?.toLongOrNull() ?: 0L) < 0) return
+            // In a party, a song this device can't play is sat out; skipping would leave the party.
+            if (partySync?.onPlaybackError() == true) return
             consecutiveErrors++
             if (consecutiveErrors <= MAX_SKIPS_ON_ERROR && player.hasNextMediaItem()) {
                 player.seekToNextMediaItem()
@@ -185,6 +199,8 @@ class PlaybackService : MediaSessionService() {
     private fun persistQueue(player: Player) {
         // A radio session must not overwrite the music queue that Continue Listening restores.
         if ((player.currentMediaItem?.mediaId?.toLongOrNull() ?: 0L) < 0) return
+        // Nor a party's running order (the user's own queue comes back when they leave).
+        if (partySync?.inParty == true) return
         val ids = (0 until player.mediaItemCount).mapNotNull { player.getMediaItemAt(it).mediaId.toLongOrNull() }
         val index = player.currentMediaItemIndex
         val position = player.currentPosition
@@ -194,6 +210,7 @@ class PlaybackService : MediaSessionService() {
     private fun persistPosition(player: Player, on: CoroutineScope = scope) {
         if (player.mediaItemCount == 0) return
         if ((player.currentMediaItem?.mediaId?.toLongOrNull() ?: 0L) < 0) return // radio: keep the music position
+        if (partySync?.inParty == true) return
         val index = player.currentMediaItemIndex
         val position = player.currentPosition
         on.launch(Dispatchers.IO) { container.playbackStateStore.savePosition(index, position) }
@@ -203,6 +220,8 @@ class PlaybackService : MediaSessionService() {
         mediaSession
 
     override fun onDestroy() {
+        partySync?.stop()
+        partySync = null
         effects?.release()
         effects = null
         mediaSession?.run {

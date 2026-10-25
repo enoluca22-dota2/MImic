@@ -7,6 +7,7 @@ import com.example.mimic.data.MusicRepository
 import com.example.mimic.data.SettingsRepository
 import com.example.mimic.data.db.MimicDatabase
 import com.example.mimic.data.server.ServerCredentialsRepository
+import kotlinx.coroutines.flow.first
 
 /**
  * Simple manual dependency container. Avoids an annotation-processing DI framework
@@ -58,6 +59,17 @@ class AppContainer(application: Application) {
     val accountSync: com.example.mimic.data.account.AccountSync by lazy {
         com.example.mimic.data.account.AccountSync(application, mimicAccount, backupManager, onlineTracks)
     }
+
+    /** Lyrics from every source, saved for offline use (4.5). */
+    val lyricsRepository: com.example.mimic.data.lyrics.LyricsRepository by lazy {
+        com.example.mimic.data.lyrics.LyricsRepository(application, database.lyricsDao()) {
+            val creds = serverCredentialsRepository.credentials.first()
+            if (creds == null || !serverCredentialsRepository.connected.first()) null
+            else lyricsServerClient?.takeIf { it.first == creds }?.second
+                ?: com.example.mimic.data.server.SubsonicClient(creds).also { lyricsServerClient = creds to it }
+        }
+    }
+    @Volatile private var lyricsServerClient: Pair<com.example.mimic.data.server.ServerCredentials, com.example.mimic.data.server.SubsonicClient>? = null
 
     val castController: com.example.mimic.cast.CastController by lazy { com.example.mimic.cast.CastController(application) }
 

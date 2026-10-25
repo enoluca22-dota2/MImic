@@ -41,6 +41,13 @@
 
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Listen Together invites (4.5): mimic://party/CODE?server=URL -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="mimic" android:host="party" />
+            </intent-filter>
         </activity>
 
         <!-- Google Cast (4.1): Default Media Receiver. -->

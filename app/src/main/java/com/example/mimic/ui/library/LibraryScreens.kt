@@ -46,6 +46,8 @@ import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.FavoriteBorder
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.Label
+import androidx.compose.material.icons.filled.Lyrics
+import androidx.compose.material3.AssistChip
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material3.Button
@@ -204,6 +206,11 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
                         },
                     )
                 }
+                AssistChip(
+                    onClick = nav.openLyricsTools,
+                    label = { Text("Lyrics") },
+                    leadingIcon = { Icon(Icons.Default.Lyrics, null, Modifier.size(18.dp)) },
+                )
                 IconButton(onClick = { editTabs = true }) {
                     Icon(Icons.Default.Tune, contentDescription = "Edit library tabs")
                 }

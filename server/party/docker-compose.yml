@@ -1,0 +1,24 @@
+# MImic Listen Together party server. Separate from the Navidrome compose file on purpose:
+# starting / rebuilding this never touches the music server.
+#
+#   docker compose -f server/party/docker-compose.yml up -d --build
+#
+# It keeps parties in memory only (no database, no music, no accounts) and holds no secrets.
+# Friends reach it through whatever address you give them: on your Tailscale network
+# (http://<this-pc>.<tailnet>.ts.net:8000), or publicly through Tailscale Funnel
+# (https://<this-pc>.<tailnet>.ts.net) — see docs/LISTEN_TOGETHER.md.
+services:
+  party:
+    build: .
+    image: mimic-party:local
+    container_name: mimic-party
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      PORT: "8000"
+      JAM_MAX_MEMBERS: "10"
+      # Set to the public https address when served through Tailscale Funnel / a proxy,
+      # so invite links point at it:
+      JAM_PUBLIC_ORIGIN: "${MIMIC_PARTY_PUBLIC_ORIGIN:-}"
+      JAM_TRUST_PROXY: "${MIMIC_PARTY_TRUST_PROXY:-false}"

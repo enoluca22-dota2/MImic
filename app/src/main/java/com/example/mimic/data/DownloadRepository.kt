@@ -23,7 +23,7 @@ import java.io.File
  * every row the UI observes is a finished download — and because the UI observes the table as a
  * Flow, a new download shows up on Home / Library immediately, without a refresh or restart.
  */
-class DownloadRepository(context: Context, private val dao: DownloadDao) {
+class DownloadRepository(private val context: Context, private val dao: DownloadDao) {
 
     private val dir = File(context.filesDir, "downloads")
     private val coverDir = File(dir, "covers")
@@ -70,6 +70,14 @@ class DownloadRepository(context: Context, private val dao: DownloadDao) {
                 sizeBytes = size,
             ),
         )
+        // 4.5: look up lyrics in the background so they're there offline. Queued only after the
+        // download is recorded; a lyrics failure can never undo it.
+        queueLyrics(
+            com.example.mimic.data.lyrics.LyricsTarget(
+                songIdForRemote(remote.id), remote.title, remote.artist, remote.album, remote.durationMs,
+                Uri.fromFile(target).toString(), remote.id,
+            ),
+        )
         return Result.success(size)
     }
 
@@ -94,6 +102,19 @@ class DownloadRepository(context: Context, private val dao: DownloadDao) {
                 sizeBytes = withContext(Dispatchers.IO) { file.length() },
             ),
         )
+        queueLyrics(
+            com.example.mimic.data.lyrics.LyricsTarget(
+                com.example.mimic.data.online.OnlineIds.songId(track.videoId), track.title, track.artist, track.album.orEmpty(),
+                track.durationMs, Uri.fromFile(file).toString(), com.example.mimic.data.online.OnlineIds.remoteId(track.videoId),
+            ),
+        )
+    }
+
+    private suspend fun queueLyrics(t: com.example.mimic.data.lyrics.LyricsTarget) {
+        runCatching {
+            (context.applicationContext as com.example.mimic.MimicApplication).container.lyricsRepository.markPending(t)
+            com.example.mimic.data.lyrics.LyricsWorker.enqueue(context, t)
+        }.onFailure { android.util.Log.w("MImicLyrics", "lyrics lookup not queued: ${it.javaClass.simpleName}") }
     }
 
     /** Whether [remoteId] already has a download row (duplicate prevention). */

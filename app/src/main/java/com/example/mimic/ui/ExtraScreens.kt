@@ -33,6 +33,7 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.LibraryMusic
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Radio
+import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.SettingsBackupRestore
 import androidx.compose.material.icons.filled.Build
@@ -117,6 +118,7 @@ fun SettingsScreen(
     onOpenLibraryStorage: () -> Unit = {},
     onOpenBackup: () -> Unit = {},
     onOpenAccounts: () -> Unit = {},
+    onOpenParty: () -> Unit = {},
     onOpenAdvanced: () -> Unit = {},
 ) {
     val settings by vm.settings.collectAsStateWithLifecycle()
@@ -252,6 +254,20 @@ fun SettingsScreen(
             Column(Modifier.weight(1f)) {
                 Text("Library & Storage", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
                 Text("Folders, minimum song length, refresh library, caches", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Row(
+            Modifier.fillMaxWidth().clickable(onClick = onOpenParty).padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                contentAlignment = Alignment.Center,
+            ) { Icon(androidx.compose.material.icons.Icons.Default.Groups, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
+            Spacer(Modifier.width(16.dp))
+            Column(Modifier.weight(1f)) {
+                Text("Listen Together", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onBackground)
+                Text("Start or join a party with friends: shared queue, synced playback", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }
         Row(

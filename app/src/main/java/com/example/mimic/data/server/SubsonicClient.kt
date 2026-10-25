@@ -119,6 +119,37 @@ class SubsonicClient(private val creds: ServerCredentials) {
     suspend fun star(songId: String): Result<Unit> = io { call("star", mapOf("id" to songId)); Unit }
     suspend fun unstar(songId: String): Result<Unit> = io { call("unstar", mapOf("id" to songId)); Unit }
 
+    /**
+     * Lyrics the server holds for a song (MImic 4.5) as LRC or plain text, or null. Navidrome
+     * implements OpenSubsonic `getLyricsBySongId` (structured, possibly synced, from the file's
+     * tags or a sidecar .lrc on the server); older servers only have `getLyrics` (plain, looked up
+     * by artist + title). Read-only — nothing on the server changes.
+     */
+    suspend fun lyrics(songId: String, artist: String, title: String): Result<String?> = io {
+        val structured = runCatching { call("getLyricsBySongId", mapOf("id" to songId)) }.getOrNull()
+            ?.optJSONObject("lyricsList")?.optJSONArray("structuredLyrics")
+        if (structured != null && structured.length() > 0) {
+            val all = (0 until structured.length()).mapNotNull { structured.optJSONObject(it) }
+            val pick = all.firstOrNull { it.optBoolean("synced") } ?: all.first()
+            val lines = pick.optJSONArray("line")
+            if (lines != null && lines.length() > 0) {
+                val offset = pick.optLong("offset", 0L)
+                val text = (0 until lines.length()).mapNotNull { lines.optJSONObject(it) }.joinToString("\n") { l ->
+                    val value = l.optString("value")
+                    if (pick.optBoolean("synced") && l.has("start")) lrcStamp((l.optLong("start") + offset).coerceAtLeast(0)) + value else value
+                }
+                if (text.isNotBlank()) return@io text
+            }
+        }
+        if (title.isBlank()) return@io null
+        val legacy = runCatching { call("getLyrics", mapOf("artist" to artist, "title" to title)) }.getOrNull()
+            ?.optJSONObject("lyrics")
+        legacy?.optString("value")?.takeIf { it.isNotBlank() }
+    }
+
+    private fun lrcStamp(ms: Long): String =
+        "[%02d:%02d.%02d]".format(java.util.Locale.ROOT, ms / 60_000, (ms / 1000) % 60, (ms % 1000) / 10)
+
     fun streamUrl(songId: String): String = url("stream", mapOf("id" to songId))
     fun downloadUrl(songId: String): String = url("download", mapOf("id" to songId))
     fun coverArtUrl(coverArtId: String?): String? =

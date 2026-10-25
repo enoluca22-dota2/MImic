@@ -85,6 +85,16 @@ class DownloadsAndMigrationTest {
             val t = com.example.mimic.data.online.OnlineTrack("dQw4w9WgXcQ", "Song", "Artist", "Album", "MPREb1", null, 213000, "https://lh3.googleusercontent.com/x=w544-h544")
             room.onlineTrackDao().upsert(com.example.mimic.data.online.OnlineTrackEntity.of(t, inLibrary = true))
             assertEquals(t, room.onlineTrackDao().get("dQw4w9WgXcQ")?.toTrack())
+            // v9 (4.5): the lyrics table exists, round-trips, and old rows above are untouched.
+            val lyr = com.example.mimic.data.lyrics.LyricsEntity(
+                songId = 42, status = com.example.mimic.data.lyrics.LyricsStatus.SYNCED.name, trackKey = "aerials|systemofadown",
+                text = "[00:01.00]Line", source = "LRCLIB", providerId = "463732", updatedAt = 1,
+            )
+            room.lyricsDao().upsert(lyr)
+            assertEquals(lyr, room.lyricsDao().get(42))
+            assertEquals(1, room.lyricsDao().allWithoutText().size)
+            assertNull(room.lyricsDao().allWithoutText()[0].text)
+            assertEquals(listOf(42L), room.favoriteDao().favoriteIds().first())
         } finally {
             room.close()
         }

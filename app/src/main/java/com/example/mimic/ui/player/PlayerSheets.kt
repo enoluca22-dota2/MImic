@@ -84,70 +84,7 @@ fun formatSpeed(speed: Float) = speedLabel(speed)
 // Lyrics
 // ---------------------------------------------------------------------------------------------
 
-/**
- * Lyrics for the current song: synced lines follow playback (tap one to jump there); plain
- * lyrics just scroll. Sources are the user's own files only — an added .lrc, or lyrics embedded
- * in an on-device / downloaded file. Nothing is looked up online.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun LyricsSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
-    val state by vm.lyrics.collectAsStateWithLifecycle()
-    val ui by vm.uiState.collectAsStateWithLifecycle()
-    val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::importLyrics) }
-    val sheet = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheet) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.85f)) {
-            Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Lyrics", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                    Text(ui.currentSong?.title.orEmpty(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                }
-                TextButton(onClick = { picker.launch(arrayOf("*/*")) }) { Text("Add .lrc") }
-            }
-            when (val s = state) {
-                LyricsState.Loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                is LyricsState.None -> Box(Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
-                    Text(s.reason, textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                is LyricsState.Found -> {
-                    val lyrics = s.lyrics
-                    val active = lyrics.activeIndex(ui.positionMs)
-                    val list = rememberLazyListState()
-                    LaunchedEffect(active) { if (active >= 0) list.animateScrollToItem((active - 2).coerceAtLeast(0)) }
-                    Text(
-                        (if (lyrics.synced) "Synced · " else "") + lyrics.source,
-                        style = MaterialTheme.typography.labelMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 4.dp),
-                    )
-                    LazyColumn(state = list, contentPadding = PaddingValues(start = 24.dp, end = 24.dp, bottom = 48.dp), modifier = Modifier.weight(1f)) {
-                        itemsIndexed(lyrics.lines) { i, line ->
-                            val isActive = i == active
-                            Text(
-                                line.text.ifBlank { "♪" },
-                                style = MaterialTheme.typography.titleLarge,
-                                fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-                                color = when {
-                                    !lyrics.synced -> MaterialTheme.colorScheme.onSurface
-                                    isActive -> MaterialTheme.colorScheme.primary
-                                    i < active -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.45f)
-                                    else -> MaterialTheme.colorScheme.onSurface.copy(alpha = 0.75f)
-                                },
-                                modifier = Modifier.fillMaxWidth()
-                                    .then(if (line.timeMs != null) Modifier.clickable { vm.seekTo(line.timeMs) } else Modifier)
-                                    .padding(vertical = 8.dp),
-                            )
-                        }
-                        if (lyrics.source == "Your .lrc file") {
-                            item { TextButton(onClick = vm::removeImportedLyrics) { Text("Remove the added .lrc file") } }
-                        }
-                    }
-                }
-            }
-        }
-    }
-}
+// Lyrics: see LyricsScreen.kt (full-screen since 4.5).
 
 // ---------------------------------------------------------------------------------------------
 // Speed

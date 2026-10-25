@@ -86,6 +86,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /** Full edition: a YouTube/TikTok link shared or opened into MImic goes to the Downloads tab. */
     private fun handleSharedLink(intent: android.content.Intent?) {
+        // Listen Together invite (4.5): mimic://party/CODE?server=…
+        if (intent?.action == android.content.Intent.ACTION_VIEW && intent.data?.scheme == "mimic") {
+            com.example.mimic.party.PartyInvite.parse(intent.dataString)?.let(playerViewModel::openInvite)
+            intent.data = null
+            return
+        }
         com.example.mimic.downloader.Downloader.sharedText(intent)?.let(playerViewModel::offerSharedLink)
         if (intent?.getBooleanExtra(com.example.mimic.update.UpdateCheckWorker.EXTRA_OPEN_UPDATES, false) == true) {
             intent.removeExtra(com.example.mimic.update.UpdateCheckWorker.EXTRA_OPEN_UPDATES)

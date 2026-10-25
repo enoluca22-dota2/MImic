@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.transformLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.stateIn
@@ -52,9 +53,22 @@ data class NowPlaying(val song: Song?, val isPlaying: Boolean)
 data class EqualizerInfo(val frequenciesHz: List<Int>, val minLevel: Int, val maxLevel: Int, val bassBoost: Boolean)
 
 sealed interface LyricsState {
+    /** Checking what's saved / on the device. */
     data object Loading : LyricsState
+    /** Asking online providers (shown as a spinner with "Searching for lyrics…"). */
+    data object Searching : LyricsState
     data class Found(val lyrics: com.example.mimic.data.audio.Lyrics) : LyricsState
-    data class None(val reason: String) : LyricsState
+    /** Several plausible matches — the user picks; nothing is shown until they do. */
+    data class Choose(val candidates: List<com.example.mimic.data.lyrics.LyricsCandidate>) : LyricsState
+    /** No lyrics. [retryable]: the lookup failed (offline / service down) rather than found nothing. */
+    data class None(val reason: String, val retryable: Boolean = false) : LyricsState
+}
+
+sealed interface LyricsCandidatesState {
+    data object Idle : LyricsCandidatesState
+    data object Loading : LyricsCandidatesState
+    data class Results(val list: List<com.example.mimic.data.lyrics.LyricsCandidate>) : LyricsCandidatesState
+    data class Error(val message: String) : LyricsCandidatesState
 }
 
 /** Loading state of the server song catalog. */
@@ -767,6 +781,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         // Prefer the offline copy of any server track that has a verified download.
         val resolved = queue.map(::preferOffline)
         songsById = songsById + resolved.associateBy { it.id }
+        resolved.forEach(com.example.mimic.party.PartyLibrary::remember)
         rememberOnline(resolved)
         _uiState.update { it.copy(playbackError = null) }
         val start = index.coerceIn(0, resolved.size - 1)
@@ -842,6 +857,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Queue editing ----
 
     fun addToQueue(song: Song) {
+        if (partyQueueAdd(listOf(song), playNext = false)) return
         rememberOnline(listOf(song))
         val s = preferOffline(song)
         songsById = songsById + (s.id to s)
@@ -852,6 +868,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun addAllToQueue(list: List<Song>) {
         val c = controller ?: return
         if (list.isEmpty()) return
+        if (partyQueueAdd(list, playNext = false)) return
         if (c.mediaItemCount == 0) { play(list, 0); return }
         val resolved = list.map(::preferOffline)
         songsById = songsById + resolved.associateBy { it.id }
@@ -861,6 +878,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun playNext(song: Song) {
+        if (partyQueueAdd(listOf(song), playNext = true)) return
         rememberOnline(listOf(song))
         val c = controller ?: return
         val s = preferOffline(song)
@@ -871,17 +889,20 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun removeFromQueue(index: Int) {
+        if (partyBlocksQueueEdit()) return
         castPlayerIfCasting()?.removeMediaItem(index)
         controller?.removeMediaItem(index)
     }
 
     fun moveInQueue(from: Int, to: Int) {
+        if (partyBlocksQueueEdit()) return
         castPlayerIfCasting()?.moveMediaItem(from, to)
         controller?.moveMediaItem(from, to)
     }
 
     /** Clear Up Next: everything after the current song (the song itself keeps playing). */
     fun clearUpcoming() {
+        if (partyBlocksQueueEdit()) return
         castPlayerIfCasting()?.let { tv ->
             val from = tv.currentMediaItemIndex + 1
             if (from < tv.mediaItemCount) tv.removeMediaItems(from, tv.mediaItemCount)
@@ -1515,51 +1536,105 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    // ---- Lyrics: imported .lrc → embedded in the file → LRCLIB (4.4, cached for offline) ----
+    // ---- Lyrics (4.5): saved → device (file tags, .lrc) → Navidrome → LRCLIB; see LyricsRepository ----
 
-    private val lyricsDir get() = java.io.File(getApplication<Application>().filesDir, "lyrics")
+    private val lyricsRepo get() = container.lyricsRepository
     private val lyricsReload = MutableStateFlow(0)
+    /** The next reload ignores "recently not found / failed" and asks the providers again. */
+    @Volatile private var lyricsForce = false
 
+    /**
+     * Lyrics for whatever is playing. Started eagerly: the lookup runs as soon as a song starts,
+     * not when the lyrics screen opens, so they are usually there (and saved for offline) before
+     * anyone looks. Runs off the main thread and never touches the player.
+     *
+     * 4.4 bug fixed here: this flow was `WhileSubscribed`, so nothing was looked up until the
+     * lyrics sheet was opened, and every network problem read as "no lyrics found".
+     */
     @OptIn(ExperimentalCoroutinesApi::class)
     val lyrics: StateFlow<LyricsState> =
-        combine(uiState.map { it.currentSong }.distinctUntilChanged { a, b -> a?.id == b?.id && a?.uri == b?.uri }, lyricsReload) { s, _ -> s }
-            .mapLatest { song -> if (song == null) LyricsState.None("Nothing playing") else loadLyrics(song) }
-            .flowOn(kotlinx.coroutines.Dispatchers.IO)
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), LyricsState.Loading)
-
-    private suspend fun loadLyrics(song: Song): LyricsState {
-        // 1. A .lrc file the user added for this song.
-        val imported = java.io.File(lyricsDir, "${song.id}.lrc")
-        if (imported.isFile) {
-            com.example.mimic.data.audio.Lyrics.parse(imported.readText(), "Your .lrc file")?.let { return LyricsState.Found(it) }
-        }
-        // 2. Lyrics embedded in the audio file (on-device or downloaded songs).
-        val uri = android.net.Uri.parse(song.uri)
-        if (uri.scheme == "content" || uri.scheme == "file") {
-            val tags = runCatching {
-                getApplication<Application>().contentResolver.openInputStream(uri)?.use {
-                    com.example.mimic.data.audio.AudioTags.parse(PlaybackEffects.readHead(it, com.example.mimic.data.audio.AudioTags.HEAD_BYTES))
-                }
-            }.getOrNull()
-            tags?.lyrics?.let { text -> com.example.mimic.data.audio.Lyrics.parse(text, "Embedded in the file")?.let { return LyricsState.Found(it) } }
-        }
-        // 3. LRCLIB, matched on title + artist + duration; the answer is cached so it works offline.
-        if (com.example.mimic.data.radio.RadioIds.isRadio(song.id)) return LyricsState.None("No lyrics for live radio.")
-        val cache = java.io.File(lyricsDir, "lrclib/${song.id}.lrc")
-        if (cache.isFile) {
-            com.example.mimic.data.audio.Lyrics.parse(cache.readText(), "LRCLIB")?.let { return LyricsState.Found(it) }
-        }
-        val found = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching { com.example.mimic.data.audio.LrcLib.find(song.title, song.artist, song.durationMs) }
-        }
-        found.getOrNull()?.let { text ->
-            com.example.mimic.data.audio.Lyrics.parse(text, "LRCLIB")?.let { lyrics ->
-                runCatching { cache.parentFile?.mkdirs(); cache.writeText(text) }
-                return LyricsState.Found(lyrics)
+        combine(uiState.map { it.currentSong }.distinctUntilChanged { a, b -> a?.id == b?.id && a?.uri == b?.uri && a?.title == b?.title }, lyricsReload) { s, _ -> s }
+            .transformLatest { song ->
+                if (song == null) { emit(LyricsState.None("Nothing playing")); return@transformLatest }
+                val force = lyricsForce.also { lyricsForce = false }
+                val t = com.example.mimic.data.lyrics.LyricsTarget.of(song)
+                emit(LyricsState.Loading)
+                val local = lyricsRepo.resolve(t, allowNetwork = false, force = force)
+                // Found on the device / saved, or a recent definitive answer ("none", "choose"):
+                // no network needed. Otherwise (never looked up, a failed attempt, a forced retry)
+                // ask the providers when there is a connection.
+                val settled = local is com.example.mimic.data.lyrics.LyricsOutcome.Found ||
+                    (!force && (local is com.example.mimic.data.lyrics.LyricsOutcome.Unavailable || local is com.example.mimic.data.lyrics.LyricsOutcome.Choose))
+                if (settled || !hasInternet()) { emit(local.toState()); return@transformLatest }
+                emit(LyricsState.Searching)
+                emit(lyricsRepo.resolve(t, allowNetwork = true, force = force).toState())
             }
+            .flowOn(kotlinx.coroutines.Dispatchers.IO)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, LyricsState.Loading)
+
+    private fun com.example.mimic.data.lyrics.LyricsOutcome.toState(): LyricsState = when (this) {
+        is com.example.mimic.data.lyrics.LyricsOutcome.Found -> LyricsState.Found(lyrics)
+        is com.example.mimic.data.lyrics.LyricsOutcome.Choose -> LyricsState.Choose(candidates)
+        is com.example.mimic.data.lyrics.LyricsOutcome.Unavailable -> LyricsState.None(reason)
+        is com.example.mimic.data.lyrics.LyricsOutcome.Failed -> LyricsState.None(reason, retryable = true)
+    }
+
+    private fun hasInternet(): Boolean = runCatching {
+        val cm = getApplication<Application>().getSystemService(android.net.ConnectivityManager::class.java)
+        cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }.getOrDefault(false)
+
+    /** Retry: search every provider again now (also after "not found"). */
+    fun retryLyrics() {
+        lyricsForce = true
+        lyricsReload.update { it + 1 }
+    }
+
+    /** Candidates for the "Choose lyrics" list (manual selection / a different spelling). */
+    private val _lyricsCandidates = MutableStateFlow<LyricsCandidatesState>(LyricsCandidatesState.Idle)
+    val lyricsCandidates: StateFlow<LyricsCandidatesState> = _lyricsCandidates
+
+    fun searchLyricsCandidates(title: String? = null, artist: String? = null) {
+        val song = _uiState.value.currentSong ?: return
+        _lyricsCandidates.value = LyricsCandidatesState.Loading
+        viewModelScope.launch {
+            val r = lyricsRepo.candidates(com.example.mimic.data.lyrics.LyricsTarget.of(song), title?.takeIf { it.isNotBlank() }, artist?.takeIf { it.isNotBlank() })
+            _lyricsCandidates.value = r.fold(
+                onSuccess = { LyricsCandidatesState.Results(it) },
+                onFailure = { LyricsCandidatesState.Error(it.message ?: "Couldn't search for lyrics") },
+            )
         }
-        return if (found.isFailure) LyricsState.None("Couldn't reach the lyrics service. Check the connection, or add a .lrc file.")
-        else LyricsState.None("No lyrics found for this exact recording. You can add a .lrc file.")
+    }
+
+    fun clearLyricsCandidates() { _lyricsCandidates.value = LyricsCandidatesState.Idle }
+
+    fun chooseLyrics(c: com.example.mimic.data.lyrics.LyricsCandidate) {
+        val song = _uiState.value.currentSong ?: return
+        viewModelScope.launch {
+            lyricsRepo.choose(com.example.mimic.data.lyrics.LyricsTarget.of(song), c)
+            _lyricsCandidates.value = LyricsCandidatesState.Idle
+            lyricsReload.update { it + 1 }
+            _messages.tryEmit("Lyrics saved for \"${song.title}\"")
+        }
+    }
+
+    /** Add Lyrics → type / paste. LRC timestamps in the text are honoured; plain text stays plain. */
+    fun saveTypedLyrics(text: String) {
+        val song = _uiState.value.currentSong ?: return
+        viewModelScope.launch {
+            val r = lyricsRepo.saveUserText(com.example.mimic.data.lyrics.LyricsTarget.of(song), text)
+            if (r is com.example.mimic.data.lyrics.LyricsOutcome.Failed) _messages.tryEmit(r.reason)
+            else { lyricsReload.update { it + 1 }; _messages.tryEmit("Lyrics saved for \"${song.title}\"") }
+        }
+    }
+
+    /** Forget the saved lyrics for the current song and search again. */
+    fun forgetLyrics() {
+        val song = _uiState.value.currentSong ?: return
+        viewModelScope.launch {
+            lyricsRepo.forget(song.id)
+            retryLyrics()
+        }
     }
 
     /** Attach a user-picked .lrc / .txt file to the current song (copied into app storage). */
@@ -1571,8 +1646,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
                 _messages.tryEmit("That file has no readable lyrics")
                 return@launch
             }
-            lyricsDir.mkdirs()
-            java.io.File(lyricsDir, "${song.id}.lrc").writeText(text)
+            val f = lyricsRepo.userFile(song.id)
+            f.parentFile?.mkdirs()
+            f.writeText(text)
             lyricsReload.update { it + 1 }
             _messages.tryEmit("Lyrics added to \"${song.title}\"")
         }
@@ -1581,9 +1657,131 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun removeImportedLyrics() {
         val song = _uiState.value.currentSong ?: return
         viewModelScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            java.io.File(lyricsDir, "${song.id}.lrc").delete()
+            lyricsRepo.userFile(song.id).delete()
             lyricsReload.update { it + 1 }
         }
+    }
+
+    /** Library → Find Missing Lyrics: every song (not radio) without saved lyrics, in the background. */
+    val lyricsScan: StateFlow<com.example.mimic.data.lyrics.LyricsWorker.ScanState?> =
+        com.example.mimic.data.lyrics.LyricsWorker.scanState(getApplication())
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val lyricsCounts: StateFlow<Map<com.example.mimic.data.lyrics.LyricsStatus, Int>> = lyricsRepo.statusCounts()
+        .map { rows -> rows.mapNotNull { r -> runCatching { com.example.mimic.data.lyrics.LyricsStatus.valueOf(r.status) }.getOrNull()?.let { it to r.n } }.toMap() }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    fun findMissingLyrics() {
+        val targets = songs.value.filter { !com.example.mimic.data.radio.RadioIds.isRadio(it.id) }.map(com.example.mimic.data.lyrics.LyricsTarget::of)
+        if (targets.isEmpty()) { _messages.tryEmit("Your library is empty"); return }
+        com.example.mimic.data.lyrics.LyricsWorker.scan(getApplication(), targets)
+        _messages.tryEmit("Looking for lyrics for ${targets.size} songs…")
+    }
+
+    fun cancelLyricsScan() { com.example.mimic.data.lyrics.LyricsWorker.cancelScan(getApplication()) }
+
+    // ---- Listen Together (4.5) — see party/ListenTogether and player/PartySync ----
+
+    val party: StateFlow<com.example.mimic.party.ListenTogether.State> get() = com.example.mimic.party.ListenTogether.state
+    val partyServer: StateFlow<String> get() = com.example.mimic.party.ListenTogether.serverUrl
+    val partySyncStatus: StateFlow<PartySync.Status> get() = PartySync.status
+    val partyActivity: StateFlow<List<com.example.mimic.party.PartyActivity>> get() = com.example.mimic.party.ListenTogether.activity
+    val partyAwaitingStart: StateFlow<Boolean> get() = com.example.mimic.party.ListenTogether.awaitingStart
+
+    /** An invite opened from a link (mimic://party/CODE?server=… or https://<server>/invite/CODE). */
+    private val _pendingInvite = MutableStateFlow<com.example.mimic.party.PartyInvite?>(null)
+    val pendingInvite: StateFlow<com.example.mimic.party.PartyInvite?> = _pendingInvite
+    fun openInvite(invite: com.example.mimic.party.PartyInvite) { _pendingInvite.value = invite }
+    fun consumeInvite() { _pendingInvite.value = null }
+
+    private val _partyBusy = MutableStateFlow(false)
+    val partyBusy: StateFlow<Boolean> = _partyBusy
+
+    fun partyIdentityName(): String = com.example.mimic.party.ListenTogether.identity()?.name.orEmpty()
+    fun partyIdentityFromAccount(): Boolean = com.example.mimic.party.ListenTogether.identity()?.fromAccount == true
+    fun partyNickname(): String = com.example.mimic.party.ListenTogether.nickname()
+    fun setPartyNickname(name: String) = com.example.mimic.party.ListenTogether.setNickname(name)
+
+    /** Saves the party server address after checking it answers like a MImic party server. */
+    fun setPartyServer(raw: String, onResult: (String?) -> Unit) {
+        val url = com.example.mimic.party.ListenTogether.normalizeServerUrl(raw)
+        if (url == null) { onResult("That isn't a server address (example: http://100.64.0.5:8000)."); return }
+        viewModelScope.launch {
+            val r = com.example.mimic.party.ListenTogether.checkServer(url)
+            if (r.isSuccess) com.example.mimic.party.ListenTogether.setServerUrl(url)
+            onResult(r.exceptionOrNull()?.message)
+        }
+    }
+
+    suspend fun checkPartyServer(): Result<Long> {
+        val url = partyServer.value.ifBlank { return Result.failure(IllegalStateException("No server set")) }
+        return com.example.mimic.party.ListenTogether.checkServer(url)
+    }
+
+    fun startParty() = partyCall { com.example.mimic.party.ListenTogether.createParty() }
+
+    fun joinParty(code: String, server: String? = null) = partyCall { com.example.mimic.party.ListenTogether.joinParty(code, server) }
+
+    suspend fun previewParty(code: String, server: String?) = com.example.mimic.party.ListenTogether.preview(code, server)
+
+    fun leaveParty() { viewModelScope.launch { com.example.mimic.party.ListenTogether.leaveParty() } }
+    fun endParty() = com.example.mimic.party.ListenTogether.endParty()
+    fun voteSkip() = com.example.mimic.party.ListenTogether.voteSkip()
+    fun kickFromParty(memberId: String) = com.example.mimic.party.ListenTogether.kick(memberId)
+    fun setPartyHostOnly(enabled: Boolean) = com.example.mimic.party.ListenTogether.setHostOnlyControl(enabled)
+    fun removeFromParty(track: com.example.mimic.party.PartyTrack) = com.example.mimic.party.ListenTogether.queueRemove(track.videoId)
+    fun clearPartyError() = com.example.mimic.party.ListenTogether.clearError()
+
+    /** Play / pause the party (through the session, so it is published like any other press). */
+    fun partyTogglePlay() = togglePlayPause()
+
+    /** Plays a song from the party's queue for everyone. */
+    fun playPartyTrack(track: com.example.mimic.party.PartyTrack) {
+        val st = party.value
+        if (st.controlsLocked) { _messages.tryEmit("Only the host can choose the song in this party"); return }
+        com.example.mimic.party.ListenTogether.setTrack(track, 0, true)
+    }
+
+    /** In a party, Add to queue / Play next go to the shared queue. True = handled. */
+    private fun partyQueueAdd(list: List<Song>, playNext: Boolean): Boolean {
+        val st = party.value
+        if (!st.inParty) return false
+        if (st.controlsLocked) { _messages.tryEmit("Only the host can change the queue in this party"); return true }
+        val tracks = list.mapNotNull { com.example.mimic.party.PartyTracks.fromSong(it) }
+        if (tracks.isEmpty()) { _messages.tryEmit("Live radio can't be added to a party"); return true }
+        list.forEach(com.example.mimic.party.PartyLibrary::remember)
+        rememberOnline(list)
+        // An empty party: the first song starts it.
+        if (st.playback.track == null) {
+            com.example.mimic.party.ListenTogether.setQueue(tracks, 0)
+            com.example.mimic.party.ListenTogether.setTrack(tracks.first(), 0, true)
+        } else {
+            com.example.mimic.party.ListenTogether.queueAdd(tracks, playNext)
+        }
+        _messages.tryEmit(if (tracks.size == 1) "Added \"${tracks[0].title}\" to the party queue" else "Added ${tracks.size} songs to the party queue")
+        return true
+    }
+
+    fun addToParty(song: Song) { partyQueueAdd(listOf(song), playNext = false) }
+
+    private fun partyBlocksQueueEdit(): Boolean {
+        if (!party.value.inParty) return false
+        _messages.tryEmit("In a party, edit the shared queue in Listen Together")
+        return true
+    }
+
+    private fun partyCall(block: suspend () -> Result<String>) {
+        viewModelScope.launch {
+            _partyBusy.value = true
+            block()
+            _partyBusy.value = false
+        }
+    }
+
+    init {
+        com.example.mimic.party.ListenTogether.init(getApplication())
+        // The party resolver matches friends' songs against this device's library.
+        viewModelScope.launch { knownSongs.collect { com.example.mimic.party.PartyLibrary.publish(it) } }
     }
 
     // ---- Internals ----
@@ -1615,7 +1813,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun syncFromPlayer(player: Player) {
-        val current = player.currentMediaItem?.mediaId?.toLongOrNull()?.let { songsById[it] }
+        val current = player.currentMediaItem?.mediaId?.toLongOrNull()?.let { songsById[it] ?: com.example.mimic.party.PartyLibrary.song(it) }
         val fav = current?.let { favoriteIds.value.contains(it.id) } ?: false
         val buffering = player.playbackState == Player.STATE_BUFFERING
         // A sleep timer that just fired paused the player: pick up its new (off) state.
@@ -1643,7 +1841,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun rebuildQueue(player: Player) {
         val items = (0 until player.mediaItemCount).mapNotNull { i ->
-            player.getMediaItemAt(i).mediaId.toLongOrNull()?.let { songsById[it] }
+            player.getMediaItemAt(i).mediaId.toLongOrNull()?.let { songsById[it] ?: com.example.mimic.party.PartyLibrary.song(it) }
         }
         _queue.value = items
     }

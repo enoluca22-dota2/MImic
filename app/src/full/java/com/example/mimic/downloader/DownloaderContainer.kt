@@ -96,9 +96,32 @@ class DownloaderContainer private constructor(private val appContext: Context) {
             networkMonitor = networkMonitor,
             scope = applicationScope,
             requestForeground = { DownloadService.start(appContext) },
-            completionListener = DownloadCompletionListener { _completed.emit(it) },
+            completionListener = DownloadCompletionListener { done ->
+                _completed.emit(done)
+                queueLyrics(done)
+            },
             failureListener = { url, error -> diagnostics.downloadFailed(url, error) },
         ).also { it.start() }
+    }
+
+    /**
+     * 4.5: a downloaded song (published to MediaStore, so its library id is the MediaStore id at the
+     * end of the content URI) gets a background lyrics lookup. Videos and SAF-folder files (no
+     * MediaStore id) are skipped; the song's own lookup then happens when it is played.
+     */
+    private suspend fun queueLyrics(done: CompletedDownload) {
+        if (!done.mimeType.startsWith("audio/")) return
+        val uri = android.net.Uri.parse(done.fileUri)
+        if (uri.scheme != "content" || uri.authority != android.provider.MediaStore.AUTHORITY) return
+        val id = uri.lastPathSegment?.toLongOrNull() ?: return
+        val target = com.example.mimic.data.lyrics.LyricsTarget(
+            songId = id, title = done.entity.title, artist = done.entity.uploader.orEmpty(), album = "",
+            durationMs = 0L, uri = done.fileUri, remoteId = null,
+        )
+        runCatching {
+            (appContext as com.example.mimic.MimicApplication).container.lyricsRepository.markPending(target)
+            com.example.mimic.data.lyrics.LyricsWorker.enqueue(appContext, target)
+        }
     }
 
     /** Settings → Advanced → Download Diagnostics: local, sanitized records of link analyses. */

@@ -21,8 +21,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CloudItemEntity::class,
         com.example.mimic.data.radio.RadioStationEntity::class,
         com.example.mimic.data.online.OnlineTrackEntity::class,
+        com.example.mimic.data.lyrics.LyricsEntity::class,
     ],
-    version = 8,
+    version = 9,
     exportSchema = false,
 )
 abstract class MimicDatabase : RoomDatabase() {
@@ -36,6 +37,7 @@ abstract class MimicDatabase : RoomDatabase() {
     abstract fun cloudDao(): CloudDao
     abstract fun radioDao(): com.example.mimic.data.radio.RadioDao
     abstract fun onlineTrackDao(): com.example.mimic.data.online.OnlineTrackDao
+    abstract fun lyricsDao(): com.example.mimic.data.lyrics.LyricsDao
 
     companion object {
         @Volatile
@@ -132,7 +134,7 @@ abstract class MimicDatabase : RoomDatabase() {
          * existing table and row (songs, playlists, favorites, history, downloads) is untouched.
          */
         /** Every upgrade step, in order — used by the app AND the migration tests, so they can't drift apart. */
-        val ALL_MIGRATIONS: Array<Migration> by lazy { arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8) }
+        val ALL_MIGRATIONS: Array<Migration> by lazy { arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9) }
 
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -159,6 +161,20 @@ abstract class MimicDatabase : RoomDatabase() {
                         "`isVideo` INTEGER NOT NULL, `inLibrary` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, " +
                         "`lastSeenAt` INTEGER NOT NULL, PRIMARY KEY(`videoId`))",
                 )
+            }
+        }
+
+        /** v8 → v9 (4.5): saved lyrics + lookup status per song. Additive; nothing else changes. */
+        val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `lyrics` (" +
+                        "`songId` INTEGER NOT NULL, `status` TEXT NOT NULL, `trackKey` TEXT NOT NULL, `text` TEXT, " +
+                        "`source` TEXT, `providerId` TEXT, `matchedTitle` TEXT, `matchedArtist` TEXT, " +
+                        "`matchedDurationMs` INTEGER NOT NULL, `userChosen` INTEGER NOT NULL, `attempts` INTEGER NOT NULL, " +
+                        "`updatedAt` INTEGER NOT NULL, PRIMARY KEY(`songId`))",
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS `index_lyrics_status` ON `lyrics` (`status`)")
             }
         }
 

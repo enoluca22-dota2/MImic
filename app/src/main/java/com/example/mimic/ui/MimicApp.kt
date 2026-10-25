@@ -200,7 +200,15 @@ fun MimicApp(viewModel: PlayerViewModel) {
                 viewModel.rememberCollection(it)
                 navController.navigate("online/${enc(it.browseId)}")
             },
+            openLyricsTools = { navController.navigate("lyrics/missing") },
+            openParty = { navController.navigate("party") },
         )
+    }
+
+    // A Listen Together invite link opens the party screen (it shows the invite there).
+    val invite by viewModel.pendingInvite.collectAsStateWithLifecycle()
+    LaunchedEffect(invite) {
+        if (invite != null && navController.currentDestination?.route != "party") navController.navigate("party")
     }
 
     // The "update available" notification opens Settings → App Updates.
@@ -391,6 +399,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenLibraryStorage = { navController.navigate("settings/library") },
                     onOpenBackup = { navController.navigate("settings/backup") },
                     onOpenAccounts = { navController.navigate("settings/accounts") },
+                    onOpenParty = { navController.navigate("party") },
                     onOpenAdvanced = { navController.navigate("settings/advanced") },
                 )
             }
@@ -459,6 +468,12 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         onOpenDynamicPlayer = { navController.navigate("playerstudio") },
                     )
                 }
+            }
+            composable("party") {
+                InsetScreen(innerPadding) { com.example.mimic.ui.party.ListenTogetherScreen(viewModel, onBack = back) }
+            }
+            composable("lyrics/missing") {
+                InsetScreen(innerPadding) { com.example.mimic.ui.player.MissingLyricsScreen(viewModel, onBack = back) }
             }
             composable("stats") { InsetScreen(innerPadding) { StatsScreen(viewModel, onBack = back) } }
             composable("playback") {
