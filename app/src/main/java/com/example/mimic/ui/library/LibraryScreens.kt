@@ -218,7 +218,7 @@ fun LibraryScreen(vm: PlayerViewModel, contentPadding: PaddingValues, nav: AppNa
                         SelectionBar(
                             count = chosen.size,
                             allSelected = chosen.size == sorted.size && sorted.isNotEmpty(),
-                            downloadable = chosen.count { it.isFromServer && (!it.isDownloaded || it.fileMissing) },
+                            downloadable = chosen.count { (it.isFromServer || it.isOnline) && (!it.isDownloaded || it.fileMissing) },
                             onSelectAll = { selectedIds = if (chosen.size == sorted.size) emptyList() else sorted.map { it.id } },
                             onPlay = { vm.play(chosen, 0); selectedIds = null },
                             onQueue = { vm.addAllToQueue(chosen); selectedIds = null },
@@ -305,6 +305,7 @@ private fun libraryCountLine(all: List<Song>, catalog: CatalogState): String {
     val parts = buildList {
         add("${byProvider[com.example.mimic.data.MusicProvider.PHONE] ?: 0} on phone")
         byProvider[com.example.mimic.data.MusicProvider.NAVIDROME]?.let { add("$it Navidrome") }
+        byProvider[com.example.mimic.data.MusicProvider.YOUTUBE]?.let { add("$it YouTube Music") }
         add("$dl downloaded")
     }
     val base = parts.joinToString(" · ")
@@ -732,7 +733,7 @@ fun AlbumDetailScreen(vm: PlayerViewModel, albumKey: String, nav: AppNav) {
     }
     val isFav = groups.any { it.kind == FavoriteGroupEntity.KIND_ALBUM && it.groupKey == album.key }
     val total = album.songs.sumOf { it.durationMs }
-    val downloadable = album.songs.count { it.isFromServer && (!it.isDownloaded || it.fileMissing) }
+    val downloadable = album.songs.count { (it.isFromServer || it.isOnline) && (!it.isDownloaded || it.fileMissing) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = LocalBarPadding.current)) {
         item(key = "top") { DetailTopBar("", nav.back) }
         item(key = "header") {

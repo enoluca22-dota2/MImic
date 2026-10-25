@@ -13,6 +13,7 @@ import com.example.mimic.AppContainer
 import com.example.mimic.MimicApplication
 import com.example.mimic.data.AppSettings
 import com.example.mimic.data.Song
+import com.example.mimic.data.online.toSong
 import com.example.mimic.data.server.RemoteAlbum
 import com.example.mimic.data.server.RemoteSong
 import com.example.mimic.data.server.ServerCredentials
@@ -122,9 +123,32 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
      * per recording (MImic 3.0). Every screen — Home, Search, Library, album/artist pages, smart
      * collections — derives from this single source of truth.
      */
+    // ---- Online music (4.4, full edition) ----
+
+    private val onlineStore = container.onlineTracks
+
+    /** Every online track MImic remembers (played, favorited, in a playlist or downloaded). */
+    private val onlineRows: StateFlow<List<com.example.mimic.data.online.OnlineTrackEntity>> = onlineStore.all
+        .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /** Online tracks the user put in the library (favorite / playlist / download) — shown in Library. */
+    private val onlineLibrary = onlineRows.map { rows -> rows.filter { it.inLibrary }.map { it.toSong() } }
+
     val songs: StateFlow<List<Song>> =
-        combine(_localSongs, _serverSongs, downloads) { local, server, dl ->
-            com.example.mimic.data.UnifiedLibrary.merge(local, server, dl)
+        combine(_localSongs, _serverSongs, downloads, onlineLibrary) { local, server, dl, online ->
+            com.example.mimic.data.UnifiedLibrary.merge(local, server, dl, online)
+        }
+            .flowOn(kotlinx.coroutines.Dispatchers.Default)
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
+    /**
+     * [songs] plus online tracks that were only played (not added to the library), so play
+     * history, Continue Listening and the restored queue still show them with their own metadata.
+     */
+    val knownSongs: StateFlow<List<Song>> =
+        combine(songs, onlineRows) { lib, rows ->
+            val ids = lib.mapTo(HashSet(lib.size)) { it.id }
+            lib + rows.filter { !it.inLibrary }.map { it.toSong() }.filter { it.id !in ids }
         }
             .flowOn(kotlinx.coroutines.Dispatchers.Default)
             .stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -211,13 +235,13 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Continue Listening: the user's real play history, newest first, across every source. */
     val recentlyPlayed: StateFlow<List<Song>> =
-        combine(historyDao.recentlyPlayedIds(20), songs) { ids, songs ->
+        combine(historyDao.recentlyPlayedIds(20), knownSongs) { ids, songs ->
             val byId = songs.associateBy { it.id }
             ids.mapNotNull { byId[it] }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val mostPlayed: StateFlow<List<Song>> =
-        combine(historyDao.mostPlayed(20), songs) { counts, songs ->
+        combine(historyDao.mostPlayed(20), knownSongs) { counts, songs ->
             val byId = songs.associateBy { it.id }
             counts.mapNotNull { byId[it.songId] }
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -269,7 +293,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Albums played recently, newest first — Continue Listening and Quick Access (MImic 3.2). */
     val recentAlbums: StateFlow<List<com.example.mimic.data.AlbumGroup>> =
-        combine(historyDao.recentlyPlayedIds(150), songs) { ids, songs ->
+        combine(historyDao.recentlyPlayedIds(150), knownSongs) { ids, songs ->
             com.example.mimic.data.LibraryQueries.recentAlbums(ids, songs, 12)
         }
             .flowOn(kotlinx.coroutines.Dispatchers.Default)
@@ -631,6 +655,54 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     fun disconnectCast() = castController.disconnect()
 
+    // ---- Online music (4.4): search, pages, downloads ----
+
+    val onlineAvailable: Boolean get() = com.example.mimic.online.OnlineMusic.AVAILABLE
+
+    /** Tracks seen in online results this session, by videoId, so a download keeps album ids / art. */
+    private val onlineSeen = java.util.concurrent.ConcurrentHashMap<String, com.example.mimic.data.online.OnlineTrack>()
+
+    /** Collections opened from search (the page route carries only the browse id). */
+    private val onlineCollections = java.util.concurrent.ConcurrentHashMap<String, com.example.mimic.data.online.OnlineCollection>()
+
+    suspend fun onlineSearch(query: String, filter: com.example.mimic.data.online.OnlineSearchFilter) =
+        com.example.mimic.online.OnlineMusic.search(query, filter).onSuccess { r -> r.tracks.forEach { onlineSeen[it.videoId] = it } }
+
+    suspend fun onlineSuggestions(input: String): List<String> = com.example.mimic.online.OnlineMusic.suggestions(input)
+
+    fun rememberCollection(c: com.example.mimic.data.online.OnlineCollection) { onlineCollections[c.browseId] = c }
+
+    fun collectionFor(browseId: String): com.example.mimic.data.online.OnlineCollection? = onlineCollections[browseId]
+
+    suspend fun onlinePage(c: com.example.mimic.data.online.OnlineCollection) =
+        com.example.mimic.online.OnlineMusic.collection(c).onSuccess { p -> p.tracks.forEach { onlineSeen[it.videoId] = it } }
+
+    /** The online track behind [song]: as seen in results, as remembered, or rebuilt from the song. */
+    private fun onlineTrackOf(song: Song): com.example.mimic.data.online.OnlineTrack? {
+        val id = com.example.mimic.data.online.OnlineIds.videoIdOf(song.remoteId) ?: return null
+        return onlineSeen[id]
+            ?: onlineRows.value.firstOrNull { it.videoId == id }?.toTrack()
+            ?: com.example.mimic.data.online.OnlineTrack(
+                videoId = id, title = song.title, artist = song.artist, album = song.album,
+                durationMs = song.durationMs, artworkUrl = song.albumArtUri?.takeIf { it.startsWith("http") },
+            )
+    }
+
+    private fun rememberOnline(list: List<Song>, inLibrary: Boolean = false) {
+        val tracks = list.filter { it.isOnline }.mapNotNull(::onlineTrackOf)
+        if (tracks.isEmpty()) return
+        viewModelScope.launch { onlineStore.remember(tracks, inLibrary) }
+    }
+
+    private fun downloadOnline(list: List<Song>) {
+        val tracks = list.mapNotNull(::onlineTrackOf)
+        if (tracks.isEmpty()) return
+        val app = getApplication<Application>()
+        tracks.forEach { com.example.mimic.online.OnlineMusic.download(app, it) }
+        viewModelScope.launch { onlineStore.remember(tracks, inLibrary = true) }
+        _messages.tryEmit(if (tracks.size == 1) "Downloading \"${tracks[0].title}\"…" else "Downloading ${tracks.size} songs…")
+    }
+
     // ---- Playback ----
 
     fun play(queue: List<Song>, index: Int) {
@@ -639,6 +711,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         // Prefer the offline copy of any server track that has a verified download.
         val resolved = queue.map(::preferOffline)
         songsById = songsById + resolved.associateBy { it.id }
+        rememberOnline(resolved)
         _uiState.update { it.copy(playbackError = null) }
         val start = index.coerceIn(0, resolved.size - 1)
         val tv = castPlayerIfCasting()
@@ -713,6 +786,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     // ---- Queue editing ----
 
     fun addToQueue(song: Song) {
+        rememberOnline(listOf(song))
         val s = preferOffline(song)
         songsById = songsById + (s.id to s)
         controller?.addMediaItem(s.toMediaItem())
@@ -731,6 +805,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun playNext(song: Song) {
+        rememberOnline(listOf(song))
         val c = controller ?: return
         val s = preferOffline(song)
         songsById = songsById + (s.id to s)
@@ -776,6 +851,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     /** Heart a song. Room updates first (Home/Library react at once); server tracks also star. */
     fun toggleFavorite(song: Song) {
         radioById[song.id]?.let { toggleRadioFavorite(it); return }
+        rememberOnline(listOf(song), inLibrary = true)
         viewModelScope.launch {
             val account = serverCredentials.value?.let { SubsonicClient.accountKeyOf(it) }
             favoritesRepo.toggleSong(song, serverClient, account)
@@ -812,6 +888,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
     fun createPlaylist(name: String, firstSong: Song? = null) = createPlaylist(name, listOfNotNull(firstSong))
 
     fun createPlaylist(name: String, songs: List<Song>) {
+        rememberOnline(songs, inLibrary = true)
         viewModelScope.launch {
             val id = playlistDao.create(PlaylistEntity(name = name, createdAt = System.currentTimeMillis()))
             songs.forEach { addToPlaylistInternal(id, it.id) }
@@ -820,6 +897,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Multi-select "Add to playlist": appends in the given order, skipping songs already in it. */
     fun addSongsToPlaylist(playlistId: Long, songs: List<Song>) {
+        rememberOnline(songs, inLibrary = true)
         viewModelScope.launch {
             val existing = playlistDao.songIdsIn(playlistId).first().toSet()
             val added = songs.filter { it.id !in existing }
@@ -858,7 +936,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Songs in a playlist, in saved order, as a live Flow mapped to full [Song]s. */
     fun songsInPlaylist(playlistId: Long): Flow<List<Song>> =
-        combine(playlistDao.songIdsIn(playlistId), songs) { ids, songs ->
+        combine(playlistDao.songIdsIn(playlistId), knownSongs) { ids, songs ->
             val byId = songs.associateBy { it.id }
             ids.mapNotNull { byId[it] }
         }
@@ -927,7 +1005,17 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Server track ids currently downloading — every screen shows the same progress state. */
     private val _downloading = MutableStateFlow<Set<String>>(emptySet())
-    val downloading: StateFlow<Set<String>> = _downloading.asStateFlow()
+
+    /** Online download states by videoId (WorkManager-backed; full edition). */
+    val onlineDownloads: StateFlow<Map<String, com.example.mimic.data.online.OnlineDownloadState>> =
+        com.example.mimic.online.OnlineMusic.downloadStates(getApplication())
+            .stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+
+    /** Remote ids being downloaded: Navidrome ids, plus yt:<videoId> for queued / running online ones. */
+    val downloading: StateFlow<Set<String>> = combine(_downloading, onlineDownloads) { server, online ->
+        server + online.filterValues { it !is com.example.mimic.data.online.OnlineDownloadState.Failed }
+            .keys.map(com.example.mimic.data.online.OnlineIds::remoteId)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
 
     /** One-shot user messages (download finished / failed). */
     private val _messages = kotlinx.coroutines.flow.MutableSharedFlow<String>(extraBufferCapacity = 8)
@@ -946,7 +1034,7 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         // Keep the player's id -> Song lookup in step with the unified library, so the current
         // song / queue resolve for downloaded and server tracks as well as on-device files.
         viewModelScope.launch {
-            songs.collect { lib ->
+            knownSongs.collect { lib ->
                 libraryById = lib.associateBy { it.id }
                 songsById = songsById + libraryById
                 controller?.let { syncFromPlayer(it); rebuildQueue(it) }
@@ -1090,6 +1178,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Download a library song that comes from the server. No-op for on-device songs. */
     fun downloadSong(song: Song) {
+        if (song.isOnline) {
+            downloadOnline(listOf(song))
+            return
+        }
         val remote = song.remoteId?.let { remoteById[it] }
         if (remote == null) {
             _messages.tryEmit("Connect to your server to download \"${song.title}\"")
@@ -1100,6 +1192,9 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** User-initiated "Download album": downloads the listed server tracks one at a time. */
     fun downloadAll(list: List<Song>) {
+        val online = list.filter { it.isOnline && (!it.isDownloaded || it.fileMissing) }
+        if (online.isNotEmpty()) downloadOnline(online)
+        if (list.none { it.isFromServer }) return
         val wanted = list.filter { it.isFromServer && (!it.isDownloaded || it.fileMissing) }
         val todo = wanted.mapNotNull { s -> s.remoteId?.let { remoteById[it] } }
         if (todo.isEmpty()) {
@@ -1114,11 +1209,19 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
 
     /** remoteId -> fraction downloaded (0..1, or -1 while the size is unknown). */
     private val _downloadProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
-    val downloadProgress: StateFlow<Map<String, Float>> = _downloadProgress.asStateFlow()
+    /** Navidrome downloads plus running online ones (keyed yt:<videoId>). */
+    val downloadProgress: StateFlow<Map<String, Float>> = combine(_downloadProgress, onlineDownloads) { server, online ->
+        server + online.mapNotNull { (id, st) ->
+            (st as? com.example.mimic.data.online.OnlineDownloadState.Running)?.let { com.example.mimic.data.online.OnlineIds.remoteId(id) to it.fraction }
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
     private val downloadJobs = java.util.concurrent.ConcurrentHashMap<String, Job>()
 
     /** Cancel a running download; the partial file is deleted, nothing is recorded. */
     fun cancelDownload(song: Song) {
+        com.example.mimic.data.online.OnlineIds.videoIdOf(song.remoteId)?.let {
+            com.example.mimic.online.OnlineMusic.cancelDownload(getApplication(), it)
+        }
         song.remoteId?.let { downloadJobs[it]?.cancel() }
     }
 
@@ -1427,8 +1530,8 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             val snap = container.playbackStateStore.read() ?: return@launch
             val lib = kotlinx.coroutines.withTimeoutOrNull(8_000) {
-                songs.first { lib -> !_loading.value && lib.any { it.id == snap.currentId } }
-            } ?: songs.value
+                knownSongs.first { lib -> !_loading.value && lib.any { it.id == snap.currentId } }
+            } ?: knownSongs.value
             val byId = lib.associateBy { it.id }
             val items = snap.ids.mapNotNull { byId[it] }.map(::preferOffline)
             val (index, position) = snap.resumePoint(items.map { it.id }) ?: return@launch

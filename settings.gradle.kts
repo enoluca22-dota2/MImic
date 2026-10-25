@@ -19,7 +19,10 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // MSAL (OneDrive sign-in) depends on Microsoft's display-mask library, published only here.
+        // Online music (full edition): NewPipeExtractor and InnerTubeX are published only on JitPack.
+        maven("https://jitpack.io") {
+            content { includeGroupByRegex("com\\.github\\..*") }
+        }
     }
 }
 

@@ -44,4 +44,5 @@ fun remoteStableId(remoteId: String): Long =
 /** The one song id for any remote id (old cloud-drive downloads keep their 62-bit ids). */
 fun songIdForRemote(remoteId: String): Long =
     if (com.example.mimic.data.LegacyCloudIds.isCloud(remoteId)) com.example.mimic.data.LegacyCloudIds.stableId(remoteId)
-    else remoteStableId(remoteId)
+    else com.example.mimic.data.online.OnlineIds.videoIdOf(remoteId)?.let(com.example.mimic.data.online.OnlineIds::songId)
+        ?: remoteStableId(remoteId)

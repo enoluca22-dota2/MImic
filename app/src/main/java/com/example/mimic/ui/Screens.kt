@@ -56,6 +56,7 @@ import com.example.mimic.ui.components.AlbumArt
 import com.example.mimic.ui.components.SongRow
 import com.example.mimic.ui.designsystem.LocalGlass
 import com.example.mimic.ui.library.songItems
+import com.example.mimic.ui.online.onlineResults
 
 @Composable
 fun SectionHeader(text: String, modifier: Modifier = Modifier) {
@@ -88,6 +89,26 @@ fun SearchScreen(
     val settings by vm.settings.collectAsStateWithLifecycle()
     var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     var kind by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(ResultKind.ALL) }
+    // 4.4: search the user's own library, or YouTube Music (full edition).
+    var online by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var onlineFilter by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(com.example.mimic.data.online.OnlineSearchFilter.ALL) }
+    var onlineAttempt by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val onlineState by androidx.compose.runtime.produceState<com.example.mimic.ui.online.OnlineSearchState>(
+        com.example.mimic.ui.online.OnlineSearchState.Idle, online, query, onlineFilter, onlineAttempt,
+    ) {
+        if (!online || query.isBlank()) { value = com.example.mimic.ui.online.OnlineSearchState.Idle; return@produceState }
+        kotlinx.coroutines.delay(450) // debounce: a new keystroke cancels this search
+        value = com.example.mimic.ui.online.OnlineSearchState.Loading
+        value = vm.onlineSearch(query.trim(), onlineFilter).fold(
+            onSuccess = { com.example.mimic.ui.online.OnlineSearchState.Done(it) },
+            onFailure = { com.example.mimic.ui.online.OnlineSearchState.Error(com.example.mimic.ui.online.onlineErrorText(it)) },
+        )
+    }
+    val onlineSuggestions by androidx.compose.runtime.produceState(emptyList<String>(), online, query) {
+        if (!online || query.isBlank()) { value = emptyList(); return@produceState }
+        kotlinx.coroutines.delay(250)
+        value = runCatching { vm.onlineSuggestions(query.trim()) }.getOrDefault(emptyList()).filter { !it.equals(query.trim(), true) }
+    }
     val env = com.example.mimic.ui.library.rememberRowEnv(vm, nav)
     val results by androidx.compose.runtime.produceState(SearchResults(), query, songs, filter) {
         kotlinx.coroutines.delay(120) // debounce keystrokes
@@ -107,7 +128,10 @@ fun SearchScreen(
     }
     // A search the user acted on (opened a result, pressed Search, or left with results showing)
     // is remembered for next time; half-typed queries are not.
-    val saveQuery = { if (query.isNotBlank() && !results.isEmpty()) vm.recordSearch(query) }
+    val saveQuery = {
+        val found = if (online) onlineState is com.example.mimic.ui.online.OnlineSearchState.Done else !results.isEmpty()
+        if (query.isNotBlank() && found) vm.recordSearch(query)
+    }
     val latestRemember by androidx.compose.runtime.rememberUpdatedState(saveQuery)
     androidx.compose.runtime.DisposableEffect(Unit) { onDispose { latestRemember() } }
     val focus = androidx.compose.ui.platform.LocalFocusManager.current
@@ -122,7 +146,7 @@ fun SearchScreen(
             androidx.compose.material3.TextField(
                 value = query,
                 onValueChange = { query = it },
-                placeholder = { Text("Songs, artists, albums") },
+                placeholder = { Text(if (online) "Search YouTube Music" else "Songs, artists, albums") },
                 leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
                 trailingIcon = if (query.isNotEmpty()) ({
                     androidx.compose.material3.IconButton(onClick = { query = "" }) {
@@ -141,6 +165,23 @@ fun SearchScreen(
                 ),
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             )
+        }
+        if (vm.onlineAvailable) item(key = "mode") {
+            Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 2.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                androidx.compose.material3.FilterChip(selected = !online, onClick = { online = false }, label = { Text("My library") })
+                androidx.compose.material3.FilterChip(selected = online, onClick = { online = true }, label = { Text("YouTube Music") })
+            }
+        }
+        if (online) {
+            run {
+                onlineResults(
+                    query = query, filter = onlineFilter, onFilter = { onlineFilter = it }, state = onlineState,
+                    suggestions = onlineSuggestions, onSuggestion = { query = it; focus.clearFocus() },
+                    onRetry = { onlineAttempt++ }, env = env, nav = nav, onOpened = { saveQuery() },
+                    recent = settings.recentSearches, onRecent = { query = it },
+                )
+            }
+            return@LazyColumn
         }
         item(key = "filters") { com.example.mimic.ui.library.SourceFilterRow(vm) }
         if (query.isNotBlank()) {

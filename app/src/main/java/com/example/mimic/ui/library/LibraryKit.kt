@@ -67,6 +67,8 @@ class AppNav(
     /** Add one or more songs to a playlist (opens the playlist picker). */
     val addToPlaylist: (List<Song>) -> Unit,
     val back: () -> Unit,
+    /** Open a YouTube Music album / artist / playlist page (full edition, 4.4). */
+    val openOnline: (com.example.mimic.data.online.OnlineCollection) -> Unit = {},
 )
 
 /** Per-screen snapshot of row state, collected once per screen instead of once per row. */
@@ -123,7 +125,7 @@ fun SourceFilterRow(vm: PlayerViewModel, modifier: Modifier = Modifier) {
         modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        SourceFilter.entries.forEach { f ->
+        SourceFilter.entries.filter { it != SourceFilter.ONLINE || vm.onlineAvailable }.forEach { f ->
             FilterChip(
                 selected = f == selected,
                 onClick = { vm.sourceFilter.value = f },

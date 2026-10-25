@@ -53,9 +53,10 @@ class PlaybackService : MediaSessionService() {
     @OptIn(UnstableApi::class)
     override fun onCreate() {
         super.onCreate()
-        // One player for every source: phone files (content://), offline downloads (file://) and
-        // Navidrome streams (http/https).
-        val dataSources = androidx.media3.datasource.DefaultDataSource.Factory(this)
+        // One player for every source: phone files (content://), offline downloads (file://),
+        // Navidrome streams (http/https) and, in the full edition, online tracks (mimic-yt://,
+        // resolved to a fresh stream when opened — 4.4). Non-online URIs are untouched by the wrap.
+        val dataSources = com.example.mimic.online.OnlineMusic.wrap(androidx.media3.datasource.DefaultDataSource.Factory(this))
         val player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(DefaultMediaSourceFactory(dataSources))
             .setAudioAttributes(

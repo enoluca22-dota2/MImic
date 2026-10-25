@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Full edition only: the media downloader merged from ENAGELYUCA (merged into the main manifest). -->
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
@@ -46,6 +47,12 @@
             android:name="com.example.mimic.downloader.download.DownloadService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Online music downloads (4.4) run as WorkManager foreground work of type dataSync. -->
+        <service
+            android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync"
+            tools:node="merge" />
 
         <receiver
             android:name="com.example.mimic.downloader.download.BootCompletedReceiver"

@@ -81,6 +81,10 @@ class DownloadsAndMigrationTest {
             val pending = room.pendingStarDao().forAccount("u@h")
             assertEquals(1, pending.size)
             assertFalse(pending[0].star)
+            // v8 (4.4): the online_tracks table exists and round-trips.
+            val t = com.example.mimic.data.online.OnlineTrack("dQw4w9WgXcQ", "Song", "Artist", "Album", "MPREb1", null, 213000, "https://lh3.googleusercontent.com/x=w544-h544")
+            room.onlineTrackDao().upsert(com.example.mimic.data.online.OnlineTrackEntity.of(t, inLibrary = true))
+            assertEquals(t, room.onlineTrackDao().get("dQw4w9WgXcQ")?.toTrack())
         } finally {
             room.close()
         }

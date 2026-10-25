@@ -455,6 +455,7 @@ private fun SongCard(song: Song, showSource: Boolean, onClick: () -> Unit, onLon
                 song.isDownloaded -> "Downloaded"
                 song.source == SongSource.SERVER -> "Server"
                 song.source == SongSource.CLOUD -> song.provider.label
+                song.source == SongSource.ONLINE -> "YouTube Music"
                 else -> "On device"
             }
         } else song.artist

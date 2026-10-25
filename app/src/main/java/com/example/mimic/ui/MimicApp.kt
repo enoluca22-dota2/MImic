@@ -196,6 +196,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
             songMenu = { menuSong = it },
             addToPlaylist = { addSongs = it },
             back = { navController.popBackStack() },
+            openOnline = {
+                viewModel.rememberCollection(it)
+                navController.navigate("online/${enc(it.browseId)}")
+            },
         )
     }
 
@@ -391,6 +395,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
             }
 
             // ---- Pushed screens (Back pops them; the owning tab stays highlighted) ----
+            composable("online/{browseId}") { entry ->
+                val id = entry.arguments?.getString("browseId")?.let(Uri::decode) ?: return@composable
+                InsetScreen(innerPadding) { com.example.mimic.ui.online.OnlineCollectionScreen(viewModel, id, nav, onBack = back) }
+            }
             composable("album/{key}") { entry ->
                 val key = entry.arguments?.getString("key")?.let(Uri::decode) ?: return@composable
                 InsetScreen(innerPadding) { AlbumDetailScreen(viewModel, key, nav) }
@@ -580,7 +588,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
         androidx.compose.material3.AlertDialog(
             onDismissRequest = { shareNeedsDownload = null },
             title = { Text("Download before sharing?") },
-            text = { Text("\"${song.title}\" streams from your server, so there's no audio file on this phone to share yet. Download it first, then share it.") },
+            text = { Text("\"${song.title}\" streams from ${if (song.isOnline) "YouTube Music" else "your server"}, so there's no audio file on this phone to share yet. Download it first, then share it.") },
             confirmButton = {
                 TextButton(onClick = { viewModel.downloadSong(song); shareNeedsDownload = null }) { Text("Download") }
             },
@@ -594,7 +602,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
     if (speedOpen) com.example.mimic.ui.player.SpeedSheet(viewModel, onDismiss = { speedOpen = false })
 
     menuSong?.let { song ->
-        val canDownload = song.isFromServer && (!song.isDownloaded || song.fileMissing)
+        val canDownload = (song.isFromServer || song.isOnline) && (!song.isDownloaded || song.fileMissing)
         val progress = viewModel.downloadProgress.collectAsStateWithLifecycle().value
         SongActionsSheet(
             song = song,

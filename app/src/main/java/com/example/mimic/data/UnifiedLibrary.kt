@@ -5,7 +5,8 @@ enum class SourceFilter(val label: String) {
     ALL("All"),
     PHONE("Phone"),
     NAVIDROME("Navidrome"),
-    DOWNLOADED("Downloaded");
+    DOWNLOADED("Downloaded"),
+    ONLINE("YouTube Music");
 
     /** Provider filters include that provider's downloads: a downloaded Navidrome song is still Navidrome. */
     fun matches(song: Song): Boolean = when (this) {
@@ -13,6 +14,7 @@ enum class SourceFilter(val label: String) {
         PHONE -> song.provider == MusicProvider.PHONE
         NAVIDROME -> song.provider == MusicProvider.NAVIDROME
         DOWNLOADED -> song.isDownloaded
+        ONLINE -> song.provider == MusicProvider.YOUTUBE
     }
 }
 
@@ -54,8 +56,9 @@ object UnifiedLibrary {
      * plays from the stream instead; it stays flagged [Song.fileMissing] so the UI can offer a
      * re-download. On-device files are never merged with server tracks, even with equal titles.
      */
-    fun merge(local: List<Song>, server: List<Song>, downloads: List<Song>): List<Song> {
-        val serverById = server.associateBy { it.id }
+    fun merge(local: List<Song>, server: List<Song>, downloads: List<Song>, online: List<Song> = emptyList()): List<Song> {
+        // Saved online tracks stream exactly like server tracks: a download of one replaces it.
+        val serverById = server.associateBy { it.id } + online.associateBy { it.id }
         val downloadIds = HashSet<Long>(downloads.size)
         val merged = ArrayList<Song>(local.size + server.size + downloads.size)
         merged += local
@@ -73,6 +76,7 @@ object UnifiedLibrary {
             )
         }
         for (s in server) if (s.id !in downloadIds) merged += s
+        for (s in online) if (s.id !in downloadIds) merged += s
         return merged
     }
 

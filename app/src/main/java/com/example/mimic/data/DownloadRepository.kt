@@ -73,6 +73,32 @@ class DownloadRepository(context: Context, private val dao: DownloadDao) {
         return Result.success(size)
     }
 
+    /** The app-private folder online downloads are written into (full edition, 4.4). */
+    val onlineDir: File get() = File(dir, "online").apply { mkdirs() }
+
+    /**
+     * Record a finished, verified online download (written by the full edition's worker). Its
+     * artwork is a file next to it, so every downloaded track keeps its own cover offline.
+     */
+    suspend fun recordOnline(track: com.example.mimic.data.online.OnlineTrack, file: File, cover: File?) {
+        dao.upsert(
+            DownloadEntity(
+                remoteId = com.example.mimic.data.online.OnlineIds.remoteId(track.videoId),
+                title = track.title, artist = track.artist, album = track.album ?: "",
+                durationMs = track.durationMs,
+                fileUri = Uri.fromFile(file).toString(),
+                coverArtUri = cover?.takeIf { it.isFile }?.let { Uri.fromFile(it).toString() } ?: track.artworkUrl,
+                downloadedAt = System.currentTimeMillis(),
+                albumId = track.albumId,
+                accountKey = "youtube",
+                sizeBytes = withContext(Dispatchers.IO) { file.length() },
+            ),
+        )
+    }
+
+    /** Whether [remoteId] already has a download row (duplicate prevention). */
+    suspend fun isDownloaded(remoteId: String): Boolean = dao.isDownloaded(remoteId)
+
     /** Only when the user explicitly asks while disconnecting an account. */
     suspend fun removeAllForAccount(accountKey: String) {
         for (row in dao.allOnce()) if (row.accountKey == accountKey) remove(row.remoteId)
@@ -107,8 +133,12 @@ class DownloadRepository(context: Context, private val dao: DownloadDao) {
         dateAddedSec = downloadedAt / 1000, folder = "Downloads",
         source = SongSource.DOWNLOADED,
         remoteId = remoteId,
-        albumKey = if (LegacyCloudIds.isCloud(remoteId)) albumId ?: "cloud:${accountKey}:album:unknown"
-        else SubsonicClient.serverAlbumKey(albumId, album),
+        albumKey = when {
+            LegacyCloudIds.isCloud(remoteId) -> albumId ?: "cloud:${accountKey}:album:unknown"
+            com.example.mimic.data.online.OnlineIds.isOnline(remoteId) ->
+                com.example.mimic.data.online.OnlineIds.albumKey(albumId, MetadataFallback.album(album))
+            else -> SubsonicClient.serverAlbumKey(albumId, album)
+        },
         artistKey = MetadataFallback.artistKey(MetadataFallback.artist(artist)),
         fileMissing = fileMissing,
     )

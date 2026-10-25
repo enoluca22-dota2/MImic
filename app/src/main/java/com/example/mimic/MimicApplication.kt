@@ -29,6 +29,10 @@ class AppContainer(application: Application) {
     val downloadDao get() = database.downloadDao()
     val favoriteGroupDao get() = database.favoriteGroupDao()
     val pendingStarDao get() = database.pendingStarDao()
+    /** Online (YouTube Music) track metadata, 4.4. */
+    val onlineTracks: com.example.mimic.data.online.OnlineTrackStore by lazy {
+        com.example.mimic.data.online.OnlineTrackStore(database.onlineTrackDao())
+    }
 
     val downloadRepository: DownloadRepository by lazy { DownloadRepository(application, downloadDao) }
     val favoritesRepository: FavoritesRepository by lazy {
@@ -74,6 +78,8 @@ class MimicApplication : Application(), coil.ImageLoaderFactory {
         androidx.work.WorkManager.getInstance(this).cancelUniqueWork("mimic-cloud-sync")
         // Full edition: media downloader (unpacks yt-dlp once, resumes an interrupted queue).
         com.example.mimic.downloader.Downloader.init(this)
+        // Full edition: online music (stream resolver warm-up, YouTube Music session if connected).
+        com.example.mimic.online.OnlineMusic.init(this)
         // In-app updates: drop leftover update APKs; daily check (notification only) if enabled.
         container.updateManager.cleanUpOldDownloads()
         com.example.mimic.update.UpdateCheckWorker.schedule(this, container.updateManager.autoCheckEnabled)

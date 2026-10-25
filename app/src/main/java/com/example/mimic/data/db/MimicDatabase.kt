@@ -20,8 +20,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         CloudAccountEntity::class,
         CloudItemEntity::class,
         com.example.mimic.data.radio.RadioStationEntity::class,
+        com.example.mimic.data.online.OnlineTrackEntity::class,
     ],
-    version = 7,
+    version = 8,
     exportSchema = false,
 )
 abstract class MimicDatabase : RoomDatabase() {
@@ -34,6 +35,7 @@ abstract class MimicDatabase : RoomDatabase() {
     abstract fun pendingStarDao(): PendingStarDao
     abstract fun cloudDao(): CloudDao
     abstract fun radioDao(): com.example.mimic.data.radio.RadioDao
+    abstract fun onlineTrackDao(): com.example.mimic.data.online.OnlineTrackDao
 
     companion object {
         @Volatile
@@ -130,7 +132,7 @@ abstract class MimicDatabase : RoomDatabase() {
          * existing table and row (songs, playlists, favorites, history, downloads) is untouched.
          */
         /** Every upgrade step, in order — used by the app AND the migration tests, so they can't drift apart. */
-        val ALL_MIGRATIONS: Array<Migration> by lazy { arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7) }
+        val ALL_MIGRATIONS: Array<Migration> by lazy { arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8) }
 
         val MIGRATION_6_7 = object : Migration(6, 7) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -144,6 +146,19 @@ abstract class MimicDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_radio_stations_favorite` ON `radio_stations` (`favorite`)")
                 db.execSQL("CREATE INDEX IF NOT EXISTS `index_radio_stations_lastPlayedAt` ON `radio_stations` (`lastPlayedAt`)")
+            }
+        }
+
+        /** v7 → v8 (4.4): online (YouTube Music) track metadata. Additive; nothing else changes. */
+        val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS `online_tracks` (" +
+                        "`videoId` TEXT NOT NULL, `title` TEXT NOT NULL, `artist` TEXT NOT NULL, `album` TEXT, " +
+                        "`albumId` TEXT, `artistId` TEXT, `durationMs` INTEGER NOT NULL, `artworkUrl` TEXT, " +
+                        "`isVideo` INTEGER NOT NULL, `inLibrary` INTEGER NOT NULL, `addedAt` INTEGER NOT NULL, " +
+                        "`lastSeenAt` INTEGER NOT NULL, PRIMARY KEY(`videoId`))",
+                )
             }
         }
 

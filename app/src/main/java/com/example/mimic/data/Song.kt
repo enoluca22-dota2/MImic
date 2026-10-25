@@ -4,12 +4,14 @@ package com.example.mimic.data
  * Where a track's audio comes from right now. A downloaded server track is [DOWNLOADED].
  * ([CLOUD] is kept only so old saved state still parses; nothing streams from a cloud drive since 4.1.)
  */
-enum class SongSource { LOCAL, SERVER, DOWNLOADED, CLOUD }
+enum class SongSource { LOCAL, SERVER, DOWNLOADED, CLOUD, ONLINE }
 
 /** Which library a track belongs to, whether it is streamed or downloaded. */
 enum class MusicProvider(val label: String) {
     PHONE("Phone"),
     NAVIDROME("Navidrome"),
+    /** Online music (4.4, full edition): streamed from YouTube Music, or downloaded from it. */
+    YOUTUBE("YouTube Music"),
 }
 
 /**
@@ -55,7 +57,9 @@ data class Song(
     val isOffline: Boolean get() = source == SongSource.LOCAL || (source == SongSource.DOWNLOADED && !fileMissing)
     val isDownloaded: Boolean get() = source == SongSource.DOWNLOADED
     /** Comes from a remote library (Navidrome, or an old cloud-drive download), so it has a remote id. */
-    val isFromServer: Boolean get() = remoteId != null
+    val isFromServer: Boolean get() = remoteId != null && provider != MusicProvider.YOUTUBE
+    /** A YouTube Music track (streamed or downloaded). */
+    val isOnline: Boolean get() = provider == MusicProvider.YOUTUBE
     val provider: MusicProvider get() = providerOf(remoteId)
 
     companion object {
@@ -63,6 +67,7 @@ data class Song(
             remoteId == null -> MusicProvider.PHONE
             // A song downloaded from a (removed) cloud drive is simply a file on this phone now.
             LegacyCloudIds.isCloud(remoteId) -> MusicProvider.PHONE
+            com.example.mimic.data.online.OnlineIds.isOnline(remoteId) -> MusicProvider.YOUTUBE
             else -> MusicProvider.NAVIDROME
         }
     }

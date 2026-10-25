@@ -116,6 +116,27 @@ android {
     }
 }
 
+/*
+ * NewPipeExtractor ships its own org.schabi.newpipe.extractor.utils.Utils, and src/full carries
+ * BitChord's patched copy at the same path. A release build merges all dex inputs and rejects the
+ * duplicate, so the library's copy is stripped from the jar first (same approach as BitChord).
+ */
+val newPipeExtractorRaw: Configuration by configurations.creating {
+    isTransitive = false
+    isCanBeConsumed = false
+}
+dependencies {
+    newPipeExtractorRaw("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
+}
+val newPipeExtractorStripped = tasks.register<org.gradle.api.tasks.bundling.Jar>("stripNewPipeExtractorUtils") {
+    archiveFileName.set("NewPipeExtractor-v0.26.3-noutils.jar")
+    destinationDirectory.set(layout.buildDirectory.dir("stripped-libs"))
+    from(provider { newPipeExtractorRaw.map { zipTree(it) } }) {
+        exclude("org/schabi/newpipe/extractor/utils/Utils.class")
+        exclude("org/schabi/newpipe/extractor/utils/Utils\$*.class")
+    }
+}
+
 dependencies {
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.activity.compose)
@@ -155,6 +176,22 @@ dependencies {
     "fullCompileOnly"(libs.jackson.databind.ytdl)
     "fullImplementation"(libs.androidx.documentfile)
     "testFullImplementation"(libs.jackson.databind.ytdl)
+    // Online music (full edition only) — stream resolution ported from BitChord (GPL-3.0).
+    "fullImplementation"("com.github.MetrolistGroup.innertubex:innertubex-android:v0.7.0")
+    // NewPipeExtractor v0.26.3 minus its Utils class (a patched copy lives in src/full, as in BitChord).
+    "fullImplementation"(files(newPipeExtractorStripped))
+    "fullImplementation"("com.github.TeamNewPipe:nanojson:e9d656ddb49a412a5a0a5d5ef20ca7ef09549996")
+    "fullImplementation"("org.jsoup:jsoup:1.22.2")
+    "fullImplementation"("com.google.code.findbugs:jsr305:3.0.2")
+    "fullImplementation"("com.google.protobuf:protobuf-javalite:4.35.0")
+    "fullImplementation"("org.mozilla:rhino:1.8.1")
+    "fullImplementation"("org.mozilla:rhino-engine:1.8.1")
+    "fullImplementation"("io.github.dokar3:quickjs-kt-android:1.0.14")
+    "fullImplementation"("androidx.security:security-crypto:1.1.0-alpha06")
+    "fullImplementation"("io.ktor:ktor-client-okhttp:3.5.2")
+    "fullImplementation"("io.ktor:ktor-client-content-negotiation:3.5.2")
+    "fullImplementation"("io.ktor:ktor-serialization-kotlinx-json:3.5.2")
+    "fullImplementation"("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
     implementation(libs.kyant.backdrop)
     implementation(libs.kyant.shapes)
     implementation(libs.material.color.utilities)
