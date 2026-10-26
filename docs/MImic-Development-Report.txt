@@ -1,6 +1,6 @@
 MIMIC — COMPLETE DEVELOPMENT REPORT
 ===================================
-Last updated: 2026-10-25 (session: MImic x BitChord integration, release 4.4.0-beta.1)
+Last updated: 2026-10-26 (session: Listen Together + automatic lyrics + new icon, release 4.5.0-beta.1)
 Keep this file current after every session. Plain text, written so it can be pasted into a
 new ChatGPT / Claude conversation without access to the repository.
 
@@ -8,7 +8,7 @@ new ChatGPT / Claude conversation without access to the repository.
 A. PROJECT IDENTITY
 -------------------
 App name ............ MImic
-Current version ..... 4.4.0-beta.1  (versionCode 400400034)
+Current version ..... 4.5.0-beta.1  (versionCode 400500034)
 Application ID ...... com.example.mimic  (never change)
 Repository .......... https://github.com/enoluca22-dota2/MImic  (PUBLIC — owner's decision on
                       2026-10-25, because the in-app updater downloads release assets anonymously)
@@ -50,7 +50,7 @@ Library: data/UnifiedLibrary.merge(local, server, downloads, onlineSaved) is the
   id with bit 32 set; legacy cloud downloads = 62-bit in [2^61,2^62); online YouTube = 62-bit
   SHA-256 of "yt:<videoId>" in [2^62,2^63); radio = negative. A download shares its source's id.
   PlayerViewModel.knownSongs = songs + online tracks only played (history / queue restore).
-Database: data/db/MimicDatabase.kt, Room v8. Tables: favorites, play_history, playlists,
+Database: data/db/MimicDatabase.kt, Room v9 (v9 adds `lyrics`). Tables: favorites, play_history, playlists,
   playlist_songs, custom_themes, downloads, favorite_groups, pending_server_ops (stars),
   cloud_accounts/cloud_items (legacy, unused), radio_stations, online_tracks (v8). Migrations are
   additive and listed in MimicDatabase.ALL_MIGRATIONS (androidTest covers v4 → v8).
@@ -62,10 +62,19 @@ Downloads: Navidrome → data/DownloadRepository.download (in-app, foreground of
   online → OnlineDownloadWorker (WorkManager foreground dataSync) → DownloadRepository.recordOnline;
   links (YouTube/TikTok URLs) → full-edition downloader/ (yt-dlp, own DB mimic_downloader.db,
   DownloadService). All finished files live in app storage (filesDir/downloads, …/online).
-Lyrics: player/PlayerViewModel.loadLyrics: imported .lrc (filesDir/lyrics/<id>.lrc) → embedded
-  tags (data/audio/AudioTags) → LRCLIB (data/audio/LrcLib.kt, strict title/artist/±4 s duration
-  match, cached filesDir/lyrics/lrclib/<id>.lrc). ui/player/PlayerSheets LyricsSheet: synced line
-  highlight, auto-scroll, tap a line to seek, source shown.
+Lyrics (4.5): data/lyrics/ — LyricsRepository.resolve: user .lrc (filesDir/lyrics/<id>.lrc) →
+  saved row (Room table `lyrics`, v9) → embedded tags (AudioTags) → sidecar <name>.lrc → Navidrome
+  (SubsonicClient.lyrics: getLyricsBySongId, then getLyrics) → LRCLIB (data/audio/LrcLib: /api/get,
+  /api/search, free-text search; 3 attempts on 5xx/429/IO; 350 ms pacing). LyricsQuery cleans
+  titles/artists (VEVO/Topic/"Artist - Title"/packaging/feat.) and extracts version markers;
+  LyricsMatcher only accepts equal cleaned titles, same version markers, credited artist, length
+  within 3.5 s (2 s without artist) → Found / Ambiguous (user chooses) / None. Status per song:
+  SYNCED, PLAIN, UNAVAILABLE (recheck after 14 days), FAILED (retry after 2 min), NEEDS_CHOICE,
+  PENDING. trackKey guard: a row is ignored if the song's cleaned title/artist changed.
+  LyricsWorker (WorkManager): one song after a download; Find Missing Lyrics scan (resumable).
+  VM.lyrics flow is Eager (lookup starts when a song plays). UI: ui/player/LyricsScreen.kt
+  (full screen; shared LyricsContent also used by the Dynamic player), MissingLyricsScreen.kt.
+Listen Together (4.5): see section D2.
 Accounts: data/account/MimicAccount.kt (Credential Manager "Sign in with Google" → Firebase Auth,
   Firebase initialised from BuildConfig fields read from gitignored firebase.properties) and
   data/account/AccountSync.kt (Firestore users/{uid}/devices/{deviceId} snapshots built with the
@@ -85,7 +94,7 @@ Diagnostics: Settings → Advanced → Download Diagnostics (full): link-analysi
   resolver log). Shared as TXT through the share sheet.
 
 
-C. FEATURE INVENTORY (status as of 4.4.0-beta.1)
+C. FEATURE INVENTORY (status as of 4.5.0-beta.1)
 --------------------------------------------------
 Statuses: WORKING (verified this or an earlier session) / PARTIAL / BLOCKED / NOT TESTED / PLANNED
 
@@ -119,8 +128,15 @@ MP3 conversion option (ffmpeg) ............................... NOT TESTED (needs
 Song ⋮ sheet (artwork header, download, queue, playlist,
   favorite, copy/share link, song info, go to artist/album) .. PARTIAL — sheet verified; link/info
                                                                 actions NOT TESTED by tap
-LRCLIB lyrics ................................................ NOT TESTED on device (unit-tested
-                                                                matcher; network call untested)
+Lyrics (saved/embedded/sidecar/Navidrome/LRCLIB, automatic on
+  play, full-screen synced view, choose/add/retry, offline) ... WORKING (emulator, 4.5)
+Automatic lyrics after downloads .............................. PARTIAL — code + worker unit-tested;
+                                                                not exercised by a real download
+Find Missing Lyrics ........................................... WORKING (emulator, 4.5)
+Listen Together (create/join/link/code/queue/sync/skip vote/
+  end/reconnect) ............................................. WORKING on two emulators (LAN); real
+                                                                phones / Tailscale NOT TESTED
+New neon E app icon (launcher, round, adaptive, themed) ...... WORKING (emulator, fresh + update)
 MImic Google account + sync .................................. BLOCKED (no Firebase project yet;
                                                                 code + rules + docs present; UI shows
                                                                 "not set up")
@@ -171,16 +187,61 @@ New dependencies (full edition unless noted): InnerTubeX 0.7.0 (GPL-3), NewPipeE
   protolite-well-known-types (duplicate of protobuf-javalite 4.x).
 
 
-E. CHANGES IN 4.4.0-beta.1
+
+D2. LISTEN TOGETHER (4.5)
+-------------------------
+Server: server/party — BitChord's Go backend (GPL-3.0, header in every file), module mimic/party,
+  + host "endParty" (bye reason "ended", party dropped) and "voteSkip" (majority of connected
+  devices; votes reset per track; allowed in host-only parties). In-memory only, no database, no
+  secrets. Docker: `docker compose -f server/party/docker-compose.yml up -d --build` (container
+  mimic-party, port 8000; separate from Navidrome). Tests: `docker run --rm -v <dir>:/src -w /src
+  golang:1.27-alpine go test ./...` (all pass, incl. mimic_test.go).
+Protocol: REST create/join/preview/leave/snapshot + WebSocket /ws/parties/{code} with the party
+  token in the Authorization header (never in URLs, never logged). State = position P at server
+  time A + seq; queue travels separately with its own seq; heartbeat every 5 s; 45 s grace for a
+  dropped socket; codes 6 characters.
+Client: party/ListenTogether.kt (OkHttp, org.json; both editions): server address (no default;
+  user enters it), identity = MImic Google account name/photo if signed in, else a nickname (no
+  extra account), userId = SHA-256 hash; membership saved in app-private prefs and restored after
+  a process restart (GET snapshot; 401/404 → cleared); reconnect loop with jittered backoff;
+  ServerClock (best round trip of a ping burst, monotonic clock).
+Player binding: player/PartySync.kt in PlaybackService (outlives the UI); the MediaSession player
+  is PartyPlayer (ForwardingPlayer) so every user command (app, notification, lock screen,
+  Bluetooth) is published; corrections go straight to ExoPlayer. Resumes wait for the server's
+  scheduled start; control alignment ±120 ms; drift correction only above 1.2 s on two readings,
+  then 6 s cooldown. Focus loss (call / other app) detaches only that phone. Next/previous use the
+  server's queue; auto-advance proposes the party's next track (idempotent). The user's own queue
+  is stashed on entering and restored (paused) on leaving; queue persistence is paused in a party.
+Track identity: party/PartyTracks.kt — online song = YouTube id (+ public https artwork only);
+  anything else = "m:" + hash(cleaned title|artist) + length. Each phone resolves to ITS OWN
+  source: own download / phone file / Navidrome (library match: same cleaned title, versions,
+  credited artist, length ±4 s; offline copies preferred) → own online stream (full edition) →
+  "Not available on this phone" (sits the song out). No audio, stream URLs or Navidrome URLs/tokens
+  are ever sent.
+UI: ui/party/ListenTogetherScreen.kt (Settings → Listen Together): name card, server card
+  (Check & save), Start a Party, Join (code or link, preview first), party header (code, avatars,
+  host star, connection/latency/sync chip), now playing (source on this phone, controls,
+  progress, vote to skip), shared queue (add songs from the library, remove, tap to play), host
+  settings (host-only control), listeners (remove), recent activity, Leave / End party.
+Invites: mimic://party/CODE?server=URL (manifest intent filter) and http(s)://<server>/invite/CODE
+  (server landing page with "Join the party in MImic"). Docs: docs/LISTEN_TOGETHER.md (LAN,
+  Tailscale, optional Tailscale Funnel — not enabled by Claude).
+E. CHANGES IN 4.5.0-beta.1
 --------------------------
-New: online search/stream/download, artist/album/playlist pages, YouTube-search fallback with Load
-more, LRCLIB lyrics, song sheet additions, Accounts & online music screen (MImic account + sync
-code, YouTube Music connect, quality/format/Wi-Fi-only settings), online section in diagnostics,
-THIRD_PARTY_NOTICES.md, CLAUDE.md, docs/ACCOUNT_SETUP.md, docs/firebase/firestore.rules.
-Database: v7 → v8 adds online_tracks (additive; tested on emulator upgrade and androidTest).
-Source filter gains "YouTube Music". Song model: SongSource.ONLINE, MusicProvider.YOUTUBE,
-Song.isOnline; isFromServer excludes YouTube tracks (they never reach Navidrome code).
-Removed: nothing.
+(4.4 changes: see CHANGELOG.md.)
+4.5.0-beta.1:
+New: Listen Together (section D2); lyrics pipeline + Find Missing Lyrics + full-screen lyrics
+  (section B); automatic lyrics after downloads; new app icon (the owner's neon-glass "E":
+  docs/icon/source/mimic-e-neon-source.png → tools/icon/build_e_icon.py → mipmap-*/ic_launcher,
+  ic_launcher_round, ic_launcher_foreground, ic_launcher_monochrome, values/ic_launcher_background
+  #10183D; old vector drawables removed; masters docs/icon/mimic_icon_1024/512.png).
+Root cause of missing lyrics (measured on the live LRCLIB API, 2026-10-25): (1) YouTube-upload
+  metadata ("Justin Timberlake - Mirrors" / "JustinTimberlake") returned 0 results; (2) LRCLIB
+  answered 503 often and 4.4 reported every non-200 as "no lyrics", without retry; (3) the
+  lyrics flow was WhileSubscribed, so nothing was looked up until the sheet was opened; (4) the
+  4.4 matcher accepted title prefixes ("Mirrors (Live …)" for "Mirrors"). All fixed + tests.
+Database: v8 → v9 adds `lyrics` (additive; androidTest v4→v9 PASS; upgrade on emulator PASS).
+Removed: the old lyrics bottom sheet (replaced by the full-screen lyrics) and old icon drawables.
 
 
 F. SCREENS
@@ -197,11 +258,14 @@ Library: Songs / Albums / Artists / Playlists / Favorites with sort, select, sou
 Album / Artist (library): grouped from the unified library; favorite album/artist.
 Now Playing: Classic / Immersive / Compact / Dynamic layouts, queue, lyrics, sleep, speed, cast,
   stop & close; mini player above the nav bar.
-Lyrics sheet: synced highlight, tap-to-seek, Add .lrc, source label.
+Lyrics (4.5, full screen): synced highlight + dimming, auto-scroll, tap-to-seek, transport,
+  artwork colours, source credit, menu (Choose lyrics / file / type / search again), Retry.
+Library → Lyrics: saved-lyrics counts, Find Missing Lyrics (progress, cancel, summary).
+Listen Together: see D2.
 Downloads tab: link downloader (full) + offline songs.
 Radio: country chips (+ add, edit), categories, stations, favorites, live player.
 Settings: Theme Studio, Player Layout, Home & Navigation, Playback & audio, Radio Countries,
-  Library & Storage, Accounts & online music (new), Backup & Restore, Advanced (Download
+  Library & Storage, Listen Together (4.5), Accounts & online music, Backup & Restore, Advanced (Download
   Diagnostics), Music server (Navidrome account), App Updates.
 Navigation: tabs keep their own back stacks; re-tapping a tab scrolls to top / pops to root;
   Android Back pops sub-screens; mini player persists everywhere.
@@ -212,6 +276,7 @@ G. SERVER AND BACKEND
 Navidrome: Docker container mimic-navidrome (server/docker-compose.yml), music from
   MIMIC_MUSIC_DIR in gitignored server/.env (C:/Users/Eno/Music/mp3), LAN http://<pc>:4533,
   remote via Tailscale. Docker Desktop must be started after a reboot.
+Party server (4.5): server/party, Docker container mimic-party :8000, see D2.
 Online providers: YouTube Music InnerTube (WEB_REMIX) for search/browse; InnerTubeX client
   catalogue + PoTokens minted in a hidden WebView; NewPipeExtractor fallback; YouTube search via
   NewPipe when the YouTube Music catalogue is unavailable. Runtime fetch of zemer-cipher player
@@ -230,112 +295,122 @@ Environment variable names used in tooling: JAVA_HOME (Android Studio jbr), LOCA
 
 H. TEST RESULTS (this session)
 ------------------------------
-JVM unit tests ............ PASS — full 251 (2 opt-in probes skipped), standard 148
-Lint (fullDebug, standardDebug) PASS (0 errors after fixes)
-Release build + signing ... PASS — scripts/release.sh verified pinned certificate, package,
-                            versionCode 400400034, versionName on all 5 APKs
-Instrumented tests ........ NOT RUN this session (migration test extended to v8; DB upgrade was
-                            verified manually on two emulators instead)
-Emulator YTD_Test_4K (API 36, x86_64, 4 KB pages):
-  upgrade 4.3.1 → 4.4 debug, data kept ........................ PASS
-  "Justin Tim" suggestions + artists + playlists + songs ........ PASS
-  online playback (PLAYING, buffered ~2 min, 1.9 s resolve) ..... PASS
-  per-track artwork in rows / mini player / offline ............. PASS
-  ⋮ → Download: 8 MB Opus/WebM, cover saved, in Downloaded ...... PASS
-  file format check (ffprobe: opus, matroska/webm, 500 s) ....... PASS
-  embedded tags visible to ffprobe ............................... FAIL (tags are appended after the
-                                                                   clusters; MImic itself shows the
-                                                                   right metadata from its DB)
-  airplane mode + restart → downloaded song plays ............... PASS
-  release APK: Accounts screen, Google sign-in page loads ........ PASS (no credentials entered)
-  release APK: second search ("Dua Lipa Houdini"), playback,
-  Load more ....................................................... PASS
-Emulator Pixel_10a (API 37, 16 KB pages): in-app updater 4.3.1 → 4.4.0-beta.1 (check, download,
-  verify, Play Protect scan, install) ........................... PASS; data kept ............ PASS;
-  radio playback after update .................................... PASS
-Physical phones (Xiaomi, Samsung S25 Ultra) ...................... NOT TESTED (none connected)
-Google sign-in / sync / account isolation ........................ BLOCKED (no Firebase project)
-YouTube Music real sign-in ....................................... NOT TESTED
-Navidrome, Tailscale, Bluetooth, lock-screen controls, Cast ...... NOT TESTED this session
-Online-track error while offline ................................. PARTIAL (ends paused, no
-                                                                   stuck spinner; message not read)
+Unit tests ................ PASS — full 285 (3 opt-in probes skipped), standard 182
+  new: LrcLibTest (20: cleaning, VEVO, packaging, featured, live/remix refusal, ambiguity,
+  503 retry, persistent 503 = failure, 404, Navidrome synced→LRC, scan targets), PartyTest (17:
+  invites, server addresses, track identity, no token leak, library matching, wire parsing,
+  clock offset, queue index, single move, own-song match)
+Live LRCLIB probe (opt-in) ... 5 previously-missing metadata shapes → FOUND synced (Mirrors via
+                               VEVO title, Houdini (Lyrics), Dua Lipa - Houdini (Official Music
+                               Video), Aerials, Stay (with Justin Bieber)); 1 case got persistent
+                               503 → reported as failure (correct)
+Lint fullDebug .............. PASS
+Go server tests (docker) .... PASS (all packages; voteSkip majority, voteSkip in host-only party,
+                               only host ends party + 404 after, wrong token → 401)
+Instrumented migration test . PASS (OK 2 tests, v4 → v9)
+Release build + signing ..... PASS — 5 APKs, pinned certificate, package, versionCode 400500034
+
+Emulator YTD_Test_4K (API 36) — lyrics:
+  upgrade 4.4.0-beta.1 (release) → 4.5 debug, DB user_version 9, history kept ....... PASS
+  Aerials (tagged phone file) → SYNCED from LRCLIB id 463732 automatically on play ...... PASS
+  "Justin Timberlake - Mirrors (Official Video)" / JustinTimberlakeVEVO → SYNCED Mirrors PASS
+  embedded USLT → PLAIN (labelled not synced) ......................................... PASS
+  sidecar .lrc next to the file (API 36) → SYNCED ....................................... PASS
+  nonsense song → UNAVAILABLE + Retry / Add lyrics ...................................... PASS
+  artist-less "Home" → refused (not guessed); Choose lyrics list (25) → saved userChosen . PASS
+  full-screen lyrics: highlight, dim, auto-scroll, tap line seeks, LRCLIB attribution .. PASS
+  airplane mode + app restart → saved lyrics shown ...................................... PASS
+  offline, never looked up → "You're offline…" + Retry → Searching after reconnect ..... PASS
+  Find Missing Lyrics: progress + summary (count bug found & fixed, re-run correct) ..... PASS
+  newly downloaded songs (online / Navidrome / link) → background lookup ............... NOT TESTED
+                                                    on device (code path + worker unit-tested)
+  translation ......................................................................... NOT IMPLEMENTED
+                                                    (LRCLIB has none; no other permitted source)
+
+Two emulators (Pixel_10a + YTD_Test_4K), party server on the PC (http://192.168.0.178:8000):
+  create party, live, clock synced (2-3 ms RTT) ........................................ PASS
+  join by invite link (preview shows host) / by typed code ............................. PASS
+  each phone plays its own copy ("On this phone") ...................................... PASS
+  synchronized playback: both 153-224 ms behind the ideal timeline, constant → phones
+  within ~15-20 ms of each other over 25 s+, no corrective seeks needed ................. PASS
+  guest media-key pause/play (Bluetooth/lock-screen path) pauses/resumes both ......... PASS
+  shared queue add from the library, play a queued song for everyone ................... PASS
+  vote to skip: 1 of 2 → 2 of 2 → next song, votes reset ............................... PASS
+  song missing on one phone → "Not available on this phone", other phone plays ......... PASS
+  app restart within 45 s → membership restored, reconnected ........................... PASS
+  app closed > 45 s → slot released (by design), rejoin with code ...................... PASS
+  host ends party → both out, code answers "no such party" .............................. PASS
+  Bugs found by this testing and fixed: player read off the main thread (crash after ~10 s),
+  library-not-ready race ("not available" for own song after restart), app-start queue restore
+  hijacking the party's song, Join field hidden under the mini player.
+  remove listener (kick), host-only control on device ................................ NOT TESTED
+                                                    on device (server tests PASS)
+  real phones, Tailscale / Funnel from outside the LAN, online-stream party songs ...... NOT TESTED
+
+Icon: generated assets checked in circle / squircle / rounded masks (nothing cropped);
+  launcher (app drawer) shows the new E after fresh install and after in-app update ..... PASS
+Updater: YTD_Test_4K clean → 4.4.0-beta.1 release → Settings → App Updates (Beta) → found
+  v4.5.0-beta.1 x86_64 → downloaded → Verified → Android "update this app?" → 4.5.0-beta.1
+  installed over, data kept, app opens .................................................. PASS
+Signed release APK installed over the existing app (Pixel_10a), data kept ............... PASS
+Radio playback after update (Radio Tirana) ............................................. PASS
+Navidrome, YouTube Music streaming, Bluetooth hardware, Cast, physical phones ........... NOT TESTED
+                                                    this session (no code changes there besides
+                                                    the read-only Navidrome lyrics call)
 
 
 I. KNOWN ISSUES
 ---------------
-I-1 YouTube Music catalogue unavailable in Albania. Severity: medium. Repro: Search → YouTube
-    Music → any song query from an Albanian IP → catalogue answers "No results" (visitor region AL).
-    Cause (confirmed by raw response): YouTube Music is not offered in the region. Workaround in
-    4.4: fall back to YouTube search (labelled). Albums from the catalogue rarely appear; artist
-    pages may lack top songs (fallback fills them). No region spoofing (by design).
-I-2 Samsung S25 Ultra link downloads ("sign in required"). Severity: high for that phone. Not
-    reproduced (no device). 4.3.1 diagnostics exist; 4.4 adds BitChord's resolver, which mints
-    BotGuard PoTokens in a WebView — the mechanism YouTube's bot check wants — but ONLY for online
-    search/streaming/downloads, not for the yt-dlp link downloader. Next: on the S25, (1) try
-    Search → YouTube Music → play + download a song; (2) Settings → Advanced → Download
-    Diagnostics → Share report. If (1) works where links fail, route link downloads of YouTube
-    videos through OnlineMusic's resolver.
-I-3 WebM/M4A tags written by BitChord's taggers are appended at the end of the file; ffprobe (and
-    possibly other apps) don't read them. Severity: low (MImic uses its DB). Next: add a SeekHead
-    entry or write Tags before Clusters.
-I-4 Sync never propagates deletions (additive merge). Severity: low (safe direction). Planned.
-I-5 The YouTube Music sign-in WebView sits inside the scrolling Accounts screen (small area).
-    Severity: low. Next: full-screen route.
-I-6 Online songs from YouTube fallback show album "Unknown Album". Severity: cosmetic.
-I-7 Play Protect asks to scan sideloaded updates; if left unanswered the install times out
-    (INSTALL_FAILED_VERIFICATION_FAILURE) — Android behaviour, documented.
-
-
-SAMSUNG S25 ULTRA TEST CHECKLIST (no USB needed)
-  1. Install MImic-v4.4.0-beta.1 (Settings → App Updates, or the APK from the Desktop folder
-     MImic-Releases copied to the phone). Confirm Settings shows 4.4.0-beta.1.
-  2. Wi-Fi on, VPN/Private DNS off. Search → YouTube Music → "Justin Timberlake".
-     Expected: suggestions and results within ~3 s. Note PASS/FAIL.
-  3. Tap a song. Expected: plays within ~5 s, lock-screen controls work, screen off keeps playing.
-  4. ⋮ → Download for offline. Expected: notification with progress, song under Library →
-     Downloaded, plays in airplane mode.
-  5. Repeat 2-4 on mobile data.
-  6. Downloads tab → paste the YouTube link that failed before. Note the result.
-  7. Settings → Advanced → Download Diagnostics → Share Diagnostic Report (send it to yourself)
-     and keep it for the next session.
+I-1..I-7 from 4.4 unchanged (YouTube Music catalogue not offered in Albania — fallback to YouTube
+    search; S25 link downloads untested; WebM/M4A tag placement; sync never deletes; small YT
+    Music sign-in area; "Unknown Album" for YouTube fallback songs; Play Protect timeout).
+I-8 Listen Together needs the party server running on the PC; friends outside the LAN/tailnet
+    need Tailscale Funnel or another public address (not set up). Parties live in memory: a server
+    restart ends them.
+I-9 Party sync accuracy measured only on two emulators on one PC (~20 ms apart); real phones
+    over mobile data untested.
+I-10 A party song that only exists as a phone file on another member's device and can't be found
+    online is sat out on phones that don't have it (by design).
+I-11 Choose-lyrics search can take 10-20 s when LRCLIB is slow/returns 503 (retries).
+I-12 Emulator networking was dead after boot (fixed by toggling airplane mode) — test setup only.
 
 
 J. GITHUB AND RELEASE
 ---------------------
-Version name / code ..... 4.4.0-beta.1 / 400400034
-Branch / commit ......... main @ 2b1d4c1 (feature/online-music merged fast-forward; this report
-                          is committed afterwards)
-Repository status ....... pushed; public
-Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.4.0-beta.1
-                          (pre-release; assets: full universal / arm64-v8a / armeabi-v7a / x86_64,
-                          standard, SHA256SUMS.txt, LICENSE.txt, THIRD_PARTY_NOTICES.md)
-SHA-256 ................. full-arm64-v8a 42bb4c43a20237cce76d085d0c90e36974f71b9df146df17965fd86b69df3329
-                          full (universal) 9b71dfae6b13c75f4c3d2c531e3c50f32b155fc14c7bc70257aa2212a4650319
-                          full-armeabi-v7a 1786421a3178ee6a961ca05fee36a9b9f1ff846d1ef3fb8ad75981469f0bd95c
-                          full-x86_64 4e2772cbd183ebb5cf58cac9ee738e0895bd44ee78553661cfa0dd743d9c48d8
-                          standard 2806239a853364f822ac9dbbd7163cad214a661ffa8251a7417b7abb8220a04a
-Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.4.0-beta.1-signed.apk
-                          (arm64-v8a, for almost every phone; hash identical to the GitHub asset)
-                          and MImic-v4.4.0-beta.1-signed-universal.apk (works on any CPU)
-Signing compatibility ... PASS (certificate C03C5107…087D; installs over 4.3.1 without uninstall)
-Updater verification .... PASS on emulator (4.3.1 → 4.4.0-beta.1)
+Version name / code ..... 4.5.0-beta.1 / 400500034
+Branch / commit ......... main @ 2f97620 (feature/4.5-party-lyrics fast-forwarded); this report is
+                          committed afterwards
+Repository status ....... pushed; public (owner's decision; updater reads assets anonymously, no
+                          token in the APK)
+Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.5.0-beta.1
+                          (pre-release; full universal / arm64-v8a / armeabi-v7a / x86_64,
+                          standard, SHA256SUMS.txt)
+SHA-256 ................. full-arm64-v8a e309fdef82163e71afc2097f0928faf23427a333f150f801ca01ffcf374bbd8f
+                          full (universal) 9448fad0e790bff841ce58e428b9be03302d312a93faf8f8177e95e65e8838b4
+                          full-armeabi-v7a a421d91fe04a6282f25ab966567db389d483dd21acd1cc2a00dd2f18173fad84
+                          full-x86_64 bc13de02615449c47dac95bcebfb198804c8a9fad494df74ddfdad21b3aba05c
+                          standard 5b84b8b12de5ea19bd3a7532b87d88339ea487d0ba393ba2440bd03892ba1f08
+Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.5.0-beta.1-signed.apk
+                          (arm64-v8a; hash identical to the GitHub asset) and
+                          MImic-v4.5.0-beta.1-signed-universal.apk; 4.4.0 APKs kept
+Signing compatibility ... PASS (certificate C03C5107…087D; installs over 4.4.0-beta.1)
+Updater verification .... PASS on emulator (4.4.0-beta.1 → 4.5.0-beta.1, Beta channel)
 
 
 K. FUTURE DEVELOPMENT
 ---------------------
 Priority next:
-  1. Create the Firebase project (docs/ACCOUNT_SETUP.md), then test sign-in, sync between two
-     emulators, offline sync, and account isolation (rules) — Firebase emulator suite optional.
-  2. Samsung S25 checklist results → decide whether to route YouTube link downloads through the
-     BitChord resolver.
-  3. Test YouTube Music sign-in for real (owner's account), and whether a signed-in session
-     restores catalogue results in Albania.
-  4. Tag placement fix for WebM/M4A (I-3); MP3 conversion test on a 4 KB-page device.
-  5. Full-screen YouTube Music login; online album pages polish; "Song radio" (BitChord
-     YtMusicRepository.radio) and personalised Home shelves.
-  6. Multi-download / cancel / retry / Wi-Fi-only tests; regression run with Navidrome + Tailscale.
-Technical debt: ported BitChord files are large and only partly used (kept whole to stay diffable
-  against upstream); LiveSearchProbe / WebmTagProbe are opt-in network tests; sync deletions.
+  1. Listen Together on real phones: run the party server, give friends the Tailscale address (or
+     decide on Tailscale Funnel), test over Wi-Fi + mobile data, kick / host-only on device,
+     online-stream songs in a party.
+  2. Lyrics after real downloads on the phone (online, Navidrome, link downloader) — check the
+     saved rows / screen offline.
+  3. Firebase project (docs/ACCOUNT_SETUP.md) → Google identity in parties + sync tests.
+  4. S25 checklist (section I-2 of 4.4) and real YouTube Music sign-in.
+  5. Possible: party server as a small always-on host; lyrics translation if a permitted source
+     appears; word-level lyrics.
+Technical debt: ported BitChord files are large; LiveSearchProbe / WebmTagProbe / LiveLyricsProbe
+  are opt-in network tests.
 
 
 L. CONTINUATION INSTRUCTIONS
@@ -364,4 +439,5 @@ HISTORY (short)
 3.0 unified library + downloads, 3.1 cloud drives (removed in 4.1), 3.2 home/queue/effects/lyrics,
 3.3 icon, 4.0 yt-dlp downloader + GitHub updater + editions, 4.1 Dynamic player, Cast, per-track
 artwork, 4.2 Radio, 4.3 Backup & Restore + Library & Storage, 4.3.1 download diagnostics,
-4.4 online music (BitChord), LRCLIB lyrics, accounts & sync code.
+4.4 online music (BitChord), LRCLIB lyrics, accounts & sync code, 4.5 Listen Together,
+automatic lyrics (root cause fixed), new neon E icon.
