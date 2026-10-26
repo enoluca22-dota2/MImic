@@ -57,7 +57,7 @@ music, a private Navidrome/OpenSubsonic server (reached over Tailscale), interne
     URLs or Navidrome URLs/tokens through the party. The party token stays in app-private prefs,
     is never logged or shown. Party server = `server/party` (own compose file; never touch the
     Navidrome container). Don't enable Tailscale Funnel without asking.
-21. App icon: generated only from the owner's image `docs/icon/source/mimic-e-neon-source.png`
+21. App icon: generated only from the owner's image `docs/icon/source/mimic-e-emblem-source.png`
     by `tools/icon/build_e_icon.py`; don't redesign it.
 
 ## Handy facts
