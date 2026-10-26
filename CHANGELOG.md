@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.5.0-beta.3
+- **New app icon**: a brushed-metal "E" on a dark navy rounded tile replaces the 4.5.0-beta.2
+  icon on the launcher, app drawer, App info, recents and the Android 12+ splash. Adaptive (round,
+  squircle and rounded-square launchers, nothing cropped) with a themed-icon silhouette for
+  Android 13+. Nothing else changed.
+
 ## 4.5.0-beta.2
 - **New app icon**: the "Glossy Neon Glass E Emblem" (glass E with play button and waveforms
   inside a neon ring) replaces the 4.5.0-beta.1 icon on the launcher, app drawer, App info,
