@@ -82,7 +82,7 @@ The party server's only dependency: **gorilla/websocket 1.5.3** — BSD-2-Clause
 
 ## App icon (4.5)
 
-The brushed-metal "E" tile icon (4.5.0-beta.3; earlier the "Glossy Neon Glass E Emblem" and the neon-glass "E") is the owner's image (`docs/icon/source/mimic-e-metal-source.png`);
+The glass waveform disc icon (4.5.0-beta.4; earlier the brushed-metal "E", the "Glossy Neon Glass E Emblem" and the neon-glass "E") is the owner's image (`docs/icon/source/mimic-wave-disc-source.png`);
 `tools/icon/build_e_icon.py` only scales and centers it for Android's icon formats.
 
 ## Distribution (GPL-3.0)
