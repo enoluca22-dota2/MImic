@@ -1,7 +1,7 @@
 MIMIC — COMPLETE DEVELOPMENT REPORT
 ===================================
 Last updated: 2026-10-26 (session: Listen Together + automatic lyrics + new icon, release 4.5.0-beta.1;
-              then icon replaced again, releases 4.5.0-beta.2 and 4.5.0-beta.3)
+              then icon replaced again, releases 4.5.0-beta.2, beta.3 and beta.4)
 Keep this file current after every session. Plain text, written so it can be pasted into a
 new ChatGPT / Claude conversation without access to the repository.
 
@@ -9,7 +9,7 @@ new ChatGPT / Claude conversation without access to the repository.
 A. PROJECT IDENTITY
 -------------------
 App name ............ MImic
-Current version ..... 4.5.0-beta.3  (versionCode 400500036)
+Current version ..... 4.5.0-beta.4  (versionCode 400500037)
 Application ID ...... com.example.mimic  (never change)
 Repository .......... https://github.com/enoluca22-dota2/MImic  (PUBLIC — owner's decision on
                       2026-10-25, because the in-app updater downloads release assets anonymously)
@@ -137,7 +137,7 @@ Find Missing Lyrics ........................................... WORKING (emulato
 Listen Together (create/join/link/code/queue/sync/skip vote/
   end/reconnect) ............................................. WORKING on two emulators (LAN); real
                                                                 phones / Tailscale NOT TESTED
-App icon brushed-metal "E" tile (4.5.0-beta.3) .............. WORKING (emulator, in-app update)
+App icon glass waveform disc (4.5.0-beta.4) .................. WORKING (emulator, in-app update)
 MImic Google account + sync .................................. BLOCKED (no Firebase project yet;
                                                                 code + rules + docs present; UI shows
                                                                 "not set up")
@@ -227,9 +227,15 @@ UI: ui/party/ListenTogetherScreen.kt (Settings → Listen Together): name card, 
 Invites: mimic://party/CODE?server=URL (manifest intent filter) and http(s)://<server>/invite/CODE
   (server landing page with "Join the party in MImic"). Docs: docs/LISTEN_TOGETHER.md (LAN,
   Tailscale, optional Tailscale Funnel — not enabled by Claude).
-E. CHANGES IN 4.5.0-beta.1 / beta.2 / beta.3
+E. CHANGES IN 4.5.0-beta.1 / beta.2 / beta.3 / beta.4
 --------------------------
 (4.4 changes: see CHANGELOG.md.)
+4.5.0-beta.4 (icon only): the owner's Desktop image "1234.jfif" (teal-to-violet glass disc with a
+  dark sound wave; its "transparent" background is a checkerboard baked into the JPEG) →
+  docs/icon/source/mimic-wave-disc-source.png (the beta.3 metal source was removed, it's in git
+  history) → tools/icon/build_e_icon.py (disc cut with an exact circle: centre (511.5,515.5),
+  radius 428 px; scaled to 70 dp of the 108 dp adaptive canvas over a soft blur of its own
+  colours; legacy icons = the disc itself; monochrome = the sound wave). Same mipmap outputs.
 4.5.0-beta.3 (icon only): the owner's Desktop image "123.jfif" (brushed-metal E on a dark navy
   rounded tile) → docs/icon/source/mimic-e-metal-source.png (1024 px; the beta.2 emblem source was
   removed, it's in git history) → tools/icon/build_e_icon.py (tile bounds (163,158)-(861,864),
@@ -358,8 +364,9 @@ Two emulators (Pixel_10a + YTD_Test_4K), party server on the PC (http://192.168.
                                                     on device (server tests PASS)
   real phones, Tailscale / Funnel from outside the LAN, online-stream party songs ...... NOT TESTED
 
-Icon (beta.3 metal E): checked in circle / squircle / rounded masks + themed (nothing
-  cropped); app drawer (Pixel_10a) shows it after the in-app update 4.5.0-beta.1 → beta.3  PASS
+Icon (beta.4 waveform disc): checked in circle / squircle / rounded masks + themed (nothing
+  cropped, no checkerboard fringe); app drawer (Pixel_10a) shows it after the in-app update
+  4.5.0-beta.3 → beta.4 ............................................................... PASS
 Updater: YTD_Test_4K clean → 4.4.0-beta.1 release → Settings → App Updates (Beta) → found
   v4.5.0-beta.1 x86_64 → downloaded → Verified → Android "update this app?" → 4.5.0-beta.1
   installed over, data kept, app opens .................................................. PASS
@@ -388,29 +395,27 @@ I-12 Emulator networking was dead after boot (fixed by toggling airplane mode) �
 
 J. GITHUB AND RELEASE
 ---------------------
-Version name / code ..... 4.5.0-beta.3 / 400500036 (icon-only release on top of 4.5.0-beta.1)
-Branch / commit ......... main @ 0d64eb5; this report is committed afterwards
+Version name / code ..... 4.5.0-beta.4 / 400500037 (icon-only release on top of 4.5.0-beta.1)
+Branch / commit ......... main @ 0c5496f; this report is committed afterwards
 Repository status ....... pushed; public (owner's decision; updater reads assets anonymously, no
                           token in the APK)
-Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.5.0-beta.3
+Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.5.0-beta.4
                           (pre-release; full universal / arm64-v8a / armeabi-v7a / x86_64,
-                          standard, SHA256SUMS.txt). Previous: v4.5.0-beta.2, v4.5.0-beta.1 (kept).
-SHA-256 ................. full-arm64-v8a 3f68bdf43282fa42c17e4dcecfbb94010fb4d648d8529e54d77b7fcf1d529187
-                          full (universal) 7d8c00ac36eba98c2d64eb4877acaed23b7af98af7e6608e122a641a766b5b93
-                          full-armeabi-v7a f3ea091d99d225ed046306c4fb328f190551ec0d6f7d54c434649c5ccc04dec0
-                          full-x86_64 e9ad2cd54926f23f7359c70d52032cdb252809dc048c6d9034e78ef618814ed7
-                          standard 5185576e623492b8bb3e9638456dc3695748b0427fde5e1f4bcf732c72c1667b
-Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.5.0-beta.3-signed.apk
+                          standard, SHA256SUMS.txt). Previous: beta.3, beta.2, beta.1 (kept).
+SHA-256 ................. full-arm64-v8a f67ffac19f574e28c5c8063f3a7873b5828f626b1eaf37645f4c9f9ef44f35f6
+                          full (universal) e4ee111f851942a0b98bbc2837d689be249656e275725bf55ecfdfca72c023b6
+                          full-armeabi-v7a 8a03dfb9bc8a7662784689e9548e460ffaf95ecb86b94e559c22272567a4f1cd
+                          full-x86_64 519055ea86e0206b0492f782a6414d1ba19af30603cd36beb38427bb669ff0e8
+                          standard 9506f7863c087a2e817eecbc22d700bf2dfac912c878f9b23ef6aad87f2efe09
+Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.5.0-beta.4-signed.apk
                           (arm64-v8a; hash identical to the GitHub asset) and
-                          MImic-v4.5.0-beta.3-signed-universal.apk; older APKs kept
-Signing compatibility ... PASS (certificate C03C5107…087D; installs over 4.5.0-beta.1, data kept)
-Updater verification .... PASS on emulator Pixel_10a (4.5.0-beta.1 → 4.5.0-beta.3, Beta channel:
-                          found → downloaded → verified → Android "Update this app?" → Play
-                          Protect "App scan recommended" → "Install without scanning" →
-                          installed, firstInstallTime 2026-10-17 unchanged). Earlier:
-                          beta.1 → beta.2 and 4.4.0 → beta.1 PASS on YTD_Test_4K.
-                          Phones with Play Protect show the same one-time scan prompt for
-                          sideloaded updates.
+                          MImic-v4.5.0-beta.4-signed-universal.apk; older APKs kept
+Signing compatibility ... PASS (certificate C03C5107…087D; installs over 4.5.0-beta.3, data kept)
+Updater verification .... PASS on emulator Pixel_10a (4.5.0-beta.3 → 4.5.0-beta.4, Beta channel:
+                          found → downloaded → verified → Android "Update this app?" →
+                          installed, firstInstallTime 2026-10-17 unchanged). Earlier: beta.1 →
+                          beta.3 (Pixel_10a, Play Protect "Install without scanning" once),
+                          beta.1 → beta.2 and 4.4.0 → beta.1 on YTD_Test_4K, all PASS.
 
 
 K. FUTURE DEVELOPMENT
