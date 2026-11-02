@@ -1,7 +1,8 @@
 MIMIC — COMPLETE DEVELOPMENT REPORT
 ===================================
-Last updated: 2026-10-26 (session: Listen Together + automatic lyrics + new icon, release 4.5.0-beta.1;
-              then icon replaced again, releases 4.5.0-beta.2, beta.3 and beta.4)
+Last updated: 2026-11-02 (session: 4.6.0-beta.1 — playlist downloads with per-song selection +
+              compact mini player, recovered from the second PC's APK and released from this laptop)
+Previous: 2026-10-26 (Listen Together + automatic lyrics + icons, 4.5.0-beta.1 … beta.4)
 Keep this file current after every session. Plain text, written so it can be pasted into a
 new ChatGPT / Claude conversation without access to the repository.
 
@@ -9,7 +10,7 @@ new ChatGPT / Claude conversation without access to the repository.
 A. PROJECT IDENTITY
 -------------------
 App name ............ MImic
-Current version ..... 4.5.0-beta.4  (versionCode 400500037)
+Current version ..... 4.6.0-beta.1  (versionCode 400600034)
 Application ID ...... com.example.mimic  (never change)
 Repository .......... https://github.com/enoluca22-dota2/MImic  (PUBLIC — owner's decision on
                       2026-10-25, because the in-app updater downloads release assets anonymously)
@@ -95,7 +96,7 @@ Diagnostics: Settings → Advanced → Download Diagnostics (full): link-analysi
   resolver log). Shared as TXT through the share sheet.
 
 
-C. FEATURE INVENTORY (status as of 4.5.0-beta.1)
+C. FEATURE INVENTORY (status as of 4.6.0-beta.1)
 --------------------------------------------------
 Statuses: WORKING (verified this or an earlier session) / PARTIAL / BLOCKED / NOT TESTED / PLANNED
 
@@ -138,6 +139,17 @@ Listen Together (create/join/link/code/queue/sync/skip vote/
   end/reconnect) ............................................. WORKING on two emulators (LAN); real
                                                                 phones / Tailscale NOT TESTED
 App icon glass waveform disc (4.5.0-beta.4) .................. WORKING (emulator, in-app update)
+Link downloader — YouTube / YouTube Music playlists (4.6):
+  exact playlist contents (playlist?list=, music.youtube.com
+  playlist + browse/VL, watch?list=) ........................... WORKING (emulator YTD_Test_4K)
+  Mix / channel / private list refused, Mix song → song only .. WORKING (emulator)
+  per-song checkboxes, Select/Deselect all, selection kept on
+  scroll + format change, "Selected: N of M", pinned
+  Download selected bar, exact selected count queued ........... WORKING (emulator: 8 of 10)
+  duplicates: active queue + already downloaded skipped ........ WORKING (emulator)
+  per-playlist progress + "N found so far" ..................... WORKING (emulator, progress line)
+  confirm above 50 songs ....................................... NOT TESTED on device (code only)
+  compact mini player while choosing, normal afterwards ........ WORKING (emulator)
 MImic Google account + sync .................................. BLOCKED (no Firebase project yet;
                                                                 code + rules + docs present; UI shows
                                                                 "not set up")
@@ -227,6 +239,48 @@ UI: ui/party/ListenTogetherScreen.kt (Settings → Listen Together): name card, 
 Invites: mimic://party/CODE?server=URL (manifest intent filter) and http(s)://<server>/invite/CODE
   (server landing page with "Join the party in MImic"). Docs: docs/LISTEN_TOGETHER.md (LAN,
   Tailscale, optional Tailscale Funnel — not enabled by Claude).
+E0. CHANGES IN 4.6.0-beta.1 (2026-11-02)
+----------------------------------------
+How this release was made: the features were finished on 2026-11-01 on a second Windows PC
+  (user "Playground") as commit 2f4bb39, which was never pushed and is not recoverable (not on
+  GitHub, not on this laptop, no Claude session history from that PC). The only artifact was
+  Desktop\MImic-v4.6.0-beta.1-TEST-local-key-arm64.apk: com.example.mimic 4.6.0-beta.1 /
+  400600034, arm64-v8a, DEBUGGABLE, signed with that PC's own debug key (SHA-256 BE96F1AC…0318,
+  NOT MImic's key — would not install over the phone's app; not published). Recovery: both that
+  APK and a debug build of 4.5.0-beta.4 from this tree were decompiled with jadx-core (bundled
+  in the REA jar) and diffed (string literals + normalized code); the differences were limited to
+  the downloader and the mini player and were re-implemented here in Kotlin. The other PC built
+  with AGP 9.5.0; this tree stays on AGP 9.4.1 (not part of the feature work). New commit hashes
+  (055296c, ec03bf8) replace 2f4bb39.
+Changes (full edition unless noted):
+  data/platform/Platform.kt: YouTubeListType (PLAYLIST, ALBUM OLAK5uy_, CURATED RDCLAK, MIX
+    RD/UL/PU, CHANNEL_UPLOADS UU, PERSONAL LL/WL/LM; isExpandable; refusal title+message);
+    YouTubeProvider: watch?list= and music.youtube.com/browse/VL… are playlists,
+    collectionListId(); DetectedPlatform.listId/listType/ignoredList; needsPlaylistChoice only
+    for real lists.
+  data/model/Analysis.kt: PlaylistEntry.videoId/duplicateOf/isSelectable/key;
+    PlaylistInfo.reportedCount/selectable/unavailableCount/duplicateCount/hiddenCount.
+  data/provider/AnalysisJsonParser.kt: duplicate marking, extractor repeats dropped,
+    playlist_count, canonical watch URL per YouTube entry, jsonPart() (JSON among --print lines).
+  data/provider/YtDlpMediaProvider.kt: playlists are read from the canonical playlist URL with
+    --yes-playlist --ignore-errors --print "[mimic-item] %(id)s", 300 s timeout; single-video
+    answer or a different list id → PlaylistRefused. AnalysisProgress (new) = item count.
+  data/analyzer/MediaAnalyzer.kt + AnalysisError.kt + ProviderException.PlaylistRefused: Mix /
+    channel / private lists refused before yt-dlp runs.
+  ui/DownloaderViewModel.kt: DetectPhase.Analyzing.found; Detected(selection, quickFormat, note,
+    selectedEntries); toggleEntry/selectAll/deselectAll/setQuickFormat/downloadSelected (skips
+    songs active in the queue AND songs already downloaded with the file present — the second
+    check was added this session after the emulator showed finished songs being queued again).
+  ui/DownloadsTab.kt: playlistPicker (header card + one LazyColumn row per song), PlaylistRow,
+    FormatGroup, SelectionBar (pinned above the mini player), ConfirmLargeBatch (> 50),
+    BatchProgress, "Download all ready (N)"; requests the compact mini player while choosing.
+  main: ui/components/Components.kt MiniPlayer(compact) + LocalCompactMiniPlayer;
+    ui/MimicApp.kt provides it. Standard edition: only the mini-player parameter (unused).
+  Tests: testFull/.../downloader/ui/PlaylistSelectionTest.kt (9: list types, link forms, Mix
+    refusal, duplicates/counts, jsonPart, 13 of 15 selection, format change keeps selection,
+    unavailable/repeated never selected). The other PC's tests could not be recovered.
+
+
 E. CHANGES IN 4.5.0-beta.1 / beta.2 / beta.3 / beta.4
 --------------------------
 (4.4 changes: see CHANGELOG.md.)
@@ -310,7 +364,44 @@ Environment variable names used in tooling: JAVA_HOME (Android Studio jbr), LOCA
   (Navidrome compose).
 
 
-H. TEST RESULTS (this session)
+H. TEST RESULTS (2026-11-02, 4.6.0-beta.1)
+------------------------------------------
+Unit tests ................ PASS — full 294 (3 opt-in skipped, 9 new), standard 182 (1 skipped)
+Lint ...................... PASS — lintFullDebug and lintFullRelease (release script)
+Release dry run + publish . PASS — 5 APKs: package com.example.mimic, 4.6.0-beta.1/400600034,
+                            pinned certificate C03C5107…087D; all assets downloadable
+Emulator YTD_Test_4K (x86_64, 4 KB pages; dry-run release APK installed over 4.5.0-beta.2):
+  youtube.com/playlist?list=PLBCF2DAC6FFB574DE → exactly the 13 tracks, 3 marked private/removed,
+  10 selectable, all ticked ................................................................ PASS
+  untick #03 and #05 → "Selected: 8 of 10"; switch to Up to 720p and back to MP3 192, scroll
+  up/down → selection and count kept .................................................... PASS
+  Download selected → exactly 8 jobs "Playlist 1/8 … 8/8" → all completed as MP3 in
+  Music/MImic, 0 failed ................................................................. PASS
+  (13-of-15 run not possible: no 15-song public test playlist known; same code path, and the
+  13-of-15 case is a unit test)
+  re-download the same playlist via music.youtube.com link while 4 were still active → "· 4 already
+  in the queue" (PASS) but finished songs were queued again (FAIL → fixed: ec03bf8); after fix,
+  watch?list= link → "Queued 0 of 10 · 10 already downloaded" ............................. PASS
+  per-playlist progress line "Google Search Stories: 4 of 8 done" + bar ..................... PASS
+  play a downloaded song from Completed → Media3 PLAYING, normal mini player, songs in Library PASS
+  music.youtube.com/browse/VL… while playing → compact 44 dp mini player, selection bar above it,
+  no overlap; closing the picker → full mini player (Next button) back ...................... PASS
+  playlist?list=RD… → "This is a YouTube Mix, not a playlist" ............................. PASS
+  watch?v=jNQXAC9IVRw&list=RD…&start_radio=1 → only "Me at the zoo" + Mix note ............ PASS
+Updater (emulator Pixel_10a, x86_64, release 4.5.0-beta.4 with existing data, Beta channel):
+  Check for Updates → "Update available: MImic v4.6.0-beta.1 (beta)", x86_64 asset 81 MB →
+  Download → "Verified" (log: sha256 + package + versionCode + ABI + pinned certificate) →
+  Install → 4.6.0-beta.1 / 400600034 installed over (firstInstallTime 2026-10-17 unchanged,
+  no uninstall), app opens; Liked Songs 1, Downloaded 5, library "7 on phone · 3 Navidrome ·
+  5 downloaded" / 10 songs, playlists "Queue Oct 19, 2026" + "Picks32", Continue Listening
+  (Aerials), glass theme — all as before ................................................. PASS
+Physical phone installation .............................................................. NOT TESTED
+Navidrome, radio, Listen Together, lyrics, Cast after this update ........................ NOT
+  RE-TESTED (no code changed there)
+Note: YTD_Test_4K did NOT revert to its snapshot on restart this time (state persisted), so the
+  4.5 → 4.6 updater test was done on Pixel_10a.
+
+Earlier session (2026-10-26, 4.5.0-beta.1 … beta.4):
 ------------------------------
 Unit tests ................ PASS — full 285 (3 opt-in probes skipped), standard 182
   new: LrcLibTest (20: cleaning, VEVO, packaging, featured, live/remix refusal, ambiguity,
@@ -391,36 +482,49 @@ I-10 A party song that only exists as a phone file on another member's device an
     online is sat out on phones that don't have it (by design).
 I-11 Choose-lyrics search can take 10-20 s when LRCLIB is slow/returns 503 (retries).
 I-12 Emulator networking was dead after boot (fixed by toggling airplane mode) — test setup only.
+I-13 (4.6) The 2f4bb39 source and its tests from the second PC are lost; 4.6.0-beta.1 here is a
+    reconstruction from the APK. Wording/layout details that the decompiler couldn't show exactly
+    (e.g. the main DownloadsTab body, which jadx failed to decompile) were rebuilt to match the
+    surrounding evidence; behaviour was verified on the emulator. If the second PC's repository
+    becomes available, diff it against main before continuing.
+I-14 (4.6) The "> 50 songs" confirmation, YouTube Music album (OLAK) and curated (RDCLAK) lists,
+    hidden-video count ("YouTube counts N but lists M") and the 300 s playlist timeout were not
+    exercised on a device (unit-tested / code only).
+I-15 (4.6) Duplicate check for already-downloaded songs relies on download history + the file
+    still existing; songs downloaded before history existed, or moved, are downloaded again.
 
 
 J. GITHUB AND RELEASE
 ---------------------
-Version name / code ..... 4.5.0-beta.4 / 400500037 (icon-only release on top of 4.5.0-beta.1)
-Branch / commit ......... main @ 0c5496f; this report is committed afterwards
-Repository status ....... pushed; public (owner's decision; updater reads assets anonymously, no
-                          token in the APK)
-Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.5.0-beta.4
+Version name / code ..... 4.6.0-beta.1 / 400600034 (higher than 4.5.0-beta.4 = 400500037)
+Branch / commit ......... main @ ec03bf8 (tag v4.6.0-beta.1; feature commit 055296c + duplicate
+                          fix ec03bf8); this report is committed afterwards
+Repository status ....... pushed; public (owner's decision; updater reads assets anonymously)
+Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.6.0-beta.1
                           (pre-release; full universal / arm64-v8a / armeabi-v7a / x86_64,
-                          standard, SHA256SUMS.txt). Previous: beta.3, beta.2, beta.1 (kept).
-SHA-256 ................. full-arm64-v8a f67ffac19f574e28c5c8063f3a7873b5828f626b1eaf37645f4c9f9ef44f35f6
-                          full (universal) e4ee111f851942a0b98bbc2837d689be249656e275725bf55ecfdfca72c023b6
-                          full-armeabi-v7a 8a03dfb9bc8a7662784689e9548e460ffaf95ecb86b94e559c22272567a4f1cd
-                          full-x86_64 519055ea86e0206b0492f782a6414d1ba19af30603cd36beb38427bb669ff0e8
-                          standard 9506f7863c087a2e817eecbc22d700bf2dfac912c878f9b23ef6aad87f2efe09
-Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.5.0-beta.4-signed.apk
+                          standard, SHA256SUMS.txt). Previous releases kept.
+SHA-256 ................. full-arm64-v8a 317d864f02b5a0c68309dd0ebb6680cbe9def15f984ebc6133507c6949b5f1f0
+                          full (universal) 689bbd0c47e92e260f432f7880b9500e1266aebfb82e2eac7a176951e13eb6d8
+                          full-armeabi-v7a 8e3d450a959d95a5dc4908ac88301217cb6cbddd3e1943f48d492ada18720a70
+                          full-x86_64 ca545e0042f20a4a47331a4f1dcdb51c4d785c2d36ae424e7619c4fa6dc0c0b9
+                          standard 786ba2874030f8b4276008b8468eca36bef08504354f8f6bb898b76b99d7aa6f
+                          (GitHub asset digests identical)
+Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.6.0-beta.1-signed.apk
                           (arm64-v8a; hash identical to the GitHub asset) and
-                          MImic-v4.5.0-beta.4-signed-universal.apk; older APKs kept
-Signing compatibility ... PASS (certificate C03C5107…087D; installs over 4.5.0-beta.3, data kept)
-Updater verification .... PASS on emulator Pixel_10a (4.5.0-beta.3 → 4.5.0-beta.4, Beta channel:
-                          found → downloaded → verified → Android "Update this app?" →
-                          installed, firstInstallTime 2026-10-17 unchanged). Earlier: beta.1 →
-                          beta.3 (Pixel_10a, Play Protect "Install without scanning" once),
-                          beta.1 → beta.2 and 4.4.0 → beta.1 on YTD_Test_4K, all PASS.
-
+                          MImic-v4.6.0-beta.1-signed-universal.apk; older APKs kept. The second
+                          PC's Desktop\MImic-v4.6.0-beta.1-TEST-local-key-arm64.apk (wrong key,
+                          debuggable) was left untouched and NOT published.
+Signing compatibility ... PASS — ~/.android/debug.keystore = C0:3C:51:07…4F:88:08:7D = the
+                          certificate of the published 4.5.0-beta.4 = RELEASE_CERT_SHA256 pin;
+                          keystore.properties gitignored, no secrets committed
+Updater verification .... PASS on emulator Pixel_10a (4.5.0-beta.4 → 4.6.0-beta.1, Beta channel,
+                          data kept; see section H). Physical phone: NOT TESTED.
 
 K. FUTURE DEVELOPMENT
 ---------------------
 Priority next:
+  0. Install 4.6.0-beta.1 on the physical phone via Settings → App Updates (Beta channel) and try a
+     real music playlist (YouTube + YouTube Music link), untick a few songs, download.
   1. Listen Together on real phones: run the party server, give friends the Tailscale address (or
      decide on Tailscale Funnel), test over Wi-Fi + mobile data, kick / host-only on device,
      online-stream songs in a party.
@@ -461,4 +565,5 @@ HISTORY (short)
 3.3 icon, 4.0 yt-dlp downloader + GitHub updater + editions, 4.1 Dynamic player, Cast, per-track
 artwork, 4.2 Radio, 4.3 Backup & Restore + Library & Storage, 4.3.1 download diagnostics,
 4.4 online music (BitChord), LRCLIB lyrics, accounts & sync code, 4.5 Listen Together,
-automatic lyrics (root cause fixed), new neon E icon.
+automatic lyrics (root cause fixed), new neon E icon, 4.6 playlist downloads with per-song
+selection + compact mini player.
