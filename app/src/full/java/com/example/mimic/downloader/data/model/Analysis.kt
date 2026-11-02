@@ -71,6 +71,8 @@ data class PlaylistInfo(
     val id: String? = null,
     /** How many videos the site says the list has (`playlist_count`), when it says. */
     val reportedCount: Int? = null,
+    /** Set for a YouTube Mix: only a window of its recommendations has been read. */
+    val mix: MixPage? = null,
 ) {
     val selectable: List<PlaylistEntry> get() = entries.filter { it.isSelectable }
     val unavailableCount: Int get() = entries.count { !it.isAvailable }
@@ -78,6 +80,37 @@ data class PlaylistInfo(
 
     /** Videos the site counts but didn't list (hidden unavailable videos). */
     val hiddenCount: Int get() = reportedCount?.let { (it - entries.size).coerceAtLeast(0) } ?: 0
+
+    /**
+     * Adds the next Mix window ([page], read from positions up to [through]) after the songs
+     * already shown. YouTube reshuffles a Mix on every request, so songs already listed are left
+     * where they are and only videos not seen yet are appended (in the order YouTube returned
+     * them), renumbered after the existing ones.
+     */
+    fun withMixPage(page: PlaylistInfo, through: Int): PlaylistInfo {
+        val seen = entries.mapTo(HashSet()) { it.key }
+        val added = page.entries.filter { it.duplicateOf == null && seen.add(it.key) }
+            .mapIndexed { i, e -> e.copy(index = entries.size + i + 1) }
+        val more = added.isNotEmpty() && page.mix?.hasMore == true && through < MixPreview.MAX_POSITION
+        return copy(entries = entries + added, mix = MixPage(through, more))
+    }
+}
+
+/** Mix preview window: read up to [fetchedThrough]; [hasMore] = "Load more" is offered. */
+data class MixPage(val fetchedThrough: Int, val hasMore: Boolean)
+
+/** Limits for Mix previews (normal playlists are never limited). */
+object MixPreview {
+    /** Songs read per request ("Load 25 more"). */
+    const val PAGE = 25
+
+    /** Safety limit: positions of a Mix that are ever read, however often "Load more" is pressed. */
+    const val MAX_POSITION = 100
+
+    fun firstPage(): IntRange = 1..PAGE
+
+    fun nextPage(page: MixPage): IntRange? =
+        (page.fetchedThrough + 1).takeIf { page.hasMore && it <= MAX_POSITION }?.let { it..minOf(it + PAGE - 1, MAX_POSITION) }
 }
 
 /**

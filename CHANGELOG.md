@@ -1,5 +1,24 @@
 # Changelog
 
+## 4.6.0-beta.2
+YouTube Mix links work again — as a limited **Mix preview** you pick songs from, never as an
+endless list. Everything else is unchanged.
+
+- **Fixed:** links such as `youtube.com/playlist?list=RD…&playnext=1` (shared from the YouTube app)
+  were refused with "This is a YouTube Mix, not a playlist" since 4.6.0-beta.1. Before that they
+  listed 400–900 videos: read in full, a Mix is an endless recommendation feed (one test Mix gave
+  528 entries, 383 different videos, repeating after the 25th).
+- **Mix preview.** A Mix now opens with its first 25 songs, in YouTube's order, marked as
+  recommendations rather than a playlist. **Load 25 more** reads the next 25 (songs already
+  shown are not repeated); the preview stops at 100 positions. Nothing beyond that is ever read.
+- **Only what you tick.** In a Mix only the song it was started from is ticked at first; tick the
+  songs you want (or Select all) and exactly those are downloaded — same checkboxes, formats,
+  queue, duplicate checks and compact mini player as playlists.
+- **A song link from a Mix** (`watch?v=…&list=RD…`) now asks "This video" or "Preview Mix".
+- If YouTube won't list a Mix, the reason is shown with a **Song only** button for the song it
+  was started from. Several links pasted at once never expand a Mix.
+- Normal playlists, albums and YouTube Music playlists are not limited and work as before.
+
 ## 4.6.0-beta.1
 Playlist downloads that download exactly the songs you pick. Everything else (Navidrome, radio,
 themes, Listen Together, lyrics, online music, updater) is unchanged.

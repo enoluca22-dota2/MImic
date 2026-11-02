@@ -1,12 +1,15 @@
 package com.example.mimic.downloader.ui
 
 import com.example.mimic.downloader.data.model.AnalysisResult
+import com.example.mimic.downloader.data.model.MixPage
+import com.example.mimic.downloader.data.model.MixPreview
 import com.example.mimic.downloader.data.model.PlaylistEntry
 import com.example.mimic.downloader.data.model.PlaylistInfo
 import com.example.mimic.downloader.data.model.QuickFormat
 import com.example.mimic.downloader.data.platform.ContentKind
 import com.example.mimic.downloader.data.platform.Platforms
 import com.example.mimic.downloader.data.platform.YouTubeListType
+import com.example.mimic.downloader.data.platform.YouTubeProvider
 import com.example.mimic.downloader.data.provider.AnalysisJsonParser
 import com.fasterxml.jackson.databind.DeserializationFeature
 import com.fasterxml.jackson.databind.ObjectMapper
@@ -17,7 +20,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 4.6 playlist downloads: exact list detection, Mix refusal, duplicates, and song selection. */
+/** 4.6 playlist downloads: exact list detection, Mix previews, duplicates, and song selection. */
 class PlaylistSelectionTest {
 
     // ---- list detection ----------------------------------------------------------------------
@@ -34,7 +37,8 @@ class PlaylistSelectionTest {
         assertEquals(YouTubeListType.PERSONAL, YouTubeListType.of("WL"))
         assertTrue(YouTubeListType.PLAYLIST.isExpandable && YouTubeListType.ALBUM.isExpandable && YouTubeListType.CURATED.isExpandable)
         assertFalse(YouTubeListType.MIX.isExpandable)
-        assertNotNull(YouTubeListType.MIX.refusal)
+        assertNull(YouTubeListType.MIX.refusal)
+        assertNotNull(YouTubeListType.CHANNEL_UPLOADS.refusal)
         assertNull(YouTubeListType.PLAYLIST.refusal)
     }
 
@@ -55,22 +59,84 @@ class PlaylistSelectionTest {
     }
 
     @Test
-    fun `a video opened from a real playlist offers the choice, from a mix it does not`() {
+    fun `a video opened from a playlist or a mix offers the choice, from a channel list it does not`() {
         val fromPlaylist = Platforms.detect("https://www.youtube.com/watch?v=jNQXAC9IVRw&list=PLBCF2DAC6FFB574DE&index=3")
         assertTrue(fromPlaylist.needsPlaylistChoice)
         assertNull(fromPlaylist.ignoredList)
 
         val fromMix = Platforms.detect("https://www.youtube.com/watch?v=jNQXAC9IVRw&list=RDjNQXAC9IVRw&start_radio=1")
         assertEquals(ContentKind.VIDEO, fromMix.kind)
-        assertFalse(fromMix.needsPlaylistChoice)
-        assertEquals(YouTubeListType.MIX, fromMix.ignoredList?.listType)
+        assertTrue(fromMix.needsPlaylistChoice)
+        assertTrue(fromMix.playlistContext!!.isMix)
+        assertNull(fromMix.ignoredList)
+        // Choosing "Preview Mix" analyzes the Mix's own link, which is a Mix preview.
+        assertTrue(Platforms.detect(fromMix.playlistContext!!.playlistUrl).isMixPreview)
+
+        val fromChannel = Platforms.detect("https://www.youtube.com/watch?v=jNQXAC9IVRw&list=UUabcdefghij")
+        assertFalse(fromChannel.needsPlaylistChoice)
+        assertEquals(YouTubeListType.CHANNEL_UPLOADS, fromChannel.ignoredList?.listType)
     }
 
     @Test
-    fun `a pasted mix link is refused instead of listing recommendations`() {
-        val d = Platforms.detect("https://www.youtube.com/playlist?list=RDjNQXAC9IVRw")
-        assertEquals(YouTubeListType.MIX, d.listType)
-        assertNotNull(d.listType?.refusal)
+    fun `a pasted mix link opens as a mix preview read from its watch page`() {
+        // The link from the bug report (shared from the YouTube app on a Xiaomi phone).
+        val d = Platforms.detect("https://youtube.com/playlist?list=RDeCind0-qMaI&playnext=1&si=MFfvEdJ43_29CUU7")
+        assertEquals(ContentKind.PLAYLIST, d.kind)
+        assertEquals("RDeCind0-qMaI", d.listId)
+        assertTrue(d.isMixPreview)
+        assertNull(d.listType?.refusal)
+        assertEquals("https://www.youtube.com/watch?v=eCind0-qMaI&list=RDeCind0-qMaI", YouTubeProvider.mixUrl("RDeCind0-qMaI"))
+        assertEquals("eCind0-qMaI", YouTubeProvider.mixSeed("RDAMVMeCind0-qMaI"))
+        assertNull(YouTubeProvider.mixSeed("RDEMabc"))
+        assertEquals("https://www.youtube.com/playlist?list=RDEMabc&playnext=1", YouTubeProvider.mixUrl("RDEMabc"))
+        // Normal playlists and YouTube Music curated lists are never treated as Mixes.
+        assertFalse(Platforms.detect("https://www.youtube.com/playlist?list=PLBCF2DAC6FFB574DE").isMixPreview)
+        assertFalse(Platforms.detect("https://music.youtube.com/playlist?list=RDCLAK5uy_abc").isMixPreview)
+    }
+
+    // ---- Mix preview pages ------------------------------------------------------------------------
+
+    private fun mixPage(ids: List<String>, hasMore: Boolean, through: Int) = PlaylistInfo(
+        sourceUrl = "https://www.youtube.com/playlist?list=RDx",
+        title = "Mix",
+        uploader = null,
+        thumbnailUrl = null,
+        entries = ids.mapIndexed { i, id -> PlaylistEntry("T $id", "https://www.youtube.com/watch?v=$id", i + 1, 200, null, videoId = id) },
+        id = "RDx",
+        mix = MixPage(through, hasMore),
+    )
+
+    @Test
+    fun `load more appends only new songs after the shown ones, keeping their order`() {
+        val first = mixPage(listOf("a", "b", "c"), hasMore = true, through = 25)
+        // YouTube reshuffles: the next window repeats b and lists d, e.
+        val next = mixPage(listOf("b", "d", "e"), hasMore = true, through = 50)
+        val merged = first.withMixPage(next, 50)
+        assertEquals(listOf("a", "b", "c", "d", "e"), merged.entries.map { it.videoId })
+        assertEquals(listOf(1, 2, 3, 4, 5), merged.entries.map { it.index })
+        assertEquals(MixPage(50, true), merged.mix)
+        // A window with nothing new stops "Load more".
+        assertFalse(merged.withMixPage(mixPage(listOf("a", "e"), true, 75), 75).mix!!.hasMore)
+    }
+
+    @Test
+    fun `mix pages are 25 songs and stop at the safety limit`() {
+        assertEquals(1..25, MixPreview.firstPage())
+        assertEquals(26..50, MixPreview.nextPage(MixPage(25, true)))
+        assertEquals(76..100, MixPreview.nextPage(MixPage(75, true)))
+        assertNull(MixPreview.nextPage(MixPage(100, true)))
+        assertNull(MixPreview.nextPage(MixPage(25, false)))
+        val ids = (1..25).map { "n$it" }
+        assertFalse(mixPage(listOf("a"), true, 75).withMixPage(mixPage(ids, true, 100), 100).mix!!.hasMore)
+    }
+
+    @Test
+    fun `ticking 15 of 21 mix songs downloads exactly those 15`() {
+        val pl = mixPage((1..21).map { "m" + it.toString().padStart(10, '0') }, hasMore = true, through = 25)
+        val ticked = pl.entries.filterIndexed { i, _ -> i % 7 != 3 }.take(15).map { it.key }.toSet()
+        val d = DetectPhase.Detected(AnalysisResult.Collection(pl, Platforms.detect(pl.sourceUrl)), selection = ticked)
+        assertEquals(15, d.selectedEntries.size)
+        assertEquals(ticked, d.selectedEntries.map { it.key }.toSet())
     }
 
     // ---- parser: exact entries, duplicates, counts --------------------------------------------

@@ -17,6 +17,7 @@ import com.example.mimic.downloader.data.model.DownloadCategory
 import com.example.mimic.downloader.data.model.DownloadStatus
 import com.example.mimic.downloader.data.model.MediaFormat
 import com.example.mimic.downloader.data.model.MediaInfo
+import com.example.mimic.downloader.data.model.MixPreview
 import com.example.mimic.downloader.data.model.PlaylistEntry
 import com.example.mimic.downloader.data.model.PlaylistInfo
 import com.example.mimic.downloader.data.model.QuickFormat
@@ -24,6 +25,7 @@ import com.example.mimic.downloader.data.model.suggestedCategory
 import com.example.mimic.downloader.data.platform.DetectedPlatform
 import com.example.mimic.downloader.data.platform.PlaylistContext
 import com.example.mimic.downloader.data.platform.YouTubeListType
+import com.example.mimic.downloader.data.platform.YouTubeProvider
 import com.example.mimic.downloader.data.provider.AnalysisProgress
 import com.example.mimic.downloader.data.provider.ProviderException
 import com.example.mimic.downloader.data.provider.YtDlpUpdater
@@ -58,6 +60,7 @@ sealed interface DetectPhase {
      * A finished analysis. For a playlist, [selection] holds the [PlaylistEntry.key]s that are
      * ticked and [quickFormat] the chosen format; both live here (not in the UI) so they survive
      * scrolling, format changes and recomposition. [note] explains an ignored `list=` parameter.
+     * [loadingMore]: a Mix preview is reading its next 25 songs.
      */
     data class Detected(
         val result: AnalysisResult,
@@ -65,6 +68,7 @@ sealed interface DetectPhase {
         val selection: Set<String> = emptySet(),
         val quickFormat: QuickFormat = QuickFormat.AudioMp3(),
         val note: String? = null,
+        val loadingMore: Boolean = false,
     ) : DetectPhase {
         val playlist: PlaylistInfo? get() = (result as? AnalysisResult.Collection)?.playlist
 
@@ -175,10 +179,9 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(urlText = url, phase = DetectPhase.ChooseScope(url, detected)) }
             return
         }
-        // watch?v=…&list=<Mix/channel/private list>: only the video is analyzed, and the user is told why.
+        // watch?v=…&list=<channel/private list>: only the video is analyzed, and the user is told why.
         val note = when (detected.ignoredList?.listType) {
             null -> null
-            YouTubeListType.MIX -> "This link came from a YouTube Mix. A Mix isn't a fixed playlist, so only this video is shown."
             YouTubeListType.CHANNEL_UPLOADS -> "This link came from a channel's uploads list. Whole channels aren't downloaded, so only this video is shown."
             else -> "This link came from a private list (Liked / Watch later), so only this video is shown."
         }
@@ -209,8 +212,7 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
                     val withFocus = if (result is AnalysisResult.Collection && focus != null) result.copy(focus = focus) else result
                     // Duplicate check: the same media downloaded before, with its file still there.
                     val existing = (withFocus as? AnalysisResult.Single)?.let { findExisting(it.media) }
-                    // Every downloadable song starts ticked; the user unticks what they don't want.
-                    val selection = (withFocus as? AnalysisResult.Collection)?.playlist?.selectable?.map { it.key }?.toSet().orEmpty()
+                    val selection = (withFocus as? AnalysisResult.Collection)?.let { initialSelection(it, focus) }.orEmpty()
                     _state.update { it.copy(phase = DetectPhase.Detected(withFocus, existing, selection, note = note)) }
                 },
                 onFailure = { e ->
@@ -222,10 +224,61 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Every downloadable song of a playlist starts ticked; the user unticks what they don't want.
+     * A Mix holds recommendations, so only the song it was started from starts ticked there.
+     */
+    private fun initialSelection(r: AnalysisResult.Collection, focus: PlaylistContext?): Set<String> {
+        val pl = r.playlist
+        if (pl.mix == null) return pl.selectable.map { it.key }.toSet()
+        val seed = focus?.videoId ?: pl.id?.let { YouTubeProvider.mixSeed(it) }
+        return pl.selectable.filter { it.videoId != null && it.videoId == seed }.map { it.key }.toSet()
+    }
+
+    /** "Load 25 more" in a Mix preview: the next window, appended without repeats, up to the safety limit. */
+    fun loadMoreMix() {
+        val d = _state.value.phase as? DetectPhase.Detected ?: return
+        val r = d.result as? AnalysisResult.Collection ?: return
+        val page = r.playlist.mix ?: return
+        if (d.loadingMore) return
+        val window = MixPreview.nextPage(page) ?: return
+        _state.update { it.copy(phase = d.copy(loadingMore = true)) }
+        analyzeJob = viewModelScope.launch {
+            val outcome = analyzer.analyze(r.detected.url, window)
+            _state.update { s ->
+                val cur = s.phase as? DetectPhase.Detected ?: return@update s
+                val curR = cur.result as? AnalysisResult.Collection ?: return@update s
+                val got = (outcome.getOrNull() as? AnalysisResult.Collection)?.playlist
+                if (got == null) return@update s.copy(phase = cur.copy(loadingMore = false))
+                s.copy(phase = cur.copy(result = curR.copy(playlist = curR.playlist.withMixPage(got, window.last)), loadingMore = false))
+            }
+            val before = r.playlist.entries.size
+            val after = (_state.value.phase as? DetectPhase.Detected)?.playlist?.entries?.size ?: before
+            _messages.tryEmit(
+                outcome.exceptionOrNull()?.let { "Couldn't load more: ${it.toAnalysisError(r.detected).title}" }
+                    ?: if (after > before) "Added ${after - before} more songs (not ticked)" else "No new songs — this Mix is repeating itself",
+            )
+        }
+    }
+
+    /** When a Mix can't be previewed: analyze just the song it was started from. */
+    fun openMixSong() {
+        val err = _state.value.phase as? DetectPhase.Error ?: return
+        val seed = err.detected?.listId?.let { YouTubeProvider.mixSeed(it) } ?: return
+        val url = "https://www.youtube.com/watch?v=$seed"
+        runAnalysis(url, url, analyzer.detect(url), focus = null)
+    }
+
     private fun analyzeBatch(urls: List<String>) {
+        // Several links at once: a Mix is never expanded here (its songs have to be chosen one
+        // by one); a video opened from a Mix is just that video.
         val items = urls.map { url ->
             val detected = analyzer.detect(url)
-            BatchItem(url, detected, if (detected.needsPlaylistChoice) BatchStatus.NEEDS_CHOICE else BatchStatus.ANALYZING)
+            when {
+                detected.isMixPreview -> BatchItem(url, detected, BatchStatus.FAILED, error = "YouTube Mix — open this link on its own to choose its songs")
+                detected.needsPlaylistChoice && detected.playlistContext?.isMix != true -> BatchItem(url, detected, BatchStatus.NEEDS_CHOICE)
+                else -> BatchItem(url, detected, BatchStatus.ANALYZING)
+            }
         }
         _state.update { it.copy(phase = DetectPhase.Batch(items)) }
         analyzeJob = viewModelScope.launch {

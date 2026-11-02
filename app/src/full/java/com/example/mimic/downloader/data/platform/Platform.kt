@@ -13,8 +13,9 @@ enum class ContentKind(val label: String) {
 
 /**
  * What a YouTube `list=` id is, from its prefix. Only real, fixed lists ([isExpandable]) are opened
- * as playlists; Mixes, channel uploads and account-only lists are refused with an explanation
- * instead of being expanded into hundreds of recommended videos.
+ * as playlists. Mixes are endless recommendation feeds: they open as a limited Mix preview
+ * (25 songs at a time, see MixPreview), never expanded in full. Channel uploads and account-only
+ * lists are refused with an explanation.
  */
 enum class YouTubeListType(val label: String) {
     PLAYLIST("Playlist"),
@@ -29,8 +30,6 @@ enum class YouTubeListType(val label: String) {
     /** Title + message shown when this kind of list can't be opened as a playlist; null if it can. */
     val refusal: Pair<String, String>?
         get() = when (this) {
-            MIX -> "This is a YouTube Mix, not a playlist" to
-                "Mixes and radios are made for each listener from recommendations and never end, so MImic doesn't open them as a playlist. Paste the song's own link, or save the songs you want to a playlist on YouTube and paste that playlist's link."
             CHANNEL_UPLOADS -> "This is a whole channel" to
                 "This list holds every upload of a YouTube channel. MImic downloads playlists, not entire channels. Paste a playlist or video link instead."
             PERSONAL -> "This list is private to your account" to
@@ -122,6 +121,21 @@ object YouTubeProvider : SourceProvider("youtube", "YouTube", listOf("youtube.co
 
     fun playlistUrl(listId: String) = "https://www.youtube.com/playlist?list=$listId"
 
+    /**
+     * The video a Mix was started from, when its id says so (`RD<id>`, YouTube Music's
+     * `RDAMVM<id>`, `RDMM<id>`). YouTube only lists a Mix from a watch page, so this is needed to
+     * fetch it at all.
+     */
+    fun mixSeed(listId: String): String? =
+        listOf("RDAMVM", "RDMM", "RD").firstNotNullOfOrNull { p ->
+            listId.takeIf { it.startsWith(p) }?.removePrefix(p)?.takeIf { VIDEO_ID.matches(it) }
+        }
+
+    /** Where yt-dlp reads a Mix from: its watch page (the playlist page answers "unviewable"). */
+    fun mixUrl(listId: String): String =
+        mixSeed(listId)?.let { "https://www.youtube.com/watch?v=$it&list=$listId" }
+            ?: "https://www.youtube.com/playlist?list=$listId&playnext=1"
+
     private fun URI.listParam(): String? =
         queryParam("list")?.let { runCatching { java.net.URLDecoder.decode(it, "UTF-8") }.getOrNull() }?.takeIf { PLAYLIST_ID.matches(it) }
 
@@ -130,6 +144,7 @@ object YouTubeProvider : SourceProvider("youtube", "YouTube", listOf("youtube.co
         segments.getOrNull(1)?.takeIf { it.startsWith("VL") }?.removePrefix("VL")?.takeIf { PLAYLIST_ID.matches(it) }
 
     private val PLAYLIST_ID = Regex("[A-Za-z0-9_-]{2,64}")
+    private val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
 }
 
 /** The playlist a single-video link was opened from ([index] is YouTube's 1-based `index=`). */
@@ -139,7 +154,7 @@ data class PlaylistContext(val listId: String, val index: Int?, val videoId: Str
 
     val listType: YouTubeListType get() = YouTubeListType.of(listId)
 
-    /** YouTube Mixes ("RD…") are generated per viewer and endless; they are never opened as a playlist. */
+    /** YouTube Mixes ("RD…") are generated per viewer and endless; they only open as a Mix preview. */
     val isMix: Boolean get() = listType == YouTubeListType.MIX
 }
 
@@ -177,13 +192,16 @@ data class DetectedPlatform(
 
     val listType: YouTubeListType? get() = listId?.let { YouTubeListType.of(it) }
 
-    /** The user has to choose between "Current video" and "Playlist" for this link. */
-    val needsPlaylistChoice: Boolean
-        get() = isSupported && !isCollection && playlistContext?.listType?.isExpandable == true
+    /** A Mix link: opened as a limited preview of recommendations, not as a playlist. */
+    val isMixPreview: Boolean get() = isCollection && listType == YouTubeListType.MIX
 
-    /** A video link whose `list=` is a Mix / channel / private list: only the video is used. */
+    /** The user has to choose between "Current video" and "Playlist" / "Mix preview" for this link. */
+    val needsPlaylistChoice: Boolean
+        get() = isSupported && !isCollection && playlistContext?.let { it.listType.isExpandable || it.isMix } == true
+
+    /** A video link whose `list=` is a channel / private list: only the video is used. */
     val ignoredList: PlaylistContext?
-        get() = playlistContext?.takeIf { isSupported && !isCollection && !it.listType.isExpandable }
+        get() = playlistContext?.takeIf { isSupported && !isCollection && !it.listType.isExpandable && !it.isMix }
 
     private fun hostLabel(url: String): String =
         runCatching { URI(url).host?.removePrefix("www.")?.removePrefix("m.") }.getOrNull() ?: "Website"

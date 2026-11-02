@@ -4,6 +4,9 @@ import android.util.Log
 import com.example.mimic.downloader.core.NetworkMonitor
 import com.example.mimic.downloader.core.UrlValidator
 import com.example.mimic.downloader.data.model.AnalysisResult
+import com.example.mimic.downloader.data.model.MixPage
+import com.example.mimic.downloader.data.model.MixPreview
+import com.example.mimic.downloader.data.model.PlaylistInfo
 import com.example.mimic.downloader.data.platform.DetectedPlatform
 import com.example.mimic.downloader.data.platform.YouTubeProvider
 import com.example.mimic.downloader.diagnostics.AnalysisTrace
@@ -40,7 +43,7 @@ class YtDlpMediaProvider(
     /** True while a link is being analyzed (the updater must not swap yt-dlp underneath it). */
     val isAnalyzing: Boolean get() = activeAnalyses.get() > 0
 
-    override suspend fun analyze(url: String, detected: DetectedPlatform) = withContext(Dispatchers.IO) {
+    override suspend fun analyze(url: String, detected: DetectedPlatform, mixWindow: IntRange?) = withContext(Dispatchers.IO) {
         val normalized = UrlValidator.normalize(url) ?: throw ProviderException.InvalidUrl()
         // Download Diagnostics (4.3.1): present only while recording is on; then each step is
         // timed and yt-dlp runs with -v so the report shows its version, clients and HTTP codes.
@@ -66,8 +69,17 @@ class YtDlpMediaProvider(
             trace?.stage("wait for engine", tEngine, "ready")
             // A playlist link is always read from its canonical playlist page (list=… only), so
             // yt-dlp lists exactly that list's items — never a watch page's recommendations.
+            // A Mix has no playlist page; it is read from its watch page, and only one window of
+            // positions (-I a:b; yt-dlp stops fetching after it). Unlimited, a Mix runs to
+            // hundreds of recommendations with repeats.
             val listId = detected.listId?.takeIf { detected.isCollection }
-            val target = listId?.let { YouTubeProvider.playlistUrl(it) } ?: normalized
+            val mix = detected.isMixPreview
+            val window = if (mix) mixWindow ?: MixPreview.firstPage() else null
+            val target = when {
+                listId == null -> normalized
+                mix -> YouTubeProvider.mixUrl(listId)
+                else -> YouTubeProvider.playlistUrl(listId)
+            }
             val progress = coroutineContext[AnalysisProgress]
             // One call for every kind of link: -J prints a single JSON document that is either one
             // item with its full format list or a collection; --flat-playlist keeps collections
@@ -84,6 +96,7 @@ class YtDlpMediaProvider(
                     addOption("--yes-playlist")
                     addOption("--ignore-errors")
                     addOption("--print", "$ITEM_PREFIX %(id)s")
+                    if (window != null) addOption("-I", "${window.first}:${window.last}")
                 } else {
                     addOption("--no-playlist")
                 }
@@ -94,7 +107,7 @@ class YtDlpMediaProvider(
             // Cancellable (leaving the screen kills yt-dlp) and bounded: a stuck extractor
             // surfaces as a connection error instead of an endless spinner. Long playlists get
             // more time.
-            val timeoutMs = if (detected.isCollection) PLAYLIST_TIMEOUT_MS else ANALYZE_TIMEOUT_MS
+            val timeoutMs = if (detected.isCollection && !mix) PLAYLIST_TIMEOUT_MS else ANALYZE_TIMEOUT_MS
             val tRun = System.currentTimeMillis()
             val found = AtomicInteger(0)
             val response = try {
@@ -122,6 +135,7 @@ class YtDlpMediaProvider(
                     it.exitInfo = "failed (${e.javaClass.simpleName})"
                     it.stage("run yt-dlp", tRun, "failed")
                 }
+                if (mix && e.message.orEmpty().contains("unviewable", ignoreCase = true)) throw mixUnavailable(listId, "unviewable")
                 throw e
             }
             trace?.let {
@@ -135,6 +149,10 @@ class YtDlpMediaProvider(
                 ?: throw ProviderException.NoFormatsAvailable("empty extractor output")
             when (val parsed = AnalysisJsonParser.parse(root, target, mapper)) {
                 is AnalysisJsonParser.Parsed.Single -> {
+                    if (mix) {
+                        trace?.stage("read formats", tRead, "mix gave a single item")
+                        throw mixUnavailable(listId, "single item")
+                    }
                     if (detected.isCollection) {
                         trace?.stage("read formats", tRead, "not a playlist")
                         throw ProviderException.PlaylistRefused(
@@ -168,8 +186,12 @@ class YtDlpMediaProvider(
                     trace?.formats = "collection with ${parsed.playlist.entries.size} items" +
                         (parsed.playlist.reportedCount?.let { " (site reports $it)" } ?: "")
                     trace?.stage("read formats", tRead, if (parsed.playlist.entries.isEmpty()) "empty collection" else "ok")
-                    if (parsed.playlist.entries.isEmpty()) throw ProviderException.NoFormatsAvailable("empty collection")
-                    AnalysisResult.Collection(parsed.playlist, detected)
+                    if (parsed.playlist.entries.isEmpty()) {
+                        if (mix) throw mixUnavailable(listId, "empty window $window")
+                        throw ProviderException.NoFormatsAvailable("empty collection")
+                    }
+                    val playlist = if (window == null) parsed.playlist else mixPreview(parsed.playlist, window)
+                    AnalysisResult.Collection(playlist, detected)
                 }
             }
         } catch (e: ProviderException) {
@@ -192,6 +214,23 @@ class YtDlpMediaProvider(
             activeAnalyses.decrementAndGet()
         }
     }
+
+    /**
+     * A Mix window as a preview: items without a watch link of their own are marked unavailable
+     * (downloading "position N" of a Mix would get a different song, as YouTube reshuffles it).
+     * More is offered while the window came back full and the safety limit isn't reached.
+     */
+    private fun mixPreview(pl: PlaylistInfo, window: IntRange) = pl.copy(
+        entries = pl.entries.map { if (it.url == null && it.isAvailable) it.copy(unavailableReason = "No link of its own") else it },
+        reportedCount = null,
+        mix = MixPage(window.last, pl.entries.size >= window.count() && window.last < MixPreview.MAX_POSITION),
+    )
+
+    private fun mixUnavailable(listId: String?, detail: String) = ProviderException.PlaylistRefused(
+        "This Mix can't be previewed",
+        "YouTube didn't list the songs of this Mix (Mixes are generated per listener and some only open in the YouTube app). You can still download the song the Mix was started from.",
+        "mix $listId: $detail",
+    )
 
     /**
      * Runs a blocking yt-dlp call so that cancelling the coroutine destroys the process (and

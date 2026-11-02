@@ -33,11 +33,12 @@ class MediaAnalyzer(
     /**
      * With Download Diagnostics on, the whole analysis runs with an [AnalysisTrace] in its
      * coroutine context and the outcome is recorded (cancelled analyses too, as "Cancelled").
+     * [mixWindow]: the positions of a YouTube Mix to read ("Load 25 more"); first page when null.
      */
-    suspend fun analyze(rawUrl: String): Result<AnalysisResult> {
-        val trace = diagnostics?.trace(rawUrl) ?: return analyzeTraced(rawUrl, null)
+    suspend fun analyze(rawUrl: String, mixWindow: IntRange? = null): Result<AnalysisResult> {
+        val trace = diagnostics?.trace(rawUrl) ?: return analyzeTraced(rawUrl, null, mixWindow)
         val result = try {
-            withContext(trace) { analyzeTraced(rawUrl, trace) }
+            withContext(trace) { analyzeTraced(rawUrl, trace, mixWindow) }
         } catch (e: CancellationException) {
             diagnostics.finish(trace, ProviderException.Cancelled())
             throw e
@@ -46,7 +47,7 @@ class MediaAnalyzer(
         return result
     }
 
-    private suspend fun analyzeTraced(rawUrl: String, trace: AnalysisTrace?): Result<AnalysisResult> {
+    private suspend fun analyzeTraced(rawUrl: String, trace: AnalysisTrace?, mixWindow: IntRange?): Result<AnalysisResult> {
         val t0 = System.currentTimeMillis()
         val url = UrlValidator.normalize(rawUrl) ?: UrlValidator.extractFirstUrl(rawUrl)
         if (url == null) {
@@ -61,14 +62,14 @@ class MediaAnalyzer(
         }
         trace?.stage("parse link", t0, if (detected.isSupported) "ok" else "unsupported")
         if (!detected.isSupported) return Result.failure(ProviderException.UnsupportedUrl())
-        // Mixes, channel uploads and account-only lists are refused before yt-dlp runs: expanding
-        // them lists hundreds of recommended or unrelated videos, not a playlist.
+        // Channel uploads and account-only lists are refused before yt-dlp runs: expanding them
+        // lists hundreds of unrelated videos. Mixes go on as a limited preview (MixPreview).
         detected.listType?.refusal?.let { (title, message) ->
             trace?.stage("check list", t0, "refused: ${detected.listType?.label}")
             return Result.failure(ProviderException.PlaylistRefused(title, message, detected.listId))
         }
         return try {
-            Result.success(mediaProvider.analyze(url, detected))
+            Result.success(mediaProvider.analyze(url, detected, mixWindow))
         } catch (e: ProviderException) {
             Result.failure(e)
         } catch (e: CancellationException) {

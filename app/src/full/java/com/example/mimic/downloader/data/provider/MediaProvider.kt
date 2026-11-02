@@ -12,8 +12,9 @@ interface MediaProvider {
     /**
      * Analyzes a URL with the extractor and returns real, provider-reported metadata: a single
      * item with its formats, or a collection (playlist/album/multi-item post). Never fabricated.
+     * For a YouTube Mix only the positions in [mixWindow] are read (first page when null).
      */
-    suspend fun analyze(url: String, detected: DetectedPlatform): AnalysisResult
+    suspend fun analyze(url: String, detected: DetectedPlatform, mixWindow: IntRange? = null): AnalysisResult
 
     /** Streams a single download. Throws [ProviderException.Cancelled] if [processId] is destroyed mid-run. */
     suspend fun download(
