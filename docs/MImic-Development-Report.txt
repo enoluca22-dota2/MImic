@@ -1,8 +1,9 @@
 MIMIC — COMPLETE DEVELOPMENT REPORT
 ===================================
-Last updated: 2026-11-02 (session: 4.6.0-beta.1 — playlist downloads with per-song selection +
-              compact mini player, recovered from the second PC's APK and released from this laptop)
-Previous: 2026-10-26 (Listen Together + automatic lyrics + icons, 4.5.0-beta.1 … beta.4)
+Last updated: 2026-11-02 (session 2: 4.6.0-beta.2 — YouTube Mix links open as a limited
+              Mix preview instead of being refused)
+Previous: 2026-11-02 session 1 (4.6.0-beta.1 — playlist downloads with per-song selection +
+              compact mini player, recovered from the second PC's APK); 2026-10-26 (Listen Together + automatic lyrics + icons, 4.5.0-beta.1 … beta.4)
 Keep this file current after every session. Plain text, written so it can be pasted into a
 new ChatGPT / Claude conversation without access to the repository.
 
@@ -10,7 +11,7 @@ new ChatGPT / Claude conversation without access to the repository.
 A. PROJECT IDENTITY
 -------------------
 App name ............ MImic
-Current version ..... 4.6.0-beta.1  (versionCode 400600034)
+Current version ..... 4.6.0-beta.2  (versionCode 400600035)
 Application ID ...... com.example.mimic  (never change)
 Repository .......... https://github.com/enoluca22-dota2/MImic  (PUBLIC — owner's decision on
                       2026-10-25, because the in-app updater downloads release assets anonymously)
@@ -96,7 +97,7 @@ Diagnostics: Settings → Advanced → Download Diagnostics (full): link-analysi
   resolver log). Shared as TXT through the share sheet.
 
 
-C. FEATURE INVENTORY (status as of 4.6.0-beta.1)
+C. FEATURE INVENTORY (status as of 4.6.0-beta.2)
 --------------------------------------------------
 Statuses: WORKING (verified this or an earlier session) / PARTIAL / BLOCKED / NOT TESTED / PLANNED
 
@@ -142,7 +143,7 @@ App icon glass waveform disc (4.5.0-beta.4) .................. WORKING (emulator
 Link downloader — YouTube / YouTube Music playlists (4.6):
   exact playlist contents (playlist?list=, music.youtube.com
   playlist + browse/VL, watch?list=) ........................... WORKING (emulator YTD_Test_4K)
-  Mix / channel / private list refused, Mix song → song only .. WORKING (emulator)
+  Mix → Mix preview (25 + "Load 25 more", max 100, only ticked songs); channel / private list refused .. WORKING (emulator, 4.6.0-beta.2)
   per-song checkboxes, Select/Deselect all, selection kept on
   scroll + format change, "Selected: N of M", pinned
   Download selected bar, exact selected count queued ........... WORKING (emulator: 8 of 10)
@@ -239,6 +240,42 @@ UI: ui/party/ListenTogetherScreen.kt (Settings → Listen Together): name card, 
 Invites: mimic://party/CODE?server=URL (manifest intent filter) and http(s)://<server>/invite/CODE
   (server landing page with "Join the party in MImic"). Docs: docs/LISTEN_TOGETHER.md (LAN,
   Tailscale, optional Tailscale Funnel — not enabled by Claude).
+E00. CHANGES IN 4.6.0-beta.2 (2026-11-02) — YouTube Mix preview
+-----------------------------------------------------------------
+Problem: since 4.6.0-beta.1 every Mix link (list=RD…; e.g. the phone's share link
+  youtube.com/playlist?list=RDeCind0-qMaI&playnext=1&si=…) was refused ("This is a YouTube Mix,
+  not a playlist"). Before 4.6 such links listed 400–900 videos.
+Investigation (yt-dlp 2026.08.19 on the PC, the same link): an RD list is an auto-generated
+  recommendation feed seeded by a video (RD + 11-char video id). Read in full it gave 528 entries
+  / 383 unique, first repeat at position 26. youtube.com/playlist?list=RD… (without playnext)
+  answers "This playlist type is unviewable"; the watch page watch?v=<seed>&list=RD<seed> works.
+  The Mix is NOT stable: two identical requests share ~21 of the first 25 songs, in a different
+  order; -I 26:50 overlapped page 1 by 8. With -I a:b yt-dlp stops paging after the window
+  (first 25 in ~3 s).
+Fix (Mix preview mode; normal playlists untouched and unlimited):
+  - Platform.kt: MIX no longer has a refusal; DetectedPlatform.isMixPreview; YouTubeProvider.
+    mixSeed(listId) (RD / RDAMVM / RDMM + video id) and mixUrl() (watch?v=seed&list=id, else
+    playlist?list=id&playnext=1). A song link from a Mix (watch?v=…&list=RD…) now gets the
+    "This video" / "Preview Mix" choice (needsPlaylistChoice includes Mix); ignoredList now only
+    covers channel/private lists.
+  - Analysis.kt: PlaylistInfo.mix: MixPage(fetchedThrough, hasMore); MixPreview.PAGE = 25,
+    MAX_POSITION = 100 (safety limit); PlaylistInfo.withMixPage() appends only videos not
+    already shown (YouTube reshuffles), renumbered after the existing rows, order kept.
+  - MediaProvider/MediaAnalyzer.analyze(url, …, mixWindow); YtDlpMediaProvider reads a Mix
+    from mixUrl with -I first:last, 90 s timeout; entries without their own watch URL are marked
+    unavailable; "unviewable"/single-item/empty answers → PlaylistRefused("This Mix can't be
+    previewed", …).
+  - DownloaderViewModel: initialSelection() — playlists all ticked, Mix only the seed song;
+    loadMoreMix() ("Added N more songs (not ticked)" / "No new songs — this Mix is repeating
+    itself"); openMixSong() ("Song only" after a Mix error); batches never expand a Mix (Mix link
+    → FAILED "open this link on its own", video-from-Mix → just the video).
+  - DownloadsTab: "Reading Mix preview… N of up to 25 found"; choice card text; header "Mix
+    preview · N tracks" + notice "Recommendations generated by YouTube, not a fixed playlist…";
+    MixMore row ("Load 25 more" / spinner / "Preview limit reached…"); "Song only" button.
+  - Tests: PlaylistSelectionTest now 12 (Mix preview detection incl. the reported URL, mixSeed/
+    mixUrl, load-more merge/order/dedupe, page limits, 15 of 21 Mix songs).
+Commit c89408b (tag v4.6.0-beta.2).
+
 E0. CHANGES IN 4.6.0-beta.1 (2026-11-02)
 ----------------------------------------
 How this release was made: the features were finished on 2026-11-01 on a second Windows PC
@@ -363,6 +400,41 @@ Environment variable names used in tooling: JAVA_HOME (Android Studio jbr), LOCA
   MIMIC_LIVE_PROBE=1 (opt-in live network probe test), MIMIC_WEBM (tagger probe), MIMIC_MUSIC_DIR
   (Navidrome compose).
 
+
+H0. TEST RESULTS (2026-11-02, 4.6.0-beta.2)
+-------------------------------------------
+Unit tests ................ PASS — full 297 (3 skipped), standard 182 (1 skipped), 0 failures
+Lint ...................... PASS — lintFullDebug; lintFullRelease (release script)
+Release dry run + publish . PASS — package com.example.mimic, 4.6.0-beta.2/400600035, certificate
+                            C03C5107…087D (apksigner on the APKs); all 6 assets downloadable
+Emulator YTD_Test_4K (dry-run x86_64 build of the same commit, adb install -r over 4.6.0-beta.1):
+  Reported link (shared via ACTION_SEND) ... PASS — "Mix preview · 25 tracks", "Selected: 1 of 25"
+    (seed), recommendations notice, selection bar above the compact mini player, no overlap.
+  Load 25 more ............................. PASS — 25 → 44 (6 repeats dropped); on a later open
+    25 → 47 → 62 → 78, then "Preview limit reached" (100 positions). No auto-ticking.
+  13 of 15 ................................. PASS — Deselect all, tick rows 1–15, untick 4 and 10 →
+    "Selected: 13 of 44" → "Queued 13 of 44 …" → queue showed Playlist 1/13…13/13, all 13
+    Completed as MP3 (Completed 14 → 27, Failed 0); row 10 "COMBINACION DE LA HABANA" not
+    downloaded.
+  Duplicates ............................... PASS — re-opening the Mix and downloading the ticked
+    (already downloaded) seed → "Queued 0 of 78 …", no new job.
+  Song link from a Mix ..................... PASS — "This video was opened from a YouTube Mix." with
+    "This video" / "Preview Mix"; Preview Mix → 25 tracks, 1 ticked.
+  Normal playlist PLBCF2DAC6FFB574DE ....... PASS — 13 tracks, 3 unavailable, Selected 10 of 10, no
+    Mix notice / Load more (not limited).
+  Playback while selecting ................. PASS — playing during analysis; compact play/pause
+    toggled PLAYING → PAUSED → PLAYING. (The very first play tap from a STOPPED player did nothing;
+    a second tap started it — see I-16.)
+  Library / Radio / Home ................... PASS (open normally, no crash in the crash buffer).
+Updater (Pixel_10a, 4.6.0-beta.1 release → 4.6.0-beta.2) ... PASS — Check for Updates →
+  "Update available: MImic v4.6.0-beta.2 (beta)" (x86_64, 81 MB) → Download → log "verified
+  (sha256 + package + versionCode + ABI + pinned certificate)" → Android "Update this app?" →
+  Play Protect "App scan recommended" → "Install without scanning" (nothing sent to Google) →
+  4.6.0-beta.2 / 400600035 installed over, firstInstallTime 2026-10-17 unchanged; Library &
+  Storage screen identical before/after (5 songs, 1 hidden, folders, 132.3 MB offline downloads),
+  last-played song kept.
+NOT TESTED: physical phone; a Mix whose seed can't be derived (RDEM…/other prefixes, playnext
+  fallback) and the "Song only" path on a device; unavailable entries inside a Mix (none appeared).
 
 H. TEST RESULTS (2026-11-02, 4.6.0-beta.1)
 ------------------------------------------
@@ -492,39 +564,44 @@ I-14 (4.6) The "> 50 songs" confirmation, YouTube Music album (OLAK) and curated
     exercised on a device (unit-tested / code only).
 I-15 (4.6) Duplicate check for already-downloaded songs relies on download history + the file
     still existing; songs downloaded before history existed, or moved, are downloaded again.
+I-16 (4.6.0-beta.2 test) On YTD_Test_4K the first mini-player play tap after the player had
+    stopped at the end of a track did nothing; the second tap played. Not investigated (player
+    code unchanged in this release); watch for it on the phone.
+I-17 (4.6.0-beta.2) A Mix is regenerated by YouTube on each request, so "Load 25 more" may bring
+    fewer than 25 new songs (repeats are dropped) and the same link can show a slightly different
+    first 25 another time. By design the preview never reads past position 100.
 
 
 J. GITHUB AND RELEASE
 ---------------------
-Version name / code ..... 4.6.0-beta.1 / 400600034 (higher than 4.5.0-beta.4 = 400500037)
-Branch / commit ......... main @ ec03bf8 (tag v4.6.0-beta.1; feature commit 055296c + duplicate
-                          fix ec03bf8); this report is committed afterwards
+Version name / code ..... 4.6.0-beta.2 / 400600035 (higher than 4.6.0-beta.1 = 400600034)
+Branch / commit ......... main @ c89408b (tag v4.6.0-beta.2); this report is committed afterwards
 Repository status ....... pushed; public (owner's decision; updater reads assets anonymously)
-Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.6.0-beta.1
+Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.6.0-beta.2
                           (pre-release; full universal / arm64-v8a / armeabi-v7a / x86_64,
-                          standard, SHA256SUMS.txt). Previous releases kept.
-SHA-256 ................. full-arm64-v8a 317d864f02b5a0c68309dd0ebb6680cbe9def15f984ebc6133507c6949b5f1f0
-                          full (universal) 689bbd0c47e92e260f432f7880b9500e1266aebfb82e2eac7a176951e13eb6d8
-                          full-armeabi-v7a 8e3d450a959d95a5dc4908ac88301217cb6cbddd3e1943f48d492ada18720a70
-                          full-x86_64 ca545e0042f20a4a47331a4f1dcdb51c4d785c2d36ae424e7619c4fa6dc0c0b9
-                          standard 786ba2874030f8b4276008b8468eca36bef08504354f8f6bb898b76b99d7aa6f
-                          (GitHub asset digests identical)
-Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.6.0-beta.1-signed.apk
+                          standard, SHA256SUMS.txt). Previous releases kept (4.6.0-beta.1
+                          unchanged).
+SHA-256 ................. full-arm64-v8a 62c60bc1e2587d11d9c9aac8f1314a1d516d56a1ec52970201bd6aca45c311f9
+                          full (universal) a48b00ce1884f0b833789a607e818e6bcdcf6b4ee8acee45114b11925b17cea1
+                          full-armeabi-v7a 37e4550720d2639f1197b8f9b6ff7a2cb6f506bc4baabe55ef76a2919e4cc7cc
+                          full-x86_64 6ece888e40bae76929a7b2eccc3d557349bf731ce23335ceaae10e7b8753e46b
+                          standard 20b972829e74c92ef3f515ca1c87dac60ea848b9438bde6976deb52e03abe5cd
+                          (= the published SHA256SUMS.txt)
+Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.6.0-beta.2-signed.apk
                           (arm64-v8a; hash identical to the GitHub asset) and
-                          MImic-v4.6.0-beta.1-signed-universal.apk; older APKs kept. The second
-                          PC's Desktop\MImic-v4.6.0-beta.1-TEST-local-key-arm64.apk (wrong key,
-                          debuggable) was left untouched and NOT published.
-Signing compatibility ... PASS — ~/.android/debug.keystore = C0:3C:51:07…4F:88:08:7D = the
-                          certificate of the published 4.5.0-beta.4 = RELEASE_CERT_SHA256 pin;
-                          keystore.properties gitignored, no secrets committed
-Updater verification .... PASS on emulator Pixel_10a (4.5.0-beta.4 → 4.6.0-beta.1, Beta channel,
-                          data kept; see section H). Physical phone: NOT TESTED.
+                          MImic-v4.6.0-beta.2-signed-universal.apk (identical too); older kept.
+Signing compatibility ... PASS — published APKs signed with C0:3C:51:07…4F:88:08:7D (the
+                          laptop's ~/.android/debug.keystore, same as all previous releases);
+                          no key generated, no secrets committed
+Updater verification .... PASS on emulator Pixel_10a (4.6.0-beta.1 → 4.6.0-beta.2, Beta channel,
+                          data kept; see H0). Physical phone: NOT TESTED.
 
 K. FUTURE DEVELOPMENT
 ---------------------
 Priority next:
-  0. Install 4.6.0-beta.1 on the physical phone via Settings → App Updates (Beta channel) and try a
-     real music playlist (YouTube + YouTube Music link), untick a few songs, download.
+  0. Install 4.6.0-beta.2 on the physical phone via Settings → App Updates (Beta channel); share a
+     Mix from the YouTube app (the RD…&playnext=1 link), tick some songs, Load 25 more, download;
+     also a real playlist (YouTube + YouTube Music link) with a few songs unticked.
   1. Listen Together on real phones: run the party server, give friends the Tailscale address (or
      decide on Tailscale Funnel), test over Wi-Fi + mobile data, kick / host-only on device,
      online-stream songs in a party.
