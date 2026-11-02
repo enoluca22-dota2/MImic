@@ -14,7 +14,7 @@ enum class ContentKind(val label: String) {
 /**
  * What a YouTube `list=` id is, from its prefix. Only real, fixed lists ([isExpandable]) are opened
  * as playlists. Mixes are endless recommendation feeds: they open as a limited Mix preview
- * (25 songs at a time, see MixPreview), never expanded in full. Channel uploads and account-only
+ * (at most MixPreview.LIMIT songs, read automatically), never expanded in full. Channel uploads and account-only
  * lists are refused with an explanation.
  */
 enum class YouTubeListType(val label: String) {

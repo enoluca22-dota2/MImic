@@ -33,12 +33,11 @@ class MediaAnalyzer(
     /**
      * With Download Diagnostics on, the whole analysis runs with an [AnalysisTrace] in its
      * coroutine context and the outcome is recorded (cancelled analyses too, as "Cancelled").
-     * [mixWindow]: the positions of a YouTube Mix to read ("Load 25 more"); first page when null.
      */
-    suspend fun analyze(rawUrl: String, mixWindow: IntRange? = null): Result<AnalysisResult> {
-        val trace = diagnostics?.trace(rawUrl) ?: return analyzeTraced(rawUrl, null, mixWindow)
+    suspend fun analyze(rawUrl: String): Result<AnalysisResult> {
+        val trace = diagnostics?.trace(rawUrl) ?: return analyzeTraced(rawUrl, null)
         val result = try {
-            withContext(trace) { analyzeTraced(rawUrl, trace, mixWindow) }
+            withContext(trace) { analyzeTraced(rawUrl, trace) }
         } catch (e: CancellationException) {
             diagnostics.finish(trace, ProviderException.Cancelled())
             throw e
@@ -47,7 +46,7 @@ class MediaAnalyzer(
         return result
     }
 
-    private suspend fun analyzeTraced(rawUrl: String, trace: AnalysisTrace?, mixWindow: IntRange?): Result<AnalysisResult> {
+    private suspend fun analyzeTraced(rawUrl: String, trace: AnalysisTrace?): Result<AnalysisResult> {
         val t0 = System.currentTimeMillis()
         val url = UrlValidator.normalize(rawUrl) ?: UrlValidator.extractFirstUrl(rawUrl)
         if (url == null) {
@@ -69,7 +68,7 @@ class MediaAnalyzer(
             return Result.failure(ProviderException.PlaylistRefused(title, message, detected.listId))
         }
         return try {
-            Result.success(mediaProvider.analyze(url, detected, mixWindow))
+            Result.success(mediaProvider.analyze(url, detected))
         } catch (e: ProviderException) {
             Result.failure(e)
         } catch (e: CancellationException) {

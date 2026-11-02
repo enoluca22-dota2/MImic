@@ -17,7 +17,6 @@ import com.example.mimic.downloader.data.model.DownloadCategory
 import com.example.mimic.downloader.data.model.DownloadStatus
 import com.example.mimic.downloader.data.model.MediaFormat
 import com.example.mimic.downloader.data.model.MediaInfo
-import com.example.mimic.downloader.data.model.MixPreview
 import com.example.mimic.downloader.data.model.PlaylistEntry
 import com.example.mimic.downloader.data.model.PlaylistInfo
 import com.example.mimic.downloader.data.model.QuickFormat
@@ -50,8 +49,8 @@ import kotlinx.coroutines.sync.withPermit
 /** Where the analyzer is for the link(s) in the field (from ENAGELYUCA's Home screen). */
 sealed interface DetectPhase {
     data object Idle : DetectPhase
-    /** [found]: playlist items listed so far (0 for single links or before the first item). */
-    data class Analyzing(val detected: DetectedPlatform, val found: Int = 0) : DetectPhase
+    /** Until the first playlist item is listed (then the list itself is shown, still [Detected.loading]). */
+    data class Analyzing(val detected: DetectedPlatform) : DetectPhase
 
     /** `watch?v=…&list=…`: the user picks "This video" or "Whole playlist" before anything is fetched. */
     data class ChooseScope(val url: String, val detected: DetectedPlatform) : DetectPhase
@@ -60,7 +59,9 @@ sealed interface DetectPhase {
      * A finished analysis. For a playlist, [selection] holds the [PlaylistEntry.key]s that are
      * ticked and [quickFormat] the chosen format; both live here (not in the UI) so they survive
      * scrolling, format changes and recomposition. [note] explains an ignored `list=` parameter.
-     * [loadingMore]: a Mix preview is reading its next 25 songs.
+     * [loading]: the playlist is still being read; [result] holds the songs listed so far and more
+     * are appended as yt-dlp reads them (nothing can be downloaded until the list is complete).
+     * [tickNew]: songs that arrive are ticked (a playlist, until "Deselect all"; never in a Mix).
      */
     data class Detected(
         val result: AnalysisResult,
@@ -68,7 +69,8 @@ sealed interface DetectPhase {
         val selection: Set<String> = emptySet(),
         val quickFormat: QuickFormat = QuickFormat.AudioMp3(),
         val note: String? = null,
-        val loadingMore: Boolean = false,
+        val loading: Boolean = false,
+        val tickNew: Boolean = true,
     ) : DetectPhase {
         val playlist: PlaylistInfo? get() = (result as? AnalysisResult.Collection)?.playlist
 
@@ -98,6 +100,23 @@ data class BatchItem(
         }
 }
 
+private val DetectPhase.isLoadingPlaylist: Boolean get() = this is DetectPhase.Detected && loading
+
+/**
+ * The selection after more of a playlist arrived ([next] replaces [prev], the list shown so far):
+ * what the user ticked or unticked is kept; songs seen for the first time are ticked when
+ * [tickNew], and in a Mix only the song it was started from ([seed]) is.
+ */
+internal fun mergeSelection(selection: Set<String>, prev: PlaylistInfo?, next: PlaylistInfo, tickNew: Boolean, seed: String?): Set<String> {
+    val known = prev?.entries.orEmpty().mapTo(HashSet()) { it.key }
+    val selectable = next.selectable
+    val keys = selectable.mapTo(HashSet()) { it.key }
+    val fresh = selectable.filter { e ->
+        e.key !in known && if (next.isMixPreview) seed != null && e.videoId == seed else tickNew
+    }
+    return selection.filterTo(HashSet()) { it in keys } + fresh.map { it.key }
+}
+
 data class DownloaderUiState(
     val urlText: String = "",
     val phase: DetectPhase = DetectPhase.Idle,
@@ -106,7 +125,7 @@ data class DownloaderUiState(
     val urlHint: String?
         get() = if (urlText.isNotBlank() && urls.isEmpty()) "Enter a full link starting with https://" else null
     val canAnalyze: Boolean
-        get() = phase !is DetectPhase.Analyzing && phase !is DetectPhase.ChooseScope && urls.isNotEmpty() &&
+        get() = phase !is DetectPhase.Analyzing && phase !is DetectPhase.ChooseScope && !phase.isLoadingPlaylist && urls.isNotEmpty() &&
             (phase !is DetectPhase.Batch || phase.items.none { it.status == BatchStatus.ANALYZING })
 }
 
@@ -137,11 +156,14 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private var analyzeJob: Job? = null
 
+    /** Identifies the analysis whose partial playlists may still be shown (yt-dlp's output thread). */
+    @Volatile private var currentRun: Any? = null
+
     // ---- Link field / analysis -------------------------------------------------------------
 
     fun onUrlChanged(text: String) {
         _state.update {
-            val keep = it.phase is DetectPhase.Analyzing
+            val keep = it.phase is DetectPhase.Analyzing || it.phase.isLoadingPlaylist
             it.copy(urlText = text, phase = if (keep) it.phase else DetectPhase.Idle)
         }
     }
@@ -201,62 +223,65 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun runAnalysis(fieldUrl: String, url: String, detected: DetectedPlatform, focus: PlaylistContext?, note: String? = null) {
         analyzeJob?.cancel()
+        val run = Any()
+        currentRun = run
         _state.update { it.copy(urlText = fieldUrl, phase = DetectPhase.Analyzing(detected)) }
-        // "N found so far" while a long playlist is being listed.
-        val progress = AnalysisProgress { n ->
-            _state.update { s -> (s.phase as? DetectPhase.Analyzing)?.let { s.copy(phase = it.copy(found = n)) } ?: s }
+        val seed = focus?.videoId ?: detected.listId?.let { YouTubeProvider.mixSeed(it) }
+        // A playlist is shown while it is read: the songs listed so far, more appended as they come.
+        val progress = AnalysisProgress { partial ->
+            _state.update { s ->
+                if (currentRun !== run) return@update s
+                val phase = when (val p = s.phase) {
+                    is DetectPhase.Analyzing -> {
+                        val tickNew = !partial.isMixPreview
+                        DetectPhase.Detected(
+                            AnalysisResult.Collection(partial, detected, focus),
+                            selection = mergeSelection(emptySet(), null, partial, tickNew, seed),
+                            note = note,
+                            loading = true,
+                            tickNew = tickNew,
+                        )
+                    }
+                    is DetectPhase.Detected -> {
+                        val r = p.result as? AnalysisResult.Collection
+                        if (!p.loading || r == null) return@update s
+                        p.copy(result = r.copy(playlist = partial), selection = mergeSelection(p.selection, r.playlist, partial, p.tickNew, seed))
+                    }
+                    else -> return@update s
+                }
+                s.copy(phase = phase)
+            }
         }
         analyzeJob = viewModelScope.launch(progress) {
-            analyzer.analyze(url).fold(
+            val outcome = analyzer.analyze(url)
+            if (currentRun !== run) return@launch
+            currentRun = null
+            outcome.fold(
                 onSuccess = { result ->
                     val withFocus = if (result is AnalysisResult.Collection && focus != null) result.copy(focus = focus) else result
                     // Duplicate check: the same media downloaded before, with its file still there.
                     val existing = (withFocus as? AnalysisResult.Single)?.let { findExisting(it.media) }
-                    val selection = (withFocus as? AnalysisResult.Collection)?.let { initialSelection(it, focus) }.orEmpty()
-                    _state.update { it.copy(phase = DetectPhase.Detected(withFocus, existing, selection, note = note)) }
+                    _state.update { s ->
+                        // The complete list replaces the one shown while loading; the user's ticks are kept.
+                        val shown = (s.phase as? DetectPhase.Detected)?.takeIf { it.loading }
+                        val pl = (withFocus as? AnalysisResult.Collection)?.playlist
+                        val tickNew = shown?.tickNew ?: (pl?.isMixPreview != true)
+                        val selection = pl?.let { mergeSelection(shown?.selection.orEmpty(), shown?.playlist, it, tickNew, seed) }.orEmpty()
+                        s.copy(
+                            phase = DetectPhase.Detected(
+                                withFocus, existing, selection,
+                                quickFormat = shown?.quickFormat ?: QuickFormat.AudioMp3(),
+                                note = note,
+                                tickNew = tickNew,
+                            ),
+                        )
+                    }
                 },
                 onFailure = { e ->
                     if (e !is ProviderException.Cancelled) {
                         _state.update { it.copy(phase = DetectPhase.Error(url, detected, e.toAnalysisError(detected))) }
                     }
                 },
-            )
-        }
-    }
-
-    /**
-     * Every downloadable song of a playlist starts ticked; the user unticks what they don't want.
-     * A Mix holds recommendations, so only the song it was started from starts ticked there.
-     */
-    private fun initialSelection(r: AnalysisResult.Collection, focus: PlaylistContext?): Set<String> {
-        val pl = r.playlist
-        if (pl.mix == null) return pl.selectable.map { it.key }.toSet()
-        val seed = focus?.videoId ?: pl.id?.let { YouTubeProvider.mixSeed(it) }
-        return pl.selectable.filter { it.videoId != null && it.videoId == seed }.map { it.key }.toSet()
-    }
-
-    /** "Load 25 more" in a Mix preview: the next window, appended without repeats, up to the safety limit. */
-    fun loadMoreMix() {
-        val d = _state.value.phase as? DetectPhase.Detected ?: return
-        val r = d.result as? AnalysisResult.Collection ?: return
-        val page = r.playlist.mix ?: return
-        if (d.loadingMore) return
-        val window = MixPreview.nextPage(page) ?: return
-        _state.update { it.copy(phase = d.copy(loadingMore = true)) }
-        analyzeJob = viewModelScope.launch {
-            val outcome = analyzer.analyze(r.detected.url, window)
-            _state.update { s ->
-                val cur = s.phase as? DetectPhase.Detected ?: return@update s
-                val curR = cur.result as? AnalysisResult.Collection ?: return@update s
-                val got = (outcome.getOrNull() as? AnalysisResult.Collection)?.playlist
-                if (got == null) return@update s.copy(phase = cur.copy(loadingMore = false))
-                s.copy(phase = cur.copy(result = curR.copy(playlist = curR.playlist.withMixPage(got, window.last)), loadingMore = false))
-            }
-            val before = r.playlist.entries.size
-            val after = (_state.value.phase as? DetectPhase.Detected)?.playlist?.entries?.size ?: before
-            _messages.tryEmit(
-                outcome.exceptionOrNull()?.let { "Couldn't load more: ${it.toAnalysisError(r.detected).title}" }
-                    ?: if (after > before) "Added ${after - before} more songs (not ticked)" else "No new songs — this Mix is repeating itself",
             )
         }
     }
@@ -319,12 +344,19 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun cancelAnalyze() {
-        analyzeJob?.cancel()
-        analyzeJob = null
+        stopAnalysis()
         _state.update { it.copy(phase = DetectPhase.Idle) }
     }
 
+    private fun stopAnalysis() {
+        currentRun = null
+        analyzeJob?.cancel()
+        analyzeJob = null
+    }
+
     fun reset(clearUrl: Boolean) {
+        // Closing a playlist that is still loading stops reading it.
+        if (_state.value.phase.isLoadingPlaylist) stopAnalysis()
         _state.update { it.copy(phase = DetectPhase.Idle, urlText = if (clearUrl) "" else it.urlText) }
     }
 
@@ -356,9 +388,10 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
         else d.copy(selection = if (key in d.selection) d.selection - key else d.selection + key)
     }
 
-    fun selectAll() = updatePicker { d, pl -> d.copy(selection = pl.selectable.map { it.key }.toSet()) }
+    /** While a playlist is loading, the songs still to come follow the last Select / Deselect all. */
+    fun selectAll() = updatePicker { d, pl -> d.copy(selection = pl.selectable.map { it.key }.toSet(), tickNew = !pl.isMixPreview) }
 
-    fun deselectAll() = updatePicker { d, _ -> d.copy(selection = emptySet()) }
+    fun deselectAll() = updatePicker { d, _ -> d.copy(selection = emptySet(), tickNew = false) }
 
     /** Changing the format keeps the selection. */
     fun setQuickFormat(choice: QuickFormat) = updatePicker { d, _ -> d.copy(quickFormat = choice) }
@@ -371,7 +404,7 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
         val d = _state.value.phase as? DetectPhase.Detected ?: return
         val pl = d.playlist ?: return
         val chosen = d.selectedEntries
-        if (chosen.isEmpty()) return
+        if (chosen.isEmpty() || d.loading) return
         viewModelScope.launch {
             val inQueue = downloads.observeAll().first().filter { !it.status.isTerminal }.map { it.sourceUrl }.toSet()
             val (already, rest) = chosen.partition { it.url != null && it.url in inQueue }

@@ -1,5 +1,23 @@
 # Changelog
 
+## 4.6.0-beta.3
+Playlists fill in automatically — no "Load more" buttons anywhere.
+
+- **Whole playlists, shown while they load.** A playlist link lists every available song of that
+  playlist, in its order, with no 25/50/100 limit (tested up to 1157 songs). Songs appear on
+  screen as YouTube delivers them, with "Loading playlist: 120 of 250 songs", then
+  "250 songs loaded". When YouTube doesn't say the total, only the number found is shown. Private
+  or deleted videos stay in their place, marked unavailable; nothing replaces them.
+- **Tick while it loads.** Songs can be ticked and unticked while the rest is still arriving; new
+  songs arrive ticked (or unticked after "Deselect all"), and your choices are kept when the list
+  completes. "Download selected" becomes available once the whole playlist is read, so exactly
+  the ticked songs are queued.
+- **Mix preview loads by itself.** A YouTube Mix (`list=RD…`) is read once, automatically, up to
+  its first 100 recommendations (repeats left out) — the "Load 25 more" button is gone. It stays
+  marked as a Mix preview of recommendations, never as a playlist, with only its first song ticked.
+- **Readable selection bar.** "25 of 100 selected" is shown in full, with "Download selected"
+  on its own line above the mini player and navigation bar.
+
 ## 4.6.0-beta.2
 YouTube Mix links work again — as a limited **Mix preview** you pick songs from, never as an
 endless list. Everything else is unchanged.

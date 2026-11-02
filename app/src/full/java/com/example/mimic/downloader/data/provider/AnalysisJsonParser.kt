@@ -20,7 +20,8 @@ object AnalysisJsonParser {
         data class Collection(val playlist: PlaylistInfo) : Parsed
     }
 
-    fun parse(root: JsonNode, sourceUrl: String, mapper: ObjectMapper): Parsed {
+    /** [mix]: the collection is a YouTube Mix preview (see [EntryCollector]). */
+    fun parse(root: JsonNode, sourceUrl: String, mapper: ObjectMapper, mix: Boolean = false): Parsed {
         val isCollection = root.text("_type") == "playlist" || root.path("entries").isArray
         if (!isCollection) return Parsed.Single(mapper.treeToValue(root, VideoInfo::class.java))
 
@@ -31,30 +32,9 @@ object AnalysisJsonParser {
             return Parsed.Single(mapper.treeToValue(entryNodes[0], VideoInfo::class.java))
         }
 
-        // The same video can be listed twice in one playlist: the repeat is kept (so the count
-        // matches YouTube) but marked, so it's downloaded once. An identical (position, id) pair
-        // is the extractor repeating itself and is dropped.
-        val seenAt = HashMap<String, Int>()
-        val seenPairs = HashSet<Pair<Int, String>>()
-        val entries = ArrayList<PlaylistEntry>(entryNodes.size)
-        for (entry in entryNodes) {
-            val index = entry.path("playlist_index").asInt(0).takeIf { it > 0 } ?: (entries.size + 1)
-            val id = entry.text("id")
-            if (id != null && !seenPairs.add(index to id)) continue
-            val duplicateOf = id?.let { seenAt.putIfAbsent(it, index) }
-            entries += PlaylistEntry(
-                // Untitled entries are usually private or removed items; say so instead of inventing a title.
-                title = entry.text("title") ?: id?.let { "Untitled item ($it)" } ?: "Untitled item $index",
-                url = entryUrl(entry),
-                index = index,
-                durationSeconds = entry.path("duration").takeIf { it.isNumber }?.asDouble()?.toLong()?.takeIf { it > 0 },
-                thumbnailUrl = entry.text("thumbnail") ?: entry.path("thumbnails").lastOrNull()?.text("url"),
-                uploader = entry.text("channel") ?: entry.text("uploader"),
-                unavailableReason = unavailableReason(entry),
-                videoId = id,
-                duplicateOf = duplicateOf,
-            )
-        }
+        val collector = EntryCollector(mix)
+        entryNodes.forEach(collector::add)
+        val entries = collector.entries
         return Parsed.Collection(
             PlaylistInfo(
                 sourceUrl = sourceUrl,
@@ -64,9 +44,84 @@ object AnalysisJsonParser {
                     ?: entries.firstOrNull { it.isAvailable }?.thumbnailUrl,
                 entries = entries,
                 id = root.text("id"),
-                reportedCount = root.path("playlist_count").takeIf { it.isNumber }?.asInt()?.takeIf { it >= 0 },
+                reportedCount = if (mix) null else root.path("playlist_count").takeIf { it.isNumber }?.asInt()?.takeIf { it >= 0 },
+                isMixPreview = mix,
             ),
         )
+    }
+
+    /**
+     * Turns playlist items into entries one at a time, so the final JSON and the item lines yt-dlp
+     * prints while it is still reading a long playlist give exactly the same list.
+     *
+     * The same video can be listed twice in one playlist: the repeat is kept (so the count matches
+     * YouTube) but marked, so it's downloaded once. An identical (position, id) pair is the
+     * extractor repeating itself and is dropped. A Mix repeats its recommendations after a few
+     * dozen songs: there repeats are left out and the songs are numbered in the order shown, and
+     * an item without a watch link of its own is unavailable (downloading "position N" of a Mix
+     * would get a different song, as YouTube reshuffles it).
+     */
+    class EntryCollector(private val mix: Boolean = false) {
+        private val seenAt = HashMap<String, Int>()
+        private val seenPairs = HashSet<Pair<Int, String>>()
+        val entries = ArrayList<PlaylistEntry>()
+
+        fun add(entry: JsonNode) {
+            val position = entry.path("playlist_index").asInt(0).takeIf { it > 0 } ?: (entries.size + 1)
+            val id = entry.text("id")
+            if (id != null && !seenPairs.add(position to id)) return
+            val duplicateOf = id?.let { seenAt[it] }
+            if (mix && duplicateOf != null) return
+            val index = if (mix) entries.size + 1 else position
+            if (id != null) seenAt.putIfAbsent(id, index)
+            val url = entryUrl(entry)
+            entries += PlaylistEntry(
+                // Untitled entries are usually private or removed items; say so instead of inventing a title.
+                title = entry.text("title") ?: id?.let { "Untitled item ($it)" } ?: "Untitled item $index",
+                url = url,
+                index = index,
+                durationSeconds = entry.path("duration").takeIf { it.isNumber }?.asDouble()?.toLong()?.takeIf { it > 0 },
+                thumbnailUrl = entry.text("thumbnail") ?: entry.path("thumbnails").lastOrNull()?.text("url"),
+                uploader = entry.text("channel") ?: entry.text("uploader"),
+                unavailableReason = unavailableReason(entry) ?: if (mix && url == null) "No link of its own" else null,
+                videoId = id,
+                duplicateOf = duplicateOf,
+            )
+        }
+    }
+
+    /**
+     * A playlist being read: items arrive one by one (yt-dlp's per-item `--print` lines, which
+     * also carry the playlist's title and count) and [snapshot] shows what's listed so far.
+     */
+    class PlaylistStream(private val sourceUrl: String, private val listId: String?, private val mix: Boolean) {
+        private val collector = EntryCollector(mix)
+        private var title: String? = null
+        private var uploader: String? = null
+        private var count: Int? = null
+
+        val size: Int get() = collector.entries.size
+
+        fun add(item: JsonNode) {
+            title = title ?: item.text("playlist_title")
+            uploader = uploader ?: item.text("playlist_uploader") ?: item.text("playlist_channel")
+            count = count ?: item.path("playlist_count").takeIf { it.isNumber }?.asInt()?.takeIf { it > 0 }
+            collector.add(item)
+        }
+
+        fun snapshot(): PlaylistInfo {
+            val entries = collector.entries.toList()
+            return PlaylistInfo(
+                sourceUrl = sourceUrl,
+                title = title ?: if (mix) "Mix" else "Playlist",
+                uploader = uploader,
+                thumbnailUrl = entries.firstOrNull { it.isAvailable }?.thumbnailUrl,
+                entries = entries,
+                id = listId,
+                reportedCount = if (mix) null else count,
+                isMixPreview = mix,
+            )
+        }
     }
 
     private val UNAVAILABLE_TITLES = mapOf(

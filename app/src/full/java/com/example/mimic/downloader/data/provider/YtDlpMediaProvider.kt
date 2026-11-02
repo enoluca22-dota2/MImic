@@ -4,9 +4,7 @@ import android.util.Log
 import com.example.mimic.downloader.core.NetworkMonitor
 import com.example.mimic.downloader.core.UrlValidator
 import com.example.mimic.downloader.data.model.AnalysisResult
-import com.example.mimic.downloader.data.model.MixPage
 import com.example.mimic.downloader.data.model.MixPreview
-import com.example.mimic.downloader.data.model.PlaylistInfo
 import com.example.mimic.downloader.data.platform.DetectedPlatform
 import com.example.mimic.downloader.data.platform.YouTubeProvider
 import com.example.mimic.downloader.diagnostics.AnalysisTrace
@@ -43,7 +41,7 @@ class YtDlpMediaProvider(
     /** True while a link is being analyzed (the updater must not swap yt-dlp underneath it). */
     val isAnalyzing: Boolean get() = activeAnalyses.get() > 0
 
-    override suspend fun analyze(url: String, detected: DetectedPlatform, mixWindow: IntRange?) = withContext(Dispatchers.IO) {
+    override suspend fun analyze(url: String, detected: DetectedPlatform) = withContext(Dispatchers.IO) {
         val normalized = UrlValidator.normalize(url) ?: throw ProviderException.InvalidUrl()
         // Download Diagnostics (4.3.1): present only while recording is on; then each step is
         // timed and yt-dlp runs with -v so the report shows its version, clients and HTTP codes.
@@ -69,12 +67,12 @@ class YtDlpMediaProvider(
             trace?.stage("wait for engine", tEngine, "ready")
             // A playlist link is always read from its canonical playlist page (list=… only), so
             // yt-dlp lists exactly that list's items — never a watch page's recommendations.
-            // A Mix has no playlist page; it is read from its watch page, and only one window of
-            // positions (-I a:b; yt-dlp stops fetching after it). Unlimited, a Mix runs to
+            // A Mix has no playlist page; it is read from its watch page, and only its first
+            // positions (-I 1:LIMIT; yt-dlp stops fetching after them). Unlimited, a Mix runs to
             // hundreds of recommendations with repeats.
             val listId = detected.listId?.takeIf { detected.isCollection }
             val mix = detected.isMixPreview
-            val window = if (mix) mixWindow ?: MixPreview.firstPage() else null
+            val window = if (mix) MixPreview.window else null
             val target = when {
                 listId == null -> normalized
                 mix -> YouTubeProvider.mixUrl(listId)
@@ -85,7 +83,8 @@ class YtDlpMediaProvider(
             // item with its full format list or a collection; --flat-playlist keeps collections
             // fast (no per-item format lookups); --no-playlist makes "video inside a playlist" URLs
             // resolve to that video. For playlists, --ignore-errors keeps one broken item from
-            // failing the list and --print emits a line per item for the "found so far" count.
+            // failing the list and --print emits a JSON line per item as it is read, so the list
+            // fills in on screen while long playlists are still being paged through.
             // Detection deliberately does NOT restrict player_client, so YouTube reports its full
             // resolution ladder; the 403-dodging client fallback is only applied at download time
             // (DownloadRequestBuilder).
@@ -95,7 +94,7 @@ class YtDlpMediaProvider(
                 if (detected.isCollection) {
                     addOption("--yes-playlist")
                     addOption("--ignore-errors")
-                    addOption("--print", "$ITEM_PREFIX %(id)s")
+                    addOption("--print", "$ITEM_PREFIX $ITEM_FIELDS")
                     if (window != null) addOption("-I", "${window.first}:${window.last}")
                 } else {
                     addOption("--no-playlist")
@@ -109,15 +108,25 @@ class YtDlpMediaProvider(
             // more time.
             val timeoutMs = if (detected.isCollection && !mix) PLAYLIST_TIMEOUT_MS else ANALYZE_TIMEOUT_MS
             val tRun = System.currentTimeMillis()
-            val found = AtomicInteger(0)
+            val stream = if (progress != null && detected.isCollection) AnalysisJsonParser.PlaylistStream(target, listId, mix) else null
+            var lastShown = 0L
             val response = try {
                 withTimeout(timeoutMs) {
                     runKillable(processId) {
-                        if (progress == null) {
+                        if (progress == null || stream == null) {
                             YoutubeDL.execute(request, processId)
                         } else {
+                            // Called on yt-dlp's output thread, one line at a time.
                             YoutubeDL.execute(request, processId) { _, _, line ->
-                                if (line.startsWith(ITEM_PREFIX)) progress.onFound(found.incrementAndGet())
+                                if (!line.startsWith(ITEM_PREFIX)) return@execute
+                                val item = runCatching { YoutubeDL.objectMapper.readTree(line.removePrefix(ITEM_PREFIX)) }.getOrNull()
+                                    ?: return@execute
+                                stream.add(item)
+                                val now = System.currentTimeMillis()
+                                if (stream.size == 1 || now - lastShown >= PARTIAL_INTERVAL_MS) {
+                                    lastShown = now
+                                    progress.onPartial(stream.snapshot())
+                                }
                             }
                         }
                     }
@@ -147,7 +156,7 @@ class YtDlpMediaProvider(
             val mapper = YoutubeDL.objectMapper
             val root = mapper.readTree(AnalysisJsonParser.jsonPart(response.out))
                 ?: throw ProviderException.NoFormatsAvailable("empty extractor output")
-            when (val parsed = AnalysisJsonParser.parse(root, target, mapper)) {
+            when (val parsed = AnalysisJsonParser.parse(root, target, mapper, mix)) {
                 is AnalysisJsonParser.Parsed.Single -> {
                     if (mix) {
                         trace?.stage("read formats", tRead, "mix gave a single item")
@@ -190,8 +199,7 @@ class YtDlpMediaProvider(
                         if (mix) throw mixUnavailable(listId, "empty window $window")
                         throw ProviderException.NoFormatsAvailable("empty collection")
                     }
-                    val playlist = if (window == null) parsed.playlist else mixPreview(parsed.playlist, window)
-                    AnalysisResult.Collection(playlist, detected)
+                    AnalysisResult.Collection(parsed.playlist, detected)
                 }
             }
         } catch (e: ProviderException) {
@@ -214,17 +222,6 @@ class YtDlpMediaProvider(
             activeAnalyses.decrementAndGet()
         }
     }
-
-    /**
-     * A Mix window as a preview: items without a watch link of their own are marked unavailable
-     * (downloading "position N" of a Mix would get a different song, as YouTube reshuffles it).
-     * More is offered while the window came back full and the safety limit isn't reached.
-     */
-    private fun mixPreview(pl: PlaylistInfo, window: IntRange) = pl.copy(
-        entries = pl.entries.map { if (it.url == null && it.isAvailable) it.copy(unavailableReason = "No link of its own") else it },
-        reportedCount = null,
-        mix = MixPage(window.last, pl.entries.size >= window.count() && window.last < MixPreview.MAX_POSITION),
-    )
 
     private fun mixUnavailable(listId: String?, detail: String) = ProviderException.PlaylistRefused(
         "This Mix can't be previewed",
@@ -321,6 +318,11 @@ class YtDlpMediaProvider(
         const val ANALYZE_TIMEOUT_MS = 90_000L
         const val PLAYLIST_TIMEOUT_MS = 300_000L
         const val ITEM_PREFIX = "[mimic-item]"
+
+        /** The fields of each playlist item line (the ones AnalysisJsonParser reads). */
+        const val ITEM_FIELDS = "%(.{id,title,duration,channel,uploader,thumbnails,availability,ie_key,url,webpage_url," +
+            "playlist_index,playlist_count,playlist_title,playlist_uploader,playlist_channel})j"
+        const val PARTIAL_INTERVAL_MS = 300L
         val UNMERGED_NAME = Regex("""^.+\.f[0-9A-Za-z_-]+\.[0-9A-Za-z]+$""")
     }
 }

@@ -85,7 +85,6 @@ import com.example.mimic.downloader.data.model.DownloadStatus
 import com.example.mimic.downloader.data.model.FormatKind
 import com.example.mimic.downloader.data.model.MediaFormat
 import com.example.mimic.downloader.data.model.MediaInfo
-import com.example.mimic.downloader.data.model.MixPage
 import com.example.mimic.downloader.data.model.MixPreview
 import com.example.mimic.downloader.data.model.PlaylistEntry
 import com.example.mimic.downloader.data.model.PlaylistInfo
@@ -106,7 +105,7 @@ private enum class QueueFilter(val label: String) { ACTIVE("Active"), DONE("Comp
 private const val LARGE_BATCH = 50
 
 /** Room kept below the playlist so its last songs can scroll above the selection bar. */
-private val SELECTION_BAR_SPACE = 84.dp
+private val SELECTION_BAR_SPACE = 132.dp
 
 /**
  * Downloads tab (MImic 4.0): paste/share a supported link → choose audio or video quality →
@@ -304,14 +303,14 @@ private fun PhaseContent(vm: DownloaderViewModel, state: DownloaderUiState) {
                     if (p.detected.isMixPreview) {
                         Text("Reading Mix preview…")
                         Text(
-                            if (p.found > 0) "${p.found} of up to ${MixPreview.PAGE} found" else "Only the first ${MixPreview.PAGE} recommendations are read.",
+                            "A Mix never ends, so only its first ${MixPreview.LIMIT} recommendations are read.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
                     } else if (p.detected.isCollection) {
                         Text("Reading ${p.detected.listType?.label?.lowercase(Locale.ROOT) ?: "playlist"}…")
                         Text(
-                            if (p.found > 0) "${p.found} found so far" else "Only the items of this exact list are read.",
+                            "Only the items of this exact list are read — all of them.",
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                             style = MaterialTheme.typography.bodySmall,
                         )
@@ -327,7 +326,7 @@ private fun PhaseContent(vm: DownloaderViewModel, state: DownloaderUiState) {
             Text(if (mix) "This video was opened from a YouTube Mix." else "This link is a video inside a playlist.", fontWeight = FontWeight.SemiBold)
             if (mix) {
                 Text(
-                    "A Mix is an endless list of recommendations, not a fixed playlist. The preview shows ${MixPreview.PAGE} songs at a time and you tick the ones you want.",
+                    "A Mix is an endless list of recommendations, not a fixed playlist. The preview reads up to ${MixPreview.LIMIT} of its songs and you tick the ones you want.",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -452,26 +451,31 @@ private fun LazyListScope.playlistPicker(vm: DownloaderViewModel, d: DetectPhase
             onToggle = { vm.toggleEntry(e.key) },
         )
     }
-    pl.mix?.let { page -> item(key = "pl-more") { MixMore(page, d.loadingMore, vm::loadMoreMix) } }
+    if (d.loading) item(key = "pl-loading") { LoadingMore(pl) }
 }
 
-/** Under a Mix preview: "Load 25 more", or why nothing more is offered. */
+/** Under the songs while the playlist is still being read: the rest appears on its own. */
 @Composable
-private fun MixMore(page: MixPage, loading: Boolean, onLoad: () -> Unit) {
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        when {
-            loading -> Row(verticalAlignment = Alignment.CenterVertically) {
-                CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
-                Spacer(Modifier.width(8.dp))
-                Text("Loading more songs…", style = MaterialTheme.typography.bodySmall)
-            }
-            page.hasMore -> OutlinedButton(onClick = onLoad) { Text("Load ${MixPreview.PAGE} more") }
-            else -> Text(
-                if (page.fetchedThrough >= MixPreview.MAX_POSITION) "Preview limit reached — a Mix never ends, so MImic stops here." else "No more songs in this Mix preview.",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+private fun LoadingMore(pl: PlaylistInfo) {
+    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+        CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+        Spacer(Modifier.width(8.dp))
+        Text(loadStatus(pl, loading = true), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+private fun songs(n: Int) = "$n song" + if (n == 1) "" else "s"
+
+/** "Loading playlist: 120 of 250 songs" while reading, "250 songs loaded" when done (never an invented total). */
+private fun loadStatus(pl: PlaylistInfo, loading: Boolean): String {
+    val n = pl.entries.size
+    val total = pl.reportedCount?.takeIf { it >= n }
+    return when {
+        pl.isMixPreview && loading -> "Loading Mix preview: $n of up to ${MixPreview.LIMIT} songs"
+        pl.isMixPreview -> "${songs(n)} in this Mix preview — a Mix never ends, so MImic reads only its first ${MixPreview.LIMIT} recommendations."
+        loading && total != null -> "Loading playlist: $n of ${songs(total)}"
+        loading -> "Loading playlist: ${songs(n)} so far"
+        else -> "${songs(n)} loaded"
     }
 }
 
@@ -491,19 +495,26 @@ private fun PlaylistHeader(vm: DownloaderViewModel, d: DetectPhase.Detected, pl:
             Column(Modifier.weight(1f)) {
                 Text(pl.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                 Text(
-                    listOfNotNull(if (pl.mix != null) "Mix preview" else pl.uploader, "${pl.entries.size} track" + if (pl.entries.size == 1) "" else "s").joinToString(" · "),
+                    listOfNotNull(if (pl.isMixPreview) "Mix preview" else pl.uploader, "${pl.entries.size} track" + if (pl.entries.size == 1) "" else "s").joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall,
                     color = c.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text("Selected: ${d.selection.size} of $selectable", style = MaterialTheme.typography.bodySmall, color = c.primary, fontWeight = FontWeight.Medium)
+                Text("${d.selection.size} of $selectable selected", style = MaterialTheme.typography.bodySmall, color = c.primary, fontWeight = FontWeight.Medium)
             }
         }
-        if (pl.mix != null) {
+        if (pl.isMixPreview) {
             Notice("Recommendations generated by YouTube, not a fixed playlist. Shown in YouTube's order; only the songs you tick are downloaded.")
         }
-        val notes = listOfNotNull(
+        Text(loadStatus(pl, d.loading), style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.Medium)
+        if (d.loading) {
+            val total = (if (pl.isMixPreview) MixPreview.LIMIT else pl.reportedCount)?.takeIf { it > 0 }
+            if (total != null) LinearProgressIndicator(progress = { (pl.entries.size.toFloat() / total).coerceAtMost(1f) }, modifier = Modifier.fillMaxWidth())
+            else LinearProgressIndicator(Modifier.fillMaxWidth())
+        }
+        // Counts that compare with the playlist's total only make sense once it is fully read.
+        val notes = if (d.loading) listOfNotNull(focusedIndex?.let { "The video from your link is #$it (highlighted)." }) else listOfNotNull(
             pl.unavailableCount.takeIf { it > 0 }?.let { "$it unavailable (private, deleted or needs sign-in) — shown but can't be downloaded." },
             pl.hiddenCount.takeIf { it > 0 }?.let { "YouTube counts ${pl.reportedCount} videos but lists ${pl.entries.size}; it hides $it unavailable ${if (it == 1) "one" else "ones"}." },
             pl.duplicateCount.takeIf { it > 0 }?.let { "$it ${if (it == 1) "video is" else "videos are"} listed twice; each is downloaded once." },
@@ -582,25 +593,38 @@ private fun PlaylistRow(e: PlaylistEntry, checked: Boolean, focused: Boolean, di
     }
 }
 
-/** Pinned above the mini player while a playlist is open: the count, the format and the action. */
+/**
+ * Pinned above the mini player while a playlist is open: the count and the format on one line,
+ * "Download selected" across the bar below, so neither is cut off on narrow phones or with large
+ * text. Downloading waits until the whole playlist has been read.
+ */
 @Composable
 private fun SelectionBar(d: DetectPhase.Detected, onDownload: (Int) -> Unit, onCancel: () -> Unit, modifier: Modifier = Modifier) {
     val c = MaterialTheme.colorScheme
     val n = d.selectedEntries.size
     val total = d.playlist?.selectable?.size ?: 0
-    Row(
+    Column(
         modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp).clip(RoundedCornerShape(20.dp))
             .background(c.surfaceVariant)
             .border(1.dp, c.onSurface.copy(alpha = 0.1f), RoundedCornerShape(20.dp))
-            .padding(start = 4.dp, top = 8.dp, end = 8.dp, bottom = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(start = 4.dp, top = 4.dp, end = 12.dp, bottom = 10.dp),
     ) {
-        IconButton(onClick = onCancel) { Icon(Icons.Default.Close, contentDescription = "Close playlist") }
-        Column(Modifier.weight(1f)) {
-            Text("Selected: $n of $total", color = c.onSurface, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            Text(d.quickFormat.label, color = c.onSurfaceVariant, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = onCancel) { Icon(Icons.Default.Close, contentDescription = "Close playlist") }
+            Column(Modifier.weight(1f)) {
+                Text("$n of $total selected", color = c.onSurface, fontWeight = FontWeight.SemiBold)
+                Text(
+                    if (d.loading) "Still loading songs…" else d.quickFormat.label,
+                    color = c.onSurfaceVariant,
+                    style = MaterialTheme.typography.bodySmall,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
-        Button(onClick = { onDownload(n) }, enabled = n > 0) { Text("Download selected") }
+        Button(onClick = { onDownload(n) }, enabled = n > 0 && !d.loading, modifier = Modifier.fillMaxWidth().padding(start = 8.dp)) {
+            Text(if (d.loading) "Download selected (after loading)" else "Download selected")
+        }
     }
 }
 

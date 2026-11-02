@@ -1,7 +1,6 @@
 package com.example.mimic.downloader.ui
 
 import com.example.mimic.downloader.data.model.AnalysisResult
-import com.example.mimic.downloader.data.model.MixPage
 import com.example.mimic.downloader.data.model.MixPreview
 import com.example.mimic.downloader.data.model.PlaylistEntry
 import com.example.mimic.downloader.data.model.PlaylistInfo
@@ -20,7 +19,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
-/** 4.6 playlist downloads: exact list detection, Mix previews, duplicates, and song selection. */
+/** 4.6 playlist downloads: exact list detection, live loading, Mix previews, duplicates, and song selection. */
 class PlaylistSelectionTest {
 
     // ---- list detection ----------------------------------------------------------------------
@@ -94,54 +93,111 @@ class PlaylistSelectionTest {
         assertFalse(Platforms.detect("https://music.youtube.com/playlist?list=RDCLAK5uy_abc").isMixPreview)
     }
 
-    // ---- Mix preview pages ------------------------------------------------------------------------
+    // ---- live loading -------------------------------------------------------------------------
 
-    private fun mixPage(ids: List<String>, hasMore: Boolean, through: Int) = PlaylistInfo(
-        sourceUrl = "https://www.youtube.com/playlist?list=RDx",
-        title = "Mix",
-        uploader = null,
-        thumbnailUrl = null,
-        entries = ids.mapIndexed { i, id -> PlaylistEntry("T $id", "https://www.youtube.com/watch?v=$id", i + 1, 200, null, videoId = id) },
-        id = "RDx",
-        mix = MixPage(through, hasMore),
-    )
+    private val mapper = ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
-    @Test
-    fun `load more appends only new songs after the shown ones, keeping their order`() {
-        val first = mixPage(listOf("a", "b", "c"), hasMore = true, through = 25)
-        // YouTube reshuffles: the next window repeats b and lists d, e.
-        val next = mixPage(listOf("b", "d", "e"), hasMore = true, through = 50)
-        val merged = first.withMixPage(next, 50)
-        assertEquals(listOf("a", "b", "c", "d", "e"), merged.entries.map { it.videoId })
-        assertEquals(listOf(1, 2, 3, 4, 5), merged.entries.map { it.index })
-        assertEquals(MixPage(50, true), merged.mix)
-        // A window with nothing new stops "Load more".
-        assertFalse(merged.withMixPage(mixPage(listOf("a", "e"), true, 75), 75).mix!!.hasMore)
+    private fun id(i: Int) = "v" + i.toString().padStart(10, '0')
+
+    /** One item line as yt-dlp prints it while reading (the fields of YtDlpMediaProvider.ITEM_FIELDS). */
+    private fun itemJson(pos: Int, videoId: String, count: Int?, title: String? = "Song $pos") =
+        """{"id":"$videoId",${title?.let { "\"title\":\"$it\"," } ?: ""}"duration":200,"ie_key":"Youtube","playlist_index":$pos,""" +
+            """${count?.let { "\"playlist_count\":$it," } ?: ""}"playlist_title":"Big list","playlist_uploader":"Me"}"""
+
+    private fun stream(n: Int, total: Int?, mix: Boolean = false): AnalysisJsonParser.PlaylistStream {
+        val s = AnalysisJsonParser.PlaylistStream("https://www.youtube.com/playlist?list=PLbig", "PLbig", mix)
+        (1..n).forEach { s.add(mapper.readTree(itemJson(it, id(it), total))) }
+        return s
     }
 
     @Test
-    fun `mix pages are 25 songs and stop at the safety limit`() {
-        assertEquals(1..25, MixPreview.firstPage())
-        assertEquals(26..50, MixPreview.nextPage(MixPage(25, true)))
-        assertEquals(76..100, MixPreview.nextPage(MixPage(75, true)))
-        assertNull(MixPreview.nextPage(MixPage(100, true)))
-        assertNull(MixPreview.nextPage(MixPage(25, false)))
-        val ids = (1..25).map { "n$it" }
-        assertFalse(mixPage(listOf("a"), true, 75).withMixPage(mixPage(ids, true, 100), 100).mix!!.hasMore)
+    fun `the list shown while loading is exactly the final list, in order, with the real total`() {
+        val partial = stream(120, total = 250).snapshot()
+        assertEquals(120, partial.entries.size)
+        assertEquals(250, partial.reportedCount)
+        assertEquals("Big list", partial.title)
+        assertEquals((1..120).toList(), partial.entries.map { it.index })
+
+        val lines = (1..250).joinToString(",") { itemJson(it, id(it), 250) }
+        val json = """{"_type":"playlist","id":"PLbig","title":"Big list","playlist_count":250,"entries":[$lines]}"""
+        val final = (AnalysisJsonParser.parse(mapper.readTree(json), "u", mapper) as AnalysisJsonParser.Parsed.Collection).playlist
+        assertEquals(250, final.entries.size)
+        assertEquals(partial.entries, final.entries.take(120))
+        assertEquals(stream(250, 250).snapshot().entries, final.entries)
+        assertFalse(final.isMixPreview)
+    }
+
+    @Test
+    fun `an unknown total is not invented, and private items stay in place`() {
+        val s = AnalysisJsonParser.PlaylistStream("u", "PLx", mix = false)
+        s.add(mapper.readTree(itemJson(1, id(1), null)))
+        s.add(mapper.readTree(itemJson(2, id(2), null, title = null)))
+        s.add(mapper.readTree(itemJson(3, id(3), null)))
+        val pl = s.snapshot()
+        assertNull(pl.reportedCount)
+        assertEquals(listOf(1, 2, 3), pl.entries.map { it.index })
+        assertEquals("Private or removed video", pl.entries[1].unavailableReason)
+        assertEquals(2, pl.selectable.size)
+    }
+
+    @Test
+    fun `200 songs, 50 unticked while loading, downloads exactly the other 150`() {
+        var shown: PlaylistInfo? = null
+        var selection = emptySet<String>()
+        var unticked = emptySet<String>()
+        for (n in listOf(40, 100, 160, 200)) {
+            val next = stream(n, 200).snapshot()
+            selection = mergeSelection(selection, shown, next, tickNew = true, seed = null)
+            shown = next
+            if (n == 100) {
+                // The user unticks 50 of the songs shown so far; the list keeps loading.
+                unticked = next.entries.filter { it.index % 2 == 0 }.map { it.key }.toSet()
+                selection = selection - unticked
+            }
+        }
+        val lines = (1..200).joinToString(",") { itemJson(it, id(it), 200) }
+        val final = (AnalysisJsonParser.parse(mapper.readTree("""{"_type":"playlist","id":"PLbig","entries":[$lines]}"""), "u", mapper) as AnalysisJsonParser.Parsed.Collection).playlist
+        selection = mergeSelection(selection, shown, final, tickNew = true, seed = null)
+        val d = DetectPhase.Detected(AnalysisResult.Collection(final, Platforms.detect("https://www.youtube.com/playlist?list=PLbig")), selection = selection)
+        assertEquals(150, d.selectedEntries.size)
+        assertTrue(d.selectedEntries.none { it.key in unticked })
+    }
+
+    @Test
+    fun `after deselect all, songs that arrive later are not ticked`() {
+        val first = stream(25, 60).snapshot()
+        val sel = mergeSelection(emptySet(), null, first, tickNew = true, seed = null)
+        assertEquals(25, sel.size)
+        val later = mergeSelection(emptySet(), first, stream(60, 60).snapshot(), tickNew = false, seed = null)
+        assertTrue(later.isEmpty())
+    }
+
+    @Test
+    fun `a mix preview is read once up to the limit, without repeats, only its first song ticked`() {
+        assertEquals(1..100, MixPreview.window)
+        // The Mix repeats song 2 at position 4: it is left out and the songs are numbered as shown.
+        val ids = listOf("eCind0-qMaI", "aaaaaaaaaaa", "bbbbbbbbbbb", "aaaaaaaaaaa", "ccccccccccc")
+        val s = AnalysisJsonParser.PlaylistStream("https://www.youtube.com/watch?v=eCind0-qMaI&list=RDeCind0-qMaI", "RDeCind0-qMaI", mix = true)
+        ids.forEachIndexed { i, v -> s.add(mapper.readTree(itemJson(i + 1, v, null))) }
+        val pl = s.snapshot()
+        assertTrue(pl.isMixPreview)
+        assertNull(pl.reportedCount)
+        assertEquals(listOf("eCind0-qMaI", "aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc"), pl.entries.map { it.videoId })
+        assertEquals(listOf(1, 2, 3, 4), pl.entries.map { it.index })
+        val sel = mergeSelection(emptySet(), null, pl, tickNew = false, seed = YouTubeProvider.mixSeed("RDeCind0-qMaI"))
+        assertEquals(setOf("eCind0-qMaI"), sel)
     }
 
     @Test
     fun `ticking 15 of 21 mix songs downloads exactly those 15`() {
-        val pl = mixPage((1..21).map { "m" + it.toString().padStart(10, '0') }, hasMore = true, through = 25)
+        val pl = stream(21, null, mix = true).snapshot()
         val ticked = pl.entries.filterIndexed { i, _ -> i % 7 != 3 }.take(15).map { it.key }.toSet()
-        val d = DetectPhase.Detected(AnalysisResult.Collection(pl, Platforms.detect(pl.sourceUrl)), selection = ticked)
+        val d = DetectPhase.Detected(AnalysisResult.Collection(pl, Platforms.detect("https://www.youtube.com/playlist?list=RDeCind0-qMaI")), selection = ticked)
         assertEquals(15, d.selectedEntries.size)
         assertEquals(ticked, d.selectedEntries.map { it.key }.toSet())
     }
 
     // ---- parser: exact entries, duplicates, counts --------------------------------------------
-
-    private val mapper = ObjectMapper().configure(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES, false)
 
     @Test
     fun `parser keeps a repeated video but marks it, and drops extractor repeats`() {
