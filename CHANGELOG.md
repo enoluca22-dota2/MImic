@@ -19,7 +19,8 @@ themes, Listen Together, lyrics, online music, updater) is unchanged.
 - **Download selected** sits in a bar pinned above the mini player, always reachable. More than
   50 songs asks for confirmation first.
 - **No duplicates.** A video listed twice in a playlist is shown but downloaded once; songs already
-  waiting or downloading in the queue are skipped ("· N already in the queue").
+  waiting or downloading in the queue, or already downloaded (file still on the phone), are skipped
+  ("· N already in the queue · M already downloaded").
 - **Progress.** While a long playlist is being read, "N found so far" is shown; while it downloads,
   the queue shows “Playlist: X of Y done” with a progress bar.
 - **Compact mini player** while you choose what to download: a slim 44 dp bar (title + play/pause)

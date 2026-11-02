@@ -310,7 +310,10 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
     /** Changing the format keeps the selection. */
     fun setQuickFormat(choice: QuickFormat) = updatePicker { d, _ -> d.copy(quickFormat = choice) }
 
-    /** Queues exactly the ticked songs; ones already waiting or downloading in the queue are skipped. */
+    /**
+     * Queues exactly the ticked songs. Songs already waiting or downloading in the queue, and songs
+     * already downloaded (file still on the phone), are skipped and counted in the message.
+     */
     fun downloadSelected() {
         val d = _state.value.phase as? DetectPhase.Detected ?: return
         val pl = d.playlist ?: return
@@ -318,9 +321,11 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
         if (chosen.isEmpty()) return
         viewModelScope.launch {
             val inQueue = downloads.observeAll().first().filter { !it.status.isTerminal }.map { it.sourceUrl }.toSet()
-            val (already, fresh) = chosen.partition { it.url != null && it.url in inQueue }
+            val (already, rest) = chosen.partition { it.url != null && it.url in inQueue }
+            val (downloaded, fresh) = rest.partition { e -> e.url != null && history.findExistingDownload(e.url) != null }
             val n = if (fresh.isNotEmpty()) downloads.enqueuePlaylist(pl.sourceUrl, pl.id, pl.title, fresh, d.quickFormat) else 0
-            val skipped = if (already.isNotEmpty()) " · ${already.size} already in the queue" else ""
+            val skipped = (if (already.isNotEmpty()) " · ${already.size} already in the queue" else "") +
+                (if (downloaded.isNotEmpty()) " · ${downloaded.size} already downloaded" else "")
             _messages.tryEmit("Queued $n of ${pl.selectable.size} from \"${pl.title}\"$skipped")
             reset(clearUrl = true)
         }
