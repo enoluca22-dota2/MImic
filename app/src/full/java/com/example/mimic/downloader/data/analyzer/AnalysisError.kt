@@ -34,6 +34,7 @@ fun Throwable.toAnalysisError(detected: DetectedPlatform?): AnalysisErrorInfo {
             ProviderException.CONNECTION_FAILED,
             setOf(ErrorAction.RETRY),
         )
+        is ProviderException.PlaylistRefused -> AnalysisErrorInfo(title, message.orEmpty(), setOf(ErrorAction.COPY_URL))
         is ProviderException.EngineUnavailable -> AnalysisErrorInfo(
             "Downloader not ready",
             message ?: "Restart the app and try again.",

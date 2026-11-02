@@ -31,16 +31,28 @@ object AnalysisJsonParser {
             return Parsed.Single(mapper.treeToValue(entryNodes[0], VideoInfo::class.java))
         }
 
-        val entries = entryNodes.mapIndexed { i, entry ->
-            PlaylistEntry(
+        // The same video can be listed twice in one playlist: the repeat is kept (so the count
+        // matches YouTube) but marked, so it's downloaded once. An identical (position, id) pair
+        // is the extractor repeating itself and is dropped.
+        val seenAt = HashMap<String, Int>()
+        val seenPairs = HashSet<Pair<Int, String>>()
+        val entries = ArrayList<PlaylistEntry>(entryNodes.size)
+        for (entry in entryNodes) {
+            val index = entry.path("playlist_index").asInt(0).takeIf { it > 0 } ?: (entries.size + 1)
+            val id = entry.text("id")
+            if (id != null && !seenPairs.add(index to id)) continue
+            val duplicateOf = id?.let { seenAt.putIfAbsent(it, index) }
+            entries += PlaylistEntry(
                 // Untitled entries are usually private or removed items; say so instead of inventing a title.
-                title = entry.text("title") ?: entry.text("id")?.let { "Untitled item ($it)" } ?: "Untitled item ${i + 1}",
-                unavailableReason = unavailableReason(entry),
+                title = entry.text("title") ?: id?.let { "Untitled item ($it)" } ?: "Untitled item $index",
                 url = entryUrl(entry),
-                index = entry.path("playlist_index").asInt(i + 1).takeIf { it > 0 } ?: (i + 1),
+                index = index,
                 durationSeconds = entry.path("duration").takeIf { it.isNumber }?.asDouble()?.toLong()?.takeIf { it > 0 },
                 thumbnailUrl = entry.text("thumbnail") ?: entry.path("thumbnails").lastOrNull()?.text("url"),
                 uploader = entry.text("channel") ?: entry.text("uploader"),
+                unavailableReason = unavailableReason(entry),
+                videoId = id,
+                duplicateOf = duplicateOf,
             )
         }
         return Parsed.Collection(
@@ -48,9 +60,11 @@ object AnalysisJsonParser {
                 sourceUrl = sourceUrl,
                 title = root.text("title") ?: "Playlist",
                 uploader = root.text("uploader") ?: root.text("channel"),
-                thumbnailUrl = root.text("thumbnail") ?: root.path("thumbnails").lastOrNull()?.text("url"),
+                thumbnailUrl = root.text("thumbnail") ?: root.path("thumbnails").lastOrNull()?.text("url")
+                    ?: entries.firstOrNull { it.isAvailable }?.thumbnailUrl,
                 entries = entries,
                 id = root.text("id"),
+                reportedCount = root.path("playlist_count").takeIf { it.isNumber }?.asInt()?.takeIf { it >= 0 },
             ),
         )
     }
@@ -77,15 +91,27 @@ object AnalysisJsonParser {
      * parent (e.g. the 2nd video of a post) return null and are downloaded by index instead.
      */
     private fun entryUrl(entry: JsonNode): String? {
+        val id = entry.text("id")
+        // A YouTube entry's own watch URL, never a URL that still carries the list (which would
+        // make yt-dlp expand the playlist again for every item).
+        if (entry.text("ie_key")?.lowercase() == "youtube" && id != null && YOUTUBE_VIDEO_ID.matches(id)) {
+            return "https://www.youtube.com/watch?v=$id"
+        }
         val candidates = listOfNotNull(entry.text("webpage_url"), entry.text("url"))
         candidates.firstOrNull { it.startsWith("http://") || it.startsWith("https://") }?.let { return it }
         // Older yt-dlp flat YouTube entries carry just the video id.
-        val id = entry.text("id") ?: return null
+        id ?: return null
         return when (entry.text("ie_key")?.lowercase()) {
             "youtube" -> "https://www.youtube.com/watch?v=$id"
             else -> null
         }
     }
+
+    private val YOUTUBE_VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
+
+    /** yt-dlp's stdout with `--print` progress lines mixed in: the JSON document is the last `{` line. */
+    fun jsonPart(stdout: String): String =
+        stdout.lineSequence().lastOrNull { it.trimStart().startsWith("{") }?.trim() ?: stdout.trim()
 
     private fun JsonNode.text(field: String): String? =
         path(field).takeIf { it.isTextual }?.asText()?.takeIf { it.isNotBlank() }

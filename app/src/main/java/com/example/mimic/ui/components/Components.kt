@@ -32,6 +32,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -209,9 +210,17 @@ fun SourceIndicator(song: Song, isDownloading: Boolean = false) {
 }
 
 /**
+ * Lets a screen ask for the slim mini player while it needs the space (the Downloads playlist
+ * picker: song list + selection bar). Call with true while needed and false when leaving; the
+ * default does nothing (screens shown outside MimicApp).
+ */
+val LocalCompactMiniPlayer = staticCompositionLocalOf<(Boolean) -> Unit> { {} }
+
+/**
  * The persistent now-playing bar shown above the bottom navigation. On glass themes it becomes a
  * floating frosted capsule (backdrop blur of the list scrolling beneath it); otherwise the
- * original flat bar. Same API and the same click targets either way.
+ * original flat bar. Same API and the same click targets either way. [compact] is a 44 dp bar
+ * with just the title and play/pause, so it never covers download controls.
  */
 @Composable
 fun MiniPlayer(
@@ -232,11 +241,44 @@ fun MiniPlayer(
     liveTitle: String? = null,
     /** 4.1: the Cast button. */
     castButton: (@Composable () -> Unit)? = null,
+    /** 4.6: slim bar (see [LocalCompactMiniPlayer]). */
+    compact: Boolean = false,
 ) {
     val env = LocalGlass.current
     val glass = env.enabled
     val shape = if (glass) env.style.surfaceShape(0.9f) else RoundedCornerShape((env.style.cornerRadius * 0.45f).dp)
     androidx.compose.foundation.layout.Box(modifier.fillMaxWidth()) {
+    if (compact) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(44.dp)
+                .glassSurface(shape, fallback = MaterialTheme.colorScheme.surfaceVariant)
+                .clickable(onClickLabel = "Open player", onClick = onClick)
+                .padding(start = 16.dp, end = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                liveTitle ?: song.title,
+                modifier = Modifier.weight(1f),
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = env.titleFontWeight,
+                color = if (error != null) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onBackground,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            if (isBuffering && error == null) {
+                androidx.compose.material3.CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
+            }
+            IconButton(onClick = onPlayPause) {
+                Icon(
+                    if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                    contentDescription = if (isPlaying) "Pause" else "Play",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                )
+            }
+        }
+    } else {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -296,6 +338,7 @@ fun MiniPlayer(
                 Icon(Icons.Default.SkipNext, contentDescription = "Next song", tint = MaterialTheme.colorScheme.onBackground)
             }
         }
+    }
     }
     if (progress != null) {
         // A 2 dp line along the bottom edge; it only moves with real playback.

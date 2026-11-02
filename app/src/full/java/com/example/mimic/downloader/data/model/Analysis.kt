@@ -47,8 +47,18 @@ data class PlaylistEntry(
     val uploader: String? = null,
     /** Why the item can't be downloaded (private, deleted…), or null if it looks available. */
     val unavailableReason: String? = null,
+    /** YouTube video id, when known; used to spot the same video listed twice. */
+    val videoId: String? = null,
+    /** Set when this video already appears earlier in the list: that entry's [index]. */
+    val duplicateOf: Int? = null,
 ) {
     val isAvailable: Boolean get() = unavailableReason == null
+
+    /** Can be ticked: available, and not a repeat of an earlier entry (downloaded once). */
+    val isSelectable: Boolean get() = isAvailable && duplicateOf == null
+
+    /** Stable identity for selection and list keys. */
+    val key: String get() = videoId ?: "#$index"
 }
 
 data class PlaylistInfo(
@@ -59,7 +69,16 @@ data class PlaylistInfo(
     val entries: List<PlaylistEntry>,
     /** The playlist's id (list=…), used to group its items in the queue. */
     val id: String? = null,
-)
+    /** How many videos the site says the list has (`playlist_count`), when it says. */
+    val reportedCount: Int? = null,
+) {
+    val selectable: List<PlaylistEntry> get() = entries.filter { it.isSelectable }
+    val unavailableCount: Int get() = entries.count { !it.isAvailable }
+    val duplicateCount: Int get() = entries.count { it.isAvailable && it.duplicateOf != null }
+
+    /** Videos the site counts but didn't list (hidden unavailable videos). */
+    val hiddenCount: Int get() = reportedCount?.let { (it - entries.size).coerceAtLeast(0) } ?: 0
+}
 
 /**
  * How a playlist / batch item is downloaded when there's no per-item format list to pick from:

@@ -23,6 +23,8 @@ import com.example.mimic.downloader.data.model.QuickFormat
 import com.example.mimic.downloader.data.model.suggestedCategory
 import com.example.mimic.downloader.data.platform.DetectedPlatform
 import com.example.mimic.downloader.data.platform.PlaylistContext
+import com.example.mimic.downloader.data.platform.YouTubeListType
+import com.example.mimic.downloader.data.provider.AnalysisProgress
 import com.example.mimic.downloader.data.provider.ProviderException
 import com.example.mimic.downloader.data.provider.YtDlpUpdater
 import kotlinx.coroutines.Job
@@ -36,6 +38,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -45,11 +48,30 @@ import kotlinx.coroutines.sync.withPermit
 /** Where the analyzer is for the link(s) in the field (from ENAGELYUCA's Home screen). */
 sealed interface DetectPhase {
     data object Idle : DetectPhase
-    data class Analyzing(val detected: DetectedPlatform) : DetectPhase
+    /** [found]: playlist items listed so far (0 for single links or before the first item). */
+    data class Analyzing(val detected: DetectedPlatform, val found: Int = 0) : DetectPhase
 
     /** `watch?v=…&list=…`: the user picks "This video" or "Whole playlist" before anything is fetched. */
     data class ChooseScope(val url: String, val detected: DetectedPlatform) : DetectPhase
-    data class Detected(val result: AnalysisResult, val existing: HistoryEntity? = null) : DetectPhase
+
+    /**
+     * A finished analysis. For a playlist, [selection] holds the [PlaylistEntry.key]s that are
+     * ticked and [quickFormat] the chosen format; both live here (not in the UI) so they survive
+     * scrolling, format changes and recomposition. [note] explains an ignored `list=` parameter.
+     */
+    data class Detected(
+        val result: AnalysisResult,
+        val existing: HistoryEntity? = null,
+        val selection: Set<String> = emptySet(),
+        val quickFormat: QuickFormat = QuickFormat.AudioMp3(),
+        val note: String? = null,
+    ) : DetectPhase {
+        val playlist: PlaylistInfo? get() = (result as? AnalysisResult.Collection)?.playlist
+
+        /** What "Download selected" queues: ticked, selectable, each video once, in list order. */
+        val selectedEntries: List<PlaylistEntry>
+            get() = playlist?.entries.orEmpty().filter { it.isSelectable && it.key in selection }.distinctBy { it.key }
+    }
     data class Error(val url: String, val detected: DetectedPlatform?, val info: AnalysisErrorInfo) : DetectPhase
     data class Batch(val items: List<BatchItem>) : DetectPhase
 }
@@ -153,7 +175,14 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
             _state.update { it.copy(urlText = url, phase = DetectPhase.ChooseScope(url, detected)) }
             return
         }
-        runAnalysis(url, url, detected, focus = null)
+        // watch?v=…&list=<Mix/channel/private list>: only the video is analyzed, and the user is told why.
+        val note = when (detected.ignoredList?.listType) {
+            null -> null
+            YouTubeListType.MIX -> "This link came from a YouTube Mix. A Mix isn't a fixed playlist, so only this video is shown."
+            YouTubeListType.CHANNEL_UPLOADS -> "This link came from a channel's uploads list. Whole channels aren't downloaded, so only this video is shown."
+            else -> "This link came from a private list (Liked / Watch later), so only this video is shown."
+        }
+        runAnalysis(url, url, detected, focus = null, note = note)
     }
 
     fun chooseCurrentVideo() {
@@ -167,16 +196,22 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
         runAnalysis(choice.url, ctx.playlistUrl, analyzer.detect(ctx.playlistUrl), focus = ctx)
     }
 
-    private fun runAnalysis(fieldUrl: String, url: String, detected: DetectedPlatform, focus: PlaylistContext?) {
+    private fun runAnalysis(fieldUrl: String, url: String, detected: DetectedPlatform, focus: PlaylistContext?, note: String? = null) {
         analyzeJob?.cancel()
         _state.update { it.copy(urlText = fieldUrl, phase = DetectPhase.Analyzing(detected)) }
-        analyzeJob = viewModelScope.launch {
+        // "N found so far" while a long playlist is being listed.
+        val progress = AnalysisProgress { n ->
+            _state.update { s -> (s.phase as? DetectPhase.Analyzing)?.let { s.copy(phase = it.copy(found = n)) } ?: s }
+        }
+        analyzeJob = viewModelScope.launch(progress) {
             analyzer.analyze(url).fold(
                 onSuccess = { result ->
                     val withFocus = if (result is AnalysisResult.Collection && focus != null) result.copy(focus = focus) else result
                     // Duplicate check: the same media downloaded before, with its file still there.
                     val existing = (withFocus as? AnalysisResult.Single)?.let { findExisting(it.media) }
-                    _state.update { it.copy(phase = DetectPhase.Detected(withFocus, existing)) }
+                    // Every downloadable song starts ticked; the user unticks what they don't want.
+                    val selection = (withFocus as? AnalysisResult.Collection)?.playlist?.selectable?.map { it.key }?.toSet().orEmpty()
+                    _state.update { it.copy(phase = DetectPhase.Detected(withFocus, existing, selection, note = note)) }
                 },
                 onFailure = { e ->
                     if (e !is ProviderException.Cancelled) {
@@ -253,10 +288,40 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun downloadPlaylist(playlist: PlaylistInfo, entries: List<PlaylistEntry>, choice: QuickFormat) {
+    // ---- Playlist picker -------------------------------------------------------------------------
+
+    private fun updatePicker(block: (DetectPhase.Detected, PlaylistInfo) -> DetectPhase.Detected) {
+        _state.update { s ->
+            val d = s.phase as? DetectPhase.Detected
+            val pl = d?.playlist
+            if (d != null && pl != null) s.copy(phase = block(d, pl)) else s
+        }
+    }
+
+    fun toggleEntry(key: String) = updatePicker { d, pl ->
+        if (pl.selectable.none { it.key == key }) d
+        else d.copy(selection = if (key in d.selection) d.selection - key else d.selection + key)
+    }
+
+    fun selectAll() = updatePicker { d, pl -> d.copy(selection = pl.selectable.map { it.key }.toSet()) }
+
+    fun deselectAll() = updatePicker { d, _ -> d.copy(selection = emptySet()) }
+
+    /** Changing the format keeps the selection. */
+    fun setQuickFormat(choice: QuickFormat) = updatePicker { d, _ -> d.copy(quickFormat = choice) }
+
+    /** Queues exactly the ticked songs; ones already waiting or downloading in the queue are skipped. */
+    fun downloadSelected() {
+        val d = _state.value.phase as? DetectPhase.Detected ?: return
+        val pl = d.playlist ?: return
+        val chosen = d.selectedEntries
+        if (chosen.isEmpty()) return
         viewModelScope.launch {
-            val n = downloads.enqueuePlaylist(playlist.sourceUrl, playlist.id, playlist.title, entries, choice)
-            _messages.tryEmit("Queued $n item${if (n == 1) "" else "s"} from \"${playlist.title}\"")
+            val inQueue = downloads.observeAll().first().filter { !it.status.isTerminal }.map { it.sourceUrl }.toSet()
+            val (already, fresh) = chosen.partition { it.url != null && it.url in inQueue }
+            val n = if (fresh.isNotEmpty()) downloads.enqueuePlaylist(pl.sourceUrl, pl.id, pl.title, fresh, d.quickFormat) else 0
+            val skipped = if (already.isNotEmpty()) " · ${already.size} already in the queue" else ""
+            _messages.tryEmit("Queued $n of ${pl.selectable.size} from \"${pl.title}\"$skipped")
             reset(clearUrl = true)
         }
     }
@@ -272,7 +337,7 @@ class DownloaderViewModel(app: Application) : AndroidViewModel(app) {
                         queued++
                     }
                     is AnalysisResult.Collection ->
-                        queued += downloads.enqueuePlaylist(r.playlist.sourceUrl, r.playlist.id, r.playlist.title, r.playlist.entries.filter { it.isAvailable }, choice)
+                        queued += downloads.enqueuePlaylist(r.playlist.sourceUrl, r.playlist.id, r.playlist.title, r.playlist.selectable, choice)
                     null -> Unit
                 }
             }

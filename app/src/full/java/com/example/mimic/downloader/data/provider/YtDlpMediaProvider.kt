@@ -5,6 +5,7 @@ import com.example.mimic.downloader.core.NetworkMonitor
 import com.example.mimic.downloader.core.UrlValidator
 import com.example.mimic.downloader.data.model.AnalysisResult
 import com.example.mimic.downloader.data.platform.DetectedPlatform
+import com.example.mimic.downloader.data.platform.YouTubeProvider
 import com.example.mimic.downloader.diagnostics.AnalysisTrace
 import com.example.mimic.downloader.diagnostics.DiagnosticText
 import com.yausername.youtubedl_android.YoutubeDL
@@ -63,31 +64,55 @@ class YtDlpMediaProvider(
                 throw e
             }
             trace?.stage("wait for engine", tEngine, "ready")
+            // A playlist link is always read from its canonical playlist page (list=… only), so
+            // yt-dlp lists exactly that list's items — never a watch page's recommendations.
+            val listId = detected.listId?.takeIf { detected.isCollection }
+            val target = listId?.let { YouTubeProvider.playlistUrl(it) } ?: normalized
+            val progress = coroutineContext[AnalysisProgress]
             // One call for every kind of link: -J prints a single JSON document that is either one
             // item with its full format list or a collection; --flat-playlist keeps collections
             // fast (no per-item format lookups); --no-playlist makes "video inside a playlist" URLs
-            // resolve to that video. Detection deliberately does NOT restrict player_client, so
-            // YouTube reports its full resolution ladder; the 403-dodging client fallback is only
-            // applied at download time (DownloadRequestBuilder).
-            val request = YoutubeDLRequest(normalized).apply {
+            // resolve to that video. For playlists, --ignore-errors keeps one broken item from
+            // failing the list and --print emits a line per item for the "found so far" count.
+            // Detection deliberately does NOT restrict player_client, so YouTube reports its full
+            // resolution ladder; the 403-dodging client fallback is only applied at download time
+            // (DownloadRequestBuilder).
+            val request = YoutubeDLRequest(target).apply {
                 addOption("-J")
                 addOption("--flat-playlist")
-                addOption("--no-playlist")
+                if (detected.isCollection) {
+                    addOption("--yes-playlist")
+                    addOption("--ignore-errors")
+                    addOption("--print", "$ITEM_PREFIX %(id)s")
+                } else {
+                    addOption("--no-playlist")
+                }
                 addOption("--retries", "3")
                 addOption("--socket-timeout", "20")
                 if (trace != null) addOption("-v")
             }
             // Cancellable (leaving the screen kills yt-dlp) and bounded: a stuck extractor
-            // surfaces as a connection error instead of an endless spinner.
+            // surfaces as a connection error instead of an endless spinner. Long playlists get
+            // more time.
+            val timeoutMs = if (detected.isCollection) PLAYLIST_TIMEOUT_MS else ANALYZE_TIMEOUT_MS
             val tRun = System.currentTimeMillis()
+            val found = AtomicInteger(0)
             val response = try {
-                withTimeout(ANALYZE_TIMEOUT_MS) {
-                    runKillable(processId) { YoutubeDL.execute(request, processId) }
+                withTimeout(timeoutMs) {
+                    runKillable(processId) {
+                        if (progress == null) {
+                            YoutubeDL.execute(request, processId)
+                        } else {
+                            YoutubeDL.execute(request, processId) { _, _, line ->
+                                if (line.startsWith(ITEM_PREFIX)) progress.onFound(found.incrementAndGet())
+                            }
+                        }
+                    }
                 }
             } catch (e: TimeoutCancellationException) {
                 YoutubeDL.destroyProcessById(processId)
-                trace?.stage("run yt-dlp", tRun, "timed out after ${ANALYZE_TIMEOUT_MS / 1000} s")
-                throw ProviderException.Timeout("analysis exceeded ${ANALYZE_TIMEOUT_MS / 1000}s")
+                trace?.stage("run yt-dlp", tRun, "timed out after ${timeoutMs / 1000} s")
+                throw ProviderException.Timeout("analysis exceeded ${timeoutMs / 1000}s")
             } catch (e: CancellationException) {
                 trace?.stage("run yt-dlp", tRun, "cancelled")
                 throw e
@@ -106,10 +131,18 @@ class YtDlpMediaProvider(
             }
             val tRead = System.currentTimeMillis()
             val mapper = YoutubeDL.objectMapper
-            val root = mapper.readTree(response.out.trim())
+            val root = mapper.readTree(AnalysisJsonParser.jsonPart(response.out))
                 ?: throw ProviderException.NoFormatsAvailable("empty extractor output")
-            when (val parsed = AnalysisJsonParser.parse(root, normalized, mapper)) {
+            when (val parsed = AnalysisJsonParser.parse(root, target, mapper)) {
                 is AnalysisJsonParser.Parsed.Single -> {
+                    if (detected.isCollection) {
+                        trace?.stage("read formats", tRead, "not a playlist")
+                        throw ProviderException.PlaylistRefused(
+                            "This link didn't open a playlist",
+                            "YouTube answered with a single video instead of the playlist in the link, so nothing was listed. Check the link and try again.",
+                            "single item for list $listId",
+                        )
+                    }
                     val media = FormatMapper.toMediaInfo(normalized, parsed.info)
                     val best = media.videoFormats.mapNotNull { it.heightPx }.maxOrNull()
                     trace?.formats = "${media.audioFormats.size} audio, ${media.videoFormats.size} video" + (best?.let { " (best ${it}p)" } ?: "")
@@ -121,7 +154,19 @@ class YtDlpMediaProvider(
                     AnalysisResult.Single(media, detected)
                 }
                 is AnalysisJsonParser.Parsed.Collection -> {
-                    trace?.formats = "collection with ${parsed.playlist.entries.size} items"
+                    // Never show a different list than the one in the link (YouTube Music ids may
+                    // come back with a "VL" prefix).
+                    val gotId = parsed.playlist.id?.removePrefix("VL")
+                    if (listId != null && gotId != null && gotId != listId) {
+                        trace?.stage("read formats", tRead, "different list returned")
+                        throw ProviderException.PlaylistRefused(
+                            "YouTube returned a different list",
+                            "The answer wasn't the playlist in your link, so nothing was listed. Try again in a moment.",
+                            "asked for $listId, got $gotId",
+                        )
+                    }
+                    trace?.formats = "collection with ${parsed.playlist.entries.size} items" +
+                        (parsed.playlist.reportedCount?.let { " (site reports $it)" } ?: "")
                     trace?.stage("read formats", tRead, if (parsed.playlist.entries.isEmpty()) "empty collection" else "ok")
                     if (parsed.playlist.entries.isEmpty()) throw ProviderException.NoFormatsAvailable("empty collection")
                     AnalysisResult.Collection(parsed.playlist, detected)
@@ -235,6 +280,8 @@ class YtDlpMediaProvider(
     private companion object {
         const val TAG = "YtDlpMediaProvider"
         const val ANALYZE_TIMEOUT_MS = 90_000L
+        const val PLAYLIST_TIMEOUT_MS = 300_000L
+        const val ITEM_PREFIX = "[mimic-item]"
         val UNMERGED_NAME = Regex("""^.+\.f[0-9A-Za-z_-]+\.[0-9A-Za-z]+$""")
     }
 }

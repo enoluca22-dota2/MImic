@@ -61,6 +61,12 @@ class MediaAnalyzer(
         }
         trace?.stage("parse link", t0, if (detected.isSupported) "ok" else "unsupported")
         if (!detected.isSupported) return Result.failure(ProviderException.UnsupportedUrl())
+        // Mixes, channel uploads and account-only lists are refused before yt-dlp runs: expanding
+        // them lists hundreds of recommended or unrelated videos, not a playlist.
+        detected.listType?.refusal?.let { (title, message) ->
+            trace?.stage("check list", t0, "refused: ${detected.listType?.label}")
+            return Result.failure(ProviderException.PlaylistRefused(title, message, detected.listId))
+        }
         return try {
             Result.success(mediaProvider.analyze(url, detected))
         } catch (e: ProviderException) {

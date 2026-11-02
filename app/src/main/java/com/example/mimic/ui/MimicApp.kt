@@ -162,6 +162,9 @@ fun MimicApp(viewModel: PlayerViewModel) {
     val navMotion = navTransitions(glassEnv)
 
     var nowPlayingOpen by remember { mutableStateOf(false) }
+    // 4.6: a screen (the Downloads playlist picker) can ask for the slim mini player.
+    val compactMini = remember { mutableStateOf(false) }
+    val setCompactMini: (Boolean) -> Unit = remember { { on -> compactMini.value = on } }
     var lockViewOpen by remember { mutableStateOf(false) }
     var shareNeedsDownload by remember { mutableStateOf<Song?>(null) }
     val castingTo by viewModel.castingTo.collectAsStateWithLifecycle()
@@ -280,6 +283,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
     CompositionLocalProvider(
         LocalGlassBackdrop provides if (liveGlass) backdrop else null,
         com.example.mimic.ui.navigation.LocalTabReselect provides tabReselect,
+        com.example.mimic.ui.components.LocalCompactMiniPlayer provides setCompactMini,
     ) {
     // While a full-screen overlay is up, the screen beneath is hidden from TalkBack too.
     val overlayOpen = (nowPlayingOpen && uiState.currentSong != null) || editingTheme != null || lockViewOpen
@@ -306,6 +310,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         progress = if (!uiState.isLive && uiState.durationMs > 0) uiState.positionMs.toFloat() / uiState.durationMs else null,
                         castingTo = castingTo,
                         castButton = { com.example.mimic.cast.CastButton(MaterialTheme.colorScheme.onBackground) },
+                        compact = compactMini.value,
                     )
                 }
                 BottomBar(navController, navStyle, onReselect = { tabReselect.tryEmit(it) })

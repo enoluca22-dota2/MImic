@@ -1,5 +1,30 @@
 # Changelog
 
+## 4.6.0-beta.1
+Playlist downloads that download exactly the songs you pick. Everything else (Navidrome, radio,
+themes, Listen Together, lyrics, online music, updater) is unchanged.
+
+- **Correct playlists, nothing else.** YouTube and YouTube Music playlist links
+  (`youtube.com/playlist?list=…`, `music.youtube.com/playlist?list=…`, `music.youtube.com/browse/VL…`,
+  `watch?list=…`) are read from the playlist page itself, so only that list's songs appear — never
+  hundreds of recommended videos. If YouTube answers with a single video or a different list,
+  nothing is listed and the reason is shown.
+- **Mixes are told apart from playlists.** YouTube Mixes / radios (`RD…`), whole-channel upload
+  lists and private lists (Liked, Watch later) are explained instead of expanded. A song link that
+  came from a Mix opens just that song, with a note saying why. YouTube Music's curated `RDCLAK…`
+  playlists and albums (`OLAK5uy_…`) still open as playlists.
+- **Pick the songs.** Every song is a row with a checkbox (all ticked to start), plus Select all /
+  Deselect all. Untick 2 of 15 and exactly the other 13 are queued. The selection stays when you
+  scroll or change the format; the header and the pinned bar show "Selected: N of M".
+- **Download selected** sits in a bar pinned above the mini player, always reachable. More than
+  50 songs asks for confirmation first.
+- **No duplicates.** A video listed twice in a playlist is shown but downloaded once; songs already
+  waiting or downloading in the queue are skipped ("· N already in the queue").
+- **Progress.** While a long playlist is being read, "N found so far" is shown; while it downloads,
+  the queue shows “Playlist: X of Y done” with a progress bar.
+- **Compact mini player** while you choose what to download: a slim 44 dp bar (title + play/pause)
+  so it never covers the song list or the download controls. It returns to normal afterwards.
+
 ## 4.5.0-beta.4
 - **New app icon**: a glass disc in teal-to-violet with a dark sound wave replaces the
   4.5.0-beta.3 icon on the launcher, app drawer, App info, recents and the Android 12+ splash.

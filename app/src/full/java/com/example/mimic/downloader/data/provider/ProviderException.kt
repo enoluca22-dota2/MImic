@@ -111,6 +111,13 @@ sealed class ProviderException(
 
     class Cancelled : ProviderException("Cancelled")
 
+    /**
+     * A playlist link MImic won't (or couldn't safely) list: a Mix, a channel, a private list, or
+     * an answer that wasn't the list in the link. [title] is the heading shown above [message].
+     */
+    class PlaylistRefused(val title: String, message: String, detail: String?) :
+        ProviderException(message, detail = detail)
+
     class Unknown(detail: String? = null, cause: Throwable? = null) :
         ProviderException(DOWNLOAD_FAILED, cause, detail)
 
