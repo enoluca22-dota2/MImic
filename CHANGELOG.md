@@ -1,5 +1,23 @@
 # Changelog
 
+## 4.7.0-beta.2
+Floating Aura rebuilt from the reference video and screenshots — it now matches the original
+design much more closely. Still optional; nothing changes unless you pick the theme.
+
+- **The bead sits on the dock.** The selected tab is a glowing accent bead centred on the dock's
+  top edge; the dock outline swells around it with smooth shoulders (no notch cut into the dock).
+  While it travels the shoulders lean with its speed — the trailing one stretches, the leading
+  one tightens.
+- **Motion like the reference.** A quick, firm glide (about a third of a second, a hint of
+  overshoot); the bead's colour and icon blend from the old tab to the new one as it moves; the
+  tab's name appears under it in its accent colour once it settles.
+- **Glow and background.** A wide accent glow spills out under the dock and follows the bead;
+  a soft violet haze sits at the top of the screen.
+- **Page change.** On the Floating Aura theme the page you leave blurs out and the new one comes
+  into focus (Android 12+; older versions fade).
+- Outlined line icons, a hairline dock outline and the reference's accent colours (orange,
+  violet, golden, emerald, cyan, pink).
+
 ## 4.7.0-beta.1
 New optional theme: **Floating Aura** — an animated floating navigation dock. Nothing changes
 unless you pick it.

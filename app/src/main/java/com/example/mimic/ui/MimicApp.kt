@@ -57,6 +57,8 @@ import com.example.mimic.player.PlayerViewModel
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.snap
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.ui.graphics.graphicsLayer
 import com.example.mimic.ui.components.AuraDock
 import com.example.mimic.ui.components.auraAccent
 import com.example.mimic.ui.components.auraTabs
@@ -154,13 +156,46 @@ private fun AuraAmbience(navController: NavHostController) {
     )
     Box(
         Modifier.fillMaxSize().drawBehind {
+            // The reference's fixed violet haze up top, plus the tab's accent rising from the dock.
+            val high = Offset(size.width * 0.5f, size.height * 0.16f)
+            drawRect(Brush.radialGradient(listOf(Color(0xFF3A2556).copy(alpha = 0.55f), Color.Transparent), center = high, radius = size.width * 0.75f))
             val c = accent.value
-            val low = Offset(size.width * 0.5f, size.height * 1.02f)
-            drawRect(Brush.radialGradient(listOf(c.copy(alpha = 0.22f), Color.Transparent), center = low, radius = size.width * 1.05f))
-            val high = Offset(size.width * 0.92f, size.height * 0.08f)
-            drawRect(Brush.radialGradient(listOf(c.copy(alpha = 0.12f), Color.Transparent), center = high, radius = size.width * 0.8f))
+            val low = Offset(size.width * 0.5f, size.height * 1.04f)
+            drawRect(Brush.radialGradient(listOf(c.copy(alpha = 0.16f), Color.Transparent), center = low, radius = size.width * 0.95f))
         },
     )
+}
+
+/**
+ * Floating Aura's page change for the tab roots: the outgoing page blurs and drifts up, the incoming
+ * one comes into focus from slightly below (the reference's blurred title swap; the alpha comes
+ * from the NavHost cross-fade). Blur needs Android 12+; older versions get the drift and fade only.
+ * Off for other themes and when motion is off.
+ */
+@Composable
+private fun androidx.compose.animation.AnimatedContentScope.AuraPage(on: Boolean, content: @Composable () -> Unit) {
+    val env = LocalGlass.current
+    if (!on || env.motionScale == 0f) {
+        content()
+        return
+    }
+    val amount = transition.animateFloat(
+        transitionSpec = { tween((240 / env.style.transitionSpeed).toInt()) },
+        label = "auraPage",
+    ) { if (it == androidx.compose.animation.EnterExitState.Visible) 0f else 1f }
+    Box(
+        Modifier.fillMaxSize().graphicsLayer {
+            val k = amount.value
+            if (k > 0.01f) {
+                val leaving = transition.targetState == androidx.compose.animation.EnterExitState.PostExit
+                translationY = (if (leaving) -8f else 10f) * k * density
+                if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                    val px = 14f * k * density
+                    renderEffect = androidx.compose.ui.graphics.BlurEffect(px, px, androidx.compose.ui.graphics.TileMode.Decal)
+                }
+            }
+        },
+    ) { content() }
 }
 
 /**
@@ -383,11 +418,14 @@ fun MimicApp(viewModel: PlayerViewModel) {
             popExitTransition = { navMotion.second },
         ) {
             // ---- The four top-level tabs ----
-            composable(TopLevel.HOME.route) { HomeScreen(viewModel, innerPadding, nav) }
-            composable(TopLevel.SEARCH.route) { SearchScreen(viewModel, innerPadding, nav) }
-            composable(TopLevel.LIBRARY.route) { LibraryScreen(viewModel, innerPadding, nav) }
+            val aura = navStyle == NavStyle.AURA
+            composable(TopLevel.HOME.route) { AuraPage(aura) { HomeScreen(viewModel, innerPadding, nav) } }
+            composable(TopLevel.SEARCH.route) { AuraPage(aura) { SearchScreen(viewModel, innerPadding, nav) } }
+            composable(TopLevel.LIBRARY.route) { AuraPage(aura) { LibraryScreen(viewModel, innerPadding, nav) } }
             composable(TopLevel.RADIO.route) {
-                com.example.mimic.ui.radio.RadioScreen(viewModel, innerPadding, onAddCountry = { navController.navigate("radio/add") })
+                AuraPage(aura) {
+                    com.example.mimic.ui.radio.RadioScreen(viewModel, innerPadding, onAddCountry = { navController.navigate("radio/add") })
+                }
             }
             composable("radio/add") {
                 InsetScreen(innerPadding) { com.example.mimic.ui.radio.AddRadioCountryScreen(onBack = back) }
@@ -416,6 +454,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
             }
             composable(TopLevel.DOWNLOADS.route) {
                 val shared by viewModel.sharedLink.collectAsStateWithLifecycle()
+                AuraPage(aura) {
                 com.example.mimic.ui.library.DownloadsHubScreen(
                     vm = viewModel,
                     nav = nav,
@@ -436,8 +475,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         null
                     },
                 )
+                }
             }
             composable(TopLevel.SETTINGS.route) {
+                AuraPage(aura) {
                 SettingsScreen(
                     viewModel,
                     contentPadding = innerPadding,
@@ -455,6 +496,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                     onOpenParty = { navController.navigate("party") },
                     onOpenAdvanced = { navController.navigate("settings/advanced") },
                 )
+                }
             }
             composable("updates") {
                 InsetScreen(innerPadding) { com.example.mimic.ui.update.AppUpdatesScreen(onBack = back) }
