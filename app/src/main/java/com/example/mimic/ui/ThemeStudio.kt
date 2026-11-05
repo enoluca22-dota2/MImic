@@ -54,6 +54,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
@@ -65,6 +67,8 @@ import com.example.mimic.data.GlassQuality
 import com.example.mimic.data.Song
 import com.example.mimic.data.ThemeSerialization
 import com.example.mimic.player.PlayerViewModel
+import com.example.mimic.ui.components.AuraDock
+import com.example.mimic.ui.components.auraTabs
 import com.example.mimic.ui.components.GlassNavBar
 import com.example.mimic.ui.components.GlassNavItem
 import com.example.mimic.ui.components.MiniPlayer
@@ -123,7 +127,10 @@ fun ThemeStudioScreen(
 
     val canonical = ThemeRegistry.CANONICAL_IDS.mapNotNull { id -> themes.firstOrNull { it.id == id } }
     val flagship = themes.firstOrNull { it.id == "mimic_liquid_glass" }
-    val legacy = themes.filter { it.builtIn && it.id != "mimic_liquid_glass" && it.id !in ThemeRegistry.CANONICAL_IDS }
+    val aura = themes.firstOrNull { it.id == ThemeRegistry.AURA_ID }
+    val legacy = themes.filter {
+        it.builtIn && it.id != "mimic_liquid_glass" && it.id != ThemeRegistry.AURA_ID && it.id !in ThemeRegistry.CANONICAL_IDS
+    }
     val custom = themes.filter { !it.builtIn }
 
     Column(Modifier.fillMaxSize()) {
@@ -172,6 +179,19 @@ fun ThemeStudioScreen(
                         selected = settings.themeId == theme.id,
                         onApply = { vm.setThemeId(theme.id) },
                         onCustomize = { onEdit(vm.duplicateTheme(theme)) },
+                    )
+                }
+            }
+            aura?.let { theme ->
+                item(key = "aura") {
+                    FlagshipCard(
+                        theme = theme,
+                        quality = settings.glassQuality,
+                        selected = settings.themeId == theme.id,
+                        onApply = { vm.setThemeId(theme.id) },
+                        onCustomize = { onEdit(vm.duplicateTheme(theme)) },
+                        subtitle = "Animated floating dock — each tab lights it in its own color. Tap the icons to try it.",
+                        tapToApply = false,
                     )
                 }
             }
@@ -281,16 +301,19 @@ private fun FlagshipCard(
     selected: Boolean,
     onApply: () -> Unit,
     onCustomize: () -> Unit,
+    subtitle: String = "Liquid glass that re-tints itself from the playing album",
+    // Floating Aura's preview dock is interactive, so tapping the preview tries it, not applies it.
+    tapToApply: Boolean = true,
 ) {
     Column(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) {
         MImicTheme(theme = theme, quality = quality) {
-            ThemeLivePreview(Modifier.height(240.dp).clickable(onClick = onApply))
+            ThemeLivePreview(Modifier.height(240.dp).then(if (tapToApply) Modifier.clickable(onClick = onApply) else Modifier))
         }
         Row(Modifier.fillMaxWidth().padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(theme.name, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                 Text(
-                    "Liquid glass that re-tints itself from the playing album",
+                    subtitle,
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -505,6 +528,8 @@ fun ThemeEditorScreen(
                     ToggleRow("Floating glass navigation", st.pillNav) { v -> style { copy(pillNav = v) } }
                     Hint("Used when Settings → Home & Navigation is set to \"Auto (theme)\".")
                     SelectRow("Tab indicator", listOf("Pill", "Dot"), st.navIndicator.ordinal) { i -> style { copy(navIndicator = NavIndicator.entries[i]) } }
+                    ToggleRow("Floating Aura dock", st.auraNav) { v -> style { copy(auraNav = v) } }
+                    Hint("The animated dock with a raised button and per-tab accent light. Wins over the glass pill when both are on.")
                 }
             }
             Spacer(Modifier.height(8.dp))
@@ -641,6 +666,11 @@ fun ThemeLivePreview(modifier: Modifier = Modifier) {
     val backdrop = rememberLayerBackdrop()
     val live = env.enabled && env.quality.blurFactor > 0f && android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S
     var tab by remember { mutableIntStateOf(0) }
+    val auraGlow = androidx.compose.animation.animateColorAsState(
+        auraTabs.getOrNull(tab)?.accent ?: Color.Transparent,
+        if (env.motionScale == 0f) androidx.compose.animation.core.snap() else androidx.compose.animation.core.tween(600),
+        label = "previewAura",
+    )
     Box(modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))) {
         // Backdrop content (what the glass frosts over).
         Box(
@@ -652,6 +682,17 @@ fun ThemeLivePreview(modifier: Modifier = Modifier) {
                         Brush.verticalGradient(listOf(top, scheme.background))
                     } else {
                         Brush.verticalGradient(listOf(scheme.background, scheme.background))
+                    },
+                )
+                .then(
+                    if (env.style.auraNav) {
+                        Modifier.drawBehind {
+                            val c = auraGlow.value
+                            val low = Offset(size.width * 0.5f, size.height * 1.05f)
+                            drawRect(Brush.radialGradient(listOf(c.copy(alpha = 0.3f), Color.Transparent), center = low, radius = size.width * 0.9f))
+                        }
+                    } else {
+                        Modifier
                     },
                 ),
         ) {
@@ -684,7 +725,11 @@ fun ThemeLivePreview(modifier: Modifier = Modifier) {
                     onClick = {},
                     modifier = Modifier.padding(horizontal = 12.dp),
                 )
-                GlassNavBar(previewTabs, tab, { tab = it }, showLabels = true)
+                if (env.style.auraNav) {
+                    AuraDock(auraTabs, tab, { tab = it })
+                } else {
+                    GlassNavBar(previewTabs, tab, { tab = it }, showLabels = true)
+                }
             }
         }
     }

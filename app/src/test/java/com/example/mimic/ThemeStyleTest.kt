@@ -36,7 +36,7 @@ class ThemeStyleTest {
             glass = true, glassOpacity = 0.35f, blurRadius = 31, refraction = 0.8f, edgeHighlight = 0.25f,
             shadow = 0.9f, glassTint = 0x80FFFFFF, glassTone = GlassTone.LIGHT, accentColor = 0xFFFFE600,
             gradientBackground = true, gradientColor = 0xFF1A0533, albumAdaptive = true, cornerRadius = 30,
-            navCornerRadius = 12, controlShape = ControlShape.SQUIRCLE, pillNav = true,
+            navCornerRadius = 12, controlShape = ControlShape.SQUIRCLE, pillNav = true, auraNav = true,
             fontFamily = FontChoice.SERIF, fontScale = 1.1f, headerWeight = 900, titleWeight = 500,
             artistWeight = 300, motion = false, animationScale = 1.4f, transitionSpeed = 1.5f,
         ),
@@ -125,6 +125,28 @@ class ThemeStyleTest {
         assertEquals(NavStyle.GLASS, NavStyle.FLOATING.resolve(themeWantsGlassNav = false, glassTheme = true))
         assertEquals(NavStyle.FLOATING, NavStyle.FLOATING.resolve(themeWantsGlassNav = false, glassTheme = false))
         assertEquals(NavStyle.STANDARD, NavStyle.STANDARD.resolve(themeWantsGlassNav = true))
+    }
+
+    @Test fun floating_aura_dock_follows_its_theme_and_never_forces_itself() {
+        // Auto and Floating pick the aura dock on an aura theme; other explicit styles still win.
+        assertEquals(NavStyle.AURA, NavStyle.AUTO.resolve(themeWantsGlassNav = false, themeWantsAura = true))
+        assertEquals(NavStyle.AURA, NavStyle.AUTO.resolve(themeWantsGlassNav = true, themeWantsAura = true))
+        assertEquals(NavStyle.AURA, NavStyle.FLOATING.resolve(themeWantsGlassNav = false, glassTheme = true, themeWantsAura = true))
+        assertEquals(NavStyle.STANDARD, NavStyle.STANDARD.resolve(themeWantsGlassNav = false, themeWantsAura = true))
+        assertEquals(NavStyle.COMPACT, NavStyle.COMPACT.resolve(themeWantsGlassNav = false, themeWantsAura = true))
+        assertEquals(NavStyle.GLASS, NavStyle.GLASS.resolve(themeWantsGlassNav = false, themeWantsAura = true))
+        assertEquals(NavStyle.AURA, NavStyle.AURA.resolve(themeWantsGlassNav = false))
+        // Existing themes are untouched: none of them asks for the dock, and the default is unchanged.
+        val aura = ThemeRegistry.byId(ThemeRegistry.AURA_ID)
+        assertEquals("Floating Aura", aura.name)
+        assertTrue(aura.style.auraNav && aura.colors.isDark && !aura.style.glass)
+        assertEquals(listOf(ThemeRegistry.AURA_ID), ThemeRegistry.presets.filter { it.style.auraNav }.map { it.id })
+        assertEquals("emerald", ThemeRegistry.DEFAULT_ID)
+        assertFalse(ThemeStyle().auraNav)
+        // An exported custom copy keeps the dock; files from older versions import without it.
+        val copy = aura.copy(id = "custom_aura", builtIn = false)
+        assertTrue(ThemeSerialization.parse(ThemeSerialization.toJson(copy)).getOrThrow().style.auraNav)
+        assertFalse(ThemeSerialization.parseStyle("{ \"pillNav\": true }").auraNav)
     }
 
     @Test fun player_auto_styles_resolve_and_preserve_pre_2_9_behavior() {

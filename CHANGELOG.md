@@ -1,5 +1,27 @@
 # Changelog
 
+## 4.7.0-beta.1
+New optional theme: **Floating Aura** — an animated floating navigation dock. Nothing changes
+unless you pick it.
+
+- **Floating Aura theme.** Purple-black background with soft gradients and a floating, translucent
+  rounded dock. The selected tab sits in a raised circular button with a glow beneath it; the
+  dock's top edge curves down around it.
+- **Animated tab changes.** The button glides to the new tab on a spring with a little overshoot,
+  lifts and settles; the glow, the curve in the dock and the background light follow it, the
+  icon pops in, the previous icon returns to its place, and the tab's name fades in under the
+  button with a short blur.
+- **A color per tab.** Home orange, Search violet, Library golden, Radio emerald, Downloads cyan,
+  Settings soft pink — the dock and the background light ease to the selected tab's color.
+- **Theme Studio.** A Floating Aura card with a live preview (tap its icons to try the dock),
+  Apply and Customize. Your choice is saved and restored after restart; switching back to any
+  other theme brings back exactly the navigation you had. Custom themes can turn the dock on or
+  off under Edit theme → Navigation, and Settings → Home & Navigation offers "Floating Aura" as a
+  navigation style too.
+- **Light on battery.** The dock only animates during a tab change and is drawn natively (no web
+  view); with Android's "Remove animations" or the theme's Motion off, changes are instant.
+- All six tabs (including Radio) stay in the dock; the mini player sits above it, never under it.
+
 ## 4.6.0-beta.3
 Playlists fill in automatically — no "Load more" buttons anywhere.
 

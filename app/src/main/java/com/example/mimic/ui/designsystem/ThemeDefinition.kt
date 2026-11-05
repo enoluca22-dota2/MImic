@@ -64,6 +64,7 @@ data class ThemeStyle(
     // ---- Navigation ----
     val pillNav: Boolean = false,        // theme asks for the floating glass pill navigation
     val navIndicator: NavIndicator = NavIndicator.PILL,
+    val auraNav: Boolean = false,        // theme asks for the Floating Aura dock (4.7)
     // ---- Typography ----
     val fontFamily: FontChoice = FontChoice.DEFAULT,
     val fontScale: Float = 1f,
@@ -162,6 +163,13 @@ object ThemeRegistry {
         titleWeight = 500,
     )
 
+    /** Floating Aura (4.7): purple-black backdrop, the animated aura dock, heavy headers. Not glass. */
+    private val AURA = ThemeStyle(
+        gradientBackground = true, gradientColor = 0xFF231433, cornerRadius = 24, navCornerRadius = 30,
+        controlShape = ControlShape.CAPSULE, auraNav = true, headerWeight = 800, titleWeight = 500,
+        animationScale = 1.1f,
+    )
+
     /** The MImic flagship: dark liquid glass that re-tints itself from the playing album. */
     private val GLASS_MIMIC = ThemeStyle(
         glass = true, glassOpacity = 0.2f, blurRadius = 10, refraction = 0.85f, edgeHighlight = 0.8f,
@@ -185,6 +193,7 @@ object ThemeRegistry {
     val presets: List<ThemeDefinition> = listOf(
         // ---- MImic Liquid Glass flagship, then the 14 canonical MImic 2.9 presets ----
         dark("mimic_liquid_glass", "MImic Liquid Glass", 0xFF8AB4FF, 0xFFB79CFF, 0xFF080B12, 0xFF121826, 0xFF1C2436, text = 0xFFF3F6FC, text2 = 0xFFAFB9CC, style = GLASS_MIMIC),
+        dark(AURA_ID, "Floating Aura", 0xFFC4A1FF, 0xFFFF9BD2, 0xFF0B0711, 0xFF151020, 0xFF20182F, text = 0xFFF5F0FF, text2 = 0xFFB4A8CC, style = AURA),
         light("ios_glass_clear", "Liquid Glass Clear", 0xFF0A84FF, 0xFF64D2FF, 0xFFEEF3FB, 0xFFFFFFFF, 0xFFE3ECF7, text = 0xFF0B1725, text2 = 0xFF5A6B82, style = GLASS_CLEAR),
         dark("frosted_glass", "Liquid Glass Frosted", 0xFF7FD1FF, 0xFF5AA9E6, 0xFF0E1116, 0xFF161B22, 0xFF222A35, text2 = 0xFFAEBBC9, style = GLASS_FROSTED),
         dark("ios_dark_glass", "Liquid Glass Dark", 0xFF0A84FF, 0xFF64D2FF, 0xFF07090D, 0xFF10151C, 0xFF1A222D, text = 0xFFF2F6FB, text2 = 0xFFA9B6C6, style = GLASS_DARK),
@@ -209,6 +218,7 @@ object ThemeRegistry {
 
     private val byId = presets.associateBy { it.id }
     const val DEFAULT_ID = "emerald"
+    const val AURA_ID = "floating_aura"
 
     /** The 14 presets from the 2.9 brief, in display order. */
     val CANONICAL_IDS = listOf(

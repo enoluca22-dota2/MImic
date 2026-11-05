@@ -24,16 +24,20 @@ enum class HomeSection(val label: String) {
  * glass pill, every other theme the standard bar, so a user who never touched this setting sees
  * exactly the pre-2.9 bar until they pick a glass theme.
  */
-enum class NavStyle { STANDARD, FLOATING, COMPACT, GLASS, AUTO }
+enum class NavStyle { STANDARD, FLOATING, COMPACT, GLASS, AUTO, AURA }
 
 /**
  * Resolves the user's nav style against the active theme. AUTO follows the theme's pill-nav wish;
  * FLOATING on a glass theme *is* the floating glass pill (an opaque floating bar would look broken
  * there). STANDARD / COMPACT / GLASS are explicit choices and always win.
  */
-fun NavStyle.resolve(themeWantsGlassNav: Boolean, glassTheme: Boolean = themeWantsGlassNav): NavStyle = when (this) {
-    NavStyle.AUTO -> if (themeWantsGlassNav) NavStyle.GLASS else NavStyle.STANDARD
-    NavStyle.FLOATING -> if (glassTheme) NavStyle.GLASS else NavStyle.FLOATING
+fun NavStyle.resolve(
+    themeWantsGlassNav: Boolean,
+    glassTheme: Boolean = themeWantsGlassNav,
+    themeWantsAura: Boolean = false,
+): NavStyle = when (this) {
+    NavStyle.AUTO -> if (themeWantsAura) NavStyle.AURA else if (themeWantsGlassNav) NavStyle.GLASS else NavStyle.STANDARD
+    NavStyle.FLOATING -> if (themeWantsAura) NavStyle.AURA else if (glassTheme) NavStyle.GLASS else NavStyle.FLOATING
     else -> this
 }
 

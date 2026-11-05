@@ -54,6 +54,12 @@ import com.example.mimic.data.NavStyle
 import com.example.mimic.data.Song
 import com.example.mimic.data.resolve
 import com.example.mimic.player.PlayerViewModel
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.ui.draw.drawBehind
+import com.example.mimic.ui.components.AuraDock
+import com.example.mimic.ui.components.auraAccent
+import com.example.mimic.ui.components.auraTabs
 import com.example.mimic.ui.components.GlassNavBar
 import com.example.mimic.ui.components.GlassNavItem
 import com.example.mimic.ui.components.MiniPlayer
@@ -87,6 +93,15 @@ private fun BottomBar(navController: NavHostController, navStyle: NavStyle, onRe
     val owner = TopLevelNavigation.owningTab(routes)
     val goTo: (TopLevel) -> Unit = { tab -> TopLevelNavigation.navigate(navController, tab)?.let(onReselect) }
     val compact = navStyle == NavStyle.COMPACT
+    if (navStyle == NavStyle.AURA) {
+        AuraDock(
+            items = auraTabs,
+            selectedIndex = TopLevel.visible.indexOf(owner),
+            onSelect = { goTo(TopLevel.visible[it]) },
+            modifier = Modifier.navigationBarsPadding(),
+        )
+        return
+    }
     if (navStyle == NavStyle.GLASS) {
         GlassNavBar(
             items = glassTabs,
@@ -122,6 +137,33 @@ private fun BottomBar(navController: NavHostController, navStyle: NavStyle, onRe
 private val glassTabs = TopLevel.visible.map { GlassNavItem(it.label, it.icon) }
 
 /**
+ * Floating Aura's background light: two soft glows tinted with the selected tab's accent, easing to
+ * the new color on a tab change. Drawn behind all content; the color is read in the draw phase only,
+ * so the change redraws this layer without recomposing, and nothing runs while idle.
+ */
+@Composable
+private fun AuraAmbience(navController: NavHostController) {
+    val entry by navController.currentBackStackEntryAsState()
+    @android.annotation.SuppressLint("RestrictedApi") // whole-stack read, same rule as BottomBar
+    val owner = remember(entry) { TopLevelNavigation.owningTab(navController.currentBackStack.value.map { it.destination.route }) }
+    val env = LocalGlass.current
+    val accent = animateColorAsState(
+        auraAccent(owner),
+        if (env.motionScale == 0f) snap() else tween((700 / env.style.transitionSpeed).toInt()),
+        label = "auraAmbience",
+    )
+    Box(
+        Modifier.fillMaxSize().drawBehind {
+            val c = accent.value
+            val low = Offset(size.width * 0.5f, size.height * 1.02f)
+            drawRect(Brush.radialGradient(listOf(c.copy(alpha = 0.22f), Color.Transparent), center = low, radius = size.width * 1.05f))
+            val high = Offset(size.width * 0.92f, size.height * 0.08f)
+            drawRect(Brush.radialGradient(listOf(c.copy(alpha = 0.12f), Color.Transparent), center = high, radius = size.width * 0.8f))
+        },
+    )
+}
+
+/**
  * Hosts a pushed sub-screen. The top is inset below the status bar; the bottom is NOT padded:
  * lists scroll on under the floating mini-player / navigation (so glass has real content behind
  * it) and add [LocalBarPadding] as their own bottom contentPadding. [padBottom] keeps the old
@@ -153,6 +195,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
     val navStyle = settings.homeConfig.navStyle.resolve(
         themeWantsGlassNav = glassEnv.style.glass && glassEnv.style.pillNav,
         glassTheme = glassEnv.style.glass,
+        themeWantsAura = glassEnv.style.auraNav,
     )
     // Live content layer for backdrop blur/refraction. Only recorded when a glass theme can
     // actually blur on this device + quality; otherwise nothing extra is drawn at all.
@@ -300,7 +343,11 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         onPlayPause = viewModel::togglePlayPause,
                         onClick = { nowPlayingOpen = true },
                         modifier = Modifier.padding(
-                            horizontal = if (navStyle == NavStyle.GLASS) 14.dp else 8.dp,
+                            horizontal = when (navStyle) {
+                                NavStyle.GLASS -> 14.dp
+                                NavStyle.AURA -> 16.dp
+                                else -> 8.dp
+                            },
                             vertical = 4.dp,
                         ),
                         isBuffering = uiState.isBuffering,
@@ -325,6 +372,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                 .then(if (liveGlass) Modifier.layerBackdrop(backdrop) else Modifier)
                 .themeBackground(),
         ) {
+        if (navStyle == NavStyle.AURA) AuraAmbience(navController)
         val rowEnv = rememberRowEnv(viewModel, nav)
         NavHost(
             navController = navController,
