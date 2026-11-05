@@ -1,8 +1,8 @@
 MIMIC — COMPLETE DEVELOPMENT REPORT
 ===================================
-Last updated: 2026-11-05 (4.7.0-beta.1 — optional Floating Aura theme with an animated
-              navigation dock)
-Previous: 2026-11-02 session 3 (4.6.0-beta.3 — automatic playlist loading); session 2 (4.6.0-beta.2 — Mix preview); session 1 (4.6.0-beta.1 — playlist downloads with per-song selection +
+Last updated: 2026-11-05 session 2 (4.7.0-beta.2 — Floating Aura rebuilt from the owner's
+              reference video + screenshots in Desktop\MImic-UI-Reference)
+Previous: 2026-11-05 session 1 (4.7.0-beta.1 — first Floating Aura, built from text only); 2026-11-02 session 3 (4.6.0-beta.3 — automatic playlist loading); session 2 (4.6.0-beta.2 — Mix preview); session 1 (4.6.0-beta.1 — playlist downloads with per-song selection +
               compact mini player, recovered from the second PC's APK); 2026-10-26 (Listen Together + automatic lyrics + icons, 4.5.0-beta.1 … beta.4)
 Keep this file current after every session. Plain text, written so it can be pasted into a
 new ChatGPT / Claude conversation without access to the repository.
@@ -11,7 +11,7 @@ new ChatGPT / Claude conversation without access to the repository.
 A. PROJECT IDENTITY
 -------------------
 App name ............ MImic
-Current version ..... 4.7.0-beta.1  (versionCode 400700034)
+Current version ..... 4.7.0-beta.2  (versionCode 400700035)
 Application ID ...... com.example.mimic  (never change)
 Repository .......... https://github.com/enoluca22-dota2/MImic  (PUBLIC — owner's decision on
                       2026-10-25, because the in-app updater downloads release assets anonymously)
@@ -97,7 +97,7 @@ Diagnostics: Settings → Advanced → Download Diagnostics (full): link-analysi
   resolver log). Shared as TXT through the share sheet.
 
 
-C. FEATURE INVENTORY (status as of 4.7.0-beta.1)
+C. FEATURE INVENTORY (status as of 4.7.0-beta.2)
 --------------------------------------------------
 Statuses: WORKING (verified this or an earlier session) / PARTIAL / BLOCKED / NOT TESTED / PLANNED
 
@@ -111,7 +111,7 @@ Playlists (create/rename/delete/reorder/multi-select) ........ WORKING (earlier 
 Smart Collections (Never/Least played, Forgotten fav, Random). WORKING (earlier sessions)
 Radio (Albania default, + / − countries, playback) ........... WORKING (emulator, after 4.4 update)
 Theme Studio / player layouts / Dynamic Now Playing .......... WORKING (earlier sessions); unchanged
-Floating Aura theme + animated dock (optional, 4.7) ........... WORKING (emulator, 4.7.0-beta.1)
+Floating Aura theme + animated dock (optional, 4.7) ........... WORKING (emulator, 4.7.0-beta.2)
 Online search (YouTube Music + YouTube fallback) ............. WORKING (emulator, Albania IP):
    suggestions, artists, playlists, songs with real metadata/artwork, Load more.
    Albums/songs from the YouTube Music catalogue: region-limited here (see I-1).
@@ -242,6 +242,32 @@ UI: ui/party/ListenTogetherScreen.kt (Settings → Listen Together): name card, 
 Invites: mimic://party/CODE?server=URL (manifest intent filter) and http(s)://<server>/invite/CODE
   (server landing page with "Join the party in MImic"). Docs: docs/LISTEN_TOGETHER.md (LAN,
   Tailscale, optional Tailscale Funnel — not enabled by Claude).
+E00000. CHANGES IN 4.7.0-beta.2 (2026-11-05) — Floating Aura matched to the reference
+-------------------------------------------------------------------------------------
+Reference: C:\Users\Eno\Desktop\MImic-UI-Reference — 1.jpeg / 2.jpeg / 3.jpeg (CODEXURE demo,
+  "Branding" / "Launch" / "Websites" states) and 5.mp4 (720×1280, 30 fps, 10.1 s). Frames were
+  extracted with FFmpeg 9.0.1 (already installed via winget): a 2 fps contact sheet and every
+  frame of the Branding → Security change (5.2–6.3 s), cropped to the dock and to the title.
+Findings vs 4.7.0-beta.1: the bead sits ON the dock's top edge (centre ≈ edge), the skin swells
+  around its lower half with tangent shoulders (beta.1 cut a notch DOWN into the dock); no lift;
+  ~10 frames (≈330 ms) glide with a tiny overshoot; colour and icon cross-fade with the travel;
+  accent-coloured name under the bead only after it settles; wide accent glow under the dock;
+  outlined grey icons; opaque dark dock with a hairline outline; page title blurs out / in.
+  The demo's code panels state the maths: reach = sqrt((r+f)² − f²), fL = f(1+.8v), fR = f(1−.5v).
+Changes:
+  - AuraDock.kt rewritten: skin = rounded dock ∪ socket circle (R 31 dp, bead 26 dp) ∪ two
+    fillet shoulders (radius 12 dp, Path.op; reach = sqrt((R+f)² − (f−e)²)); shoulders lean with
+    Animatable velocity (trailing ×(1+.8|v|), leading ×(1−.5|v|)); skin drawn above the bead's
+    equator only where it shows; faint socket arc inside the dock. Spring damping 0.74 /
+    stiffness 210. Colour = lerp(old accent, new accent, travel progress); old/new bead icons
+    cross-fade by progress. Label in accent colour fades in (200 ms) after settling and is
+    hidden whenever the bead is away (fixed a one-frame flash of the new label). Outlined
+    icons; accents from the reference (#E4531F, #F2B632, #FF6FA8) + violet/emerald/cyan.
+  - MimicApp.kt: AuraAmbience = fixed violet haze at the top + faint accent rising from the
+    dock; AuraPage wraps the six tab roots: blur 14 dp + 8–10 dp drift on exit/enter (API 31+
+    RenderEffect; fade only below; off with motion off or other themes).
+Commit ea29349 (tag v4.7.0-beta.2).
+
 E0000. CHANGES IN 4.7.0-beta.1 (2026-11-05) — Floating Aura theme
 -------------------------------------------------------------------
 Request: an optional theme "Floating Aura" recreating an animated floating navigation (reference
@@ -467,6 +493,34 @@ Environment variable names used in tooling: JAVA_HOME (Android Studio jbr), LOCA
   MIMIC_LIVE_PROBE=1 (opt-in live network probe test), MIMIC_WEBM (tagger probe), MIMIC_MUSIC_DIR
   (Navidrome compose).
 
+
+H0000. TEST RESULTS (2026-11-05, 4.7.0-beta.2)
+---------------------------------------------
+Unit tests ................ PASS — full 301 (3 skipped), standard 183 (1 skipped), 0 failures
+Lint ...................... PASS — lintFullDebug 0 errors; lintFullRelease (release script)
+Release dry run + publish . PASS — com.example.mimic, 4.7.0-beta.2/400700035, certificate
+                            c03c5107…087d (apksigner); all 6 assets downloadable
+Emulator YTD_Test_4K (signed x86_64 build, adb install -r; screenrecord frames compared with the
+  reference frames):
+  Dock shape: bead on the edge, socket ring, tangent shoulders, opaque dock ... PASS
+  Glide: intermediate frames pass the tabs between, colour blends (orange → grey → cyan),
+    icons cross-fade, trailing shoulder stretched, slight overshoot, label after settle ... PASS
+  Page change: Home blurs out, Downloads comes into focus ... PASS
+  Each dock button → Home / Search / Library / Radio / Downloads / Settings ... PASS (6/6)
+  Playback during 12 tab switches: PLAYING throughout ... PASS; 7.2 % janky frames
+    (beta.1 5.6 %, standard bar 19.1 % in the same test — emulator, rough comparison)
+  Restart keeps Floating Aura; animations off → instant ... PASS
+  Switch back to Classic Music Dark + restart → original bar ... PASS
+  Bug found + fixed during testing: the new tab's label flashed for one frame before the bead
+    moved; the dock was 97 % opaque (list text faintly visible) → now opaque.
+  Note: a DEBUG build stalls the first frame ~350 ms while the new screen composes (the bead
+    then jumps); the signed release build animates smoothly — judge motion on release builds.
+Updater (Pixel_10a, 4.7.0-beta.1 → 4.7.0-beta.2) ... PASS — offered (81 MB), "verified (sha256 +
+  package + versionCode + ABI + pinned certificate)", Play Protect → "Install without scanning",
+  400700035, firstInstallTime 2026-10-17 unchanged, Library & Storage identical (5 songs,
+  1 hidden, 3 folders, 132.3 MB offline downloads).
+Download regression: not re-run (downloader code untouched since the 4.7.0-beta.1 PASS).
+NOT TESTED: physical phone; TalkBack walk-through of the dock.
 
 H000. TEST RESULTS (2026-11-05, 4.7.0-beta.1)
 --------------------------------------------
@@ -695,38 +749,38 @@ I-17 (4.6.0-beta.2/3) A Mix is regenerated by YouTube on each request, so the sa
     75–100 songs. By design the preview never reads past position 100.
 I-18 (4.6.0-beta.3) Before the first song appears, yt-dlp needs ~10 s to start and fetch the first
     page ("Reading playlist…"); then the list fills in about 100 songs per page.
-I-19 (4.7.0-beta.1) Floating Aura shows six dock buttons, not the five in the request, because
+I-19 (4.7.0-beta.1/2) Floating Aura shows six dock buttons, not the five in the reference, because
     Radio is a real top-level tab. The dock is always dark (it is designed for the dark Aura
     theme); choosing the "Floating Aura" navigation style on a light theme keeps a dark dock.
 
 
 J. GITHUB AND RELEASE
 ---------------------
-Version name / code ..... 4.7.0-beta.1 / 400700034 (higher than 4.6.0-beta.3 = 400600036)
-Branch / commit ......... main @ f0fb0cb (tag v4.7.0-beta.1); this report is committed afterwards
+Version name / code ..... 4.7.0-beta.2 / 400700035 (higher than 4.7.0-beta.1 = 400700034)
+Branch / commit ......... main @ ea29349 (tag v4.7.0-beta.2); this report is committed afterwards
 Repository status ....... pushed; public (owner's decision; updater reads assets anonymously)
-Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.7.0-beta.1
+Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.7.0-beta.2
                           (pre-release; full universal / arm64-v8a / armeabi-v7a / x86_64,
                           standard, SHA256SUMS.txt). Previous releases kept.
-SHA-256 ................. full-arm64-v8a 8ec795271c302913d353537be9850e0255d7fc82af5345c7b93891bb2f9b1382
-                          full (universal) d018bf9d25966e35c61cc106f6641f40d64475d5be13a54e05b611aaedf11b62
-                          full-armeabi-v7a 22fa569741ee54c23f7f966612b509485fbde934b5bd89c74c1265af1d25d0be
-                          full-x86_64 d83fea1756af717c87713af2c1fe277dc3b360ed65a32c69e160a27313ebbb93
-                          standard 3f733509ab9ae8cfae589ed7ebe05491d15c984e385ff0c516b609cff781defc
+SHA-256 ................. full-arm64-v8a a002cb0e531fa6f47331003f779fe9dbcce052e8ac6d37796bf2ca3298db4676
+                          full (universal) f9095e9098e1e0aa08ce5b8cf3886ab8f7042f03343c87c00800cba88a5112b7
+                          full-armeabi-v7a fcf578b9456b329c331e413f4ab8b2c232c92df0478ee5532ed139d2da429bde
+                          full-x86_64 6b51cdd598d94fed004c8a9ea5ce0cf6f75796000852037b896ef9634a138efb
+                          standard b01d5b324c5086dd72db3abeef9f1250c0d345913c664df89218fc6e7934f3d1
                           (= the published SHA256SUMS.txt)
-Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.7.0-beta.1-signed.apk
+Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.7.0-beta.2-signed.apk
                           (arm64-v8a; hash identical to the GitHub asset) and
-                          MImic-v4.7.0-beta.1-signed-universal.apk (identical too); older kept.
+                          MImic-v4.7.0-beta.2-signed-universal.apk (identical too); older kept.
 Signing compatibility ... PASS — published APKs signed with C0:3C:51:07…4F:88:08:7D (the
                           laptop's ~/.android/debug.keystore, same as all previous releases);
                           no key generated, no secrets committed
-Updater verification .... PASS on emulator Pixel_10a (4.6.0-beta.3 → 4.7.0-beta.1, Beta channel,
-                          data kept; see H000). Physical phone: NOT TESTED.
+Updater verification .... PASS on emulator Pixel_10a (4.7.0-beta.1 → 4.7.0-beta.2, Beta channel,
+                          data kept; see H0000). Physical phone: NOT TESTED.
 
 K. FUTURE DEVELOPMENT
 ---------------------
 Priority next:
-  0. Install 4.7.0-beta.1 on the physical phone via Settings → App Updates (Beta channel); in
+  0. Install 4.7.0-beta.2 on the physical phone via Settings → App Updates (Beta channel); in
      Settings → Theme Studio apply Floating Aura, compare the dock with the reference video, then
      switch back. Also still open from 4.6.0-beta.3: a 200+ song playlist unticked while loading,
      and a Mix shared from the YouTube app.
