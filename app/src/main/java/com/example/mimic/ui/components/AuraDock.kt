@@ -2,7 +2,6 @@ package com.example.mimic.ui.components
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -58,7 +57,6 @@ import com.example.mimic.ui.navigation.TopLevel
 import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.sqrt
-import kotlinx.coroutines.launch
 
 /** One dock destination and the accent light it gives the dock while selected. */
 data class AuraNavItem(val label: String, val icon: ImageVector, val accent: Color)
@@ -107,10 +105,11 @@ private val BeadIcon = Color(0xFF17121C)
 /**
  * The Floating Aura navigation dock (4.7), modelled on the reference video: a dark rounded dock
  * with a hairline outline, and the selected tab as a glowing accent bead on its top edge. On a tab
- * change the bead glides to the new place on a firm spring (a hint of overshoot); the skin's
- * shoulders lean with its speed (the trailing one stretches, the leading one tightens), its colour
- * and icon blend from the old tab to the new one in step with the travel, the wide glow under the
- * dock follows, and the tab's name fades in under the bead once it has settled.
+ * change the bead glides to the new place on a spring that overshoots and swings back, stretching
+ * like a drop of liquid while it moves; the skin's shoulders lean with its speed (the trailing one
+ * stretches, the leading one tightens), its colour and icon blend from the old tab to the new one in
+ * step with the travel, the wide glow under the dock follows, and the tab's name fades in under the
+ * bead as it arrives.
  *
  * Everything that moves is read in the draw / layout phase, so animation frames only redraw the
  * dock — nothing recomposes — and nothing runs while idle. With motion off (theme switch or
@@ -131,19 +130,17 @@ fun AuraDock(
 
     val position = remember { Animatable(selected.toFloat()) }
     val from = remember { mutableIntStateOf(selected) }
-    val label = remember { Animatable(1f) }
     LaunchedEffect(selected, motion) {
         if (!motion || position.value == selected.toFloat()) {
             from.intValue = selected
             position.snapTo(selected.toFloat())
-            label.snapTo(1f)
             return@LaunchedEffect
         }
         from.intValue = position.value.roundToInt().coerceIn(0, items.lastIndex)
-        label.snapTo(0f)
-        position.animateTo(selected.toFloat(), spring(dampingRatio = 0.74f, stiffness = 210f * speed))
+        // Measured from the reference: the swing peaks ~0.3 s after the tap whatever the distance,
+        // and a long jump overshoots visibly (≈ damping 0.6) before settling.
+        position.animateTo(selected.toFloat(), spring(dampingRatio = 0.6f, stiffness = 170f * speed))
         from.intValue = selected
-        launch { label.animateTo(1f, tween((200 / speed).toInt())) }
     }
 
     /** 0 at the old tab → 1 at the new one; drives the colour and icon blend. */
@@ -153,6 +150,17 @@ fun AuraDock(
         return ((position.value - a) / (selected - a)).coerceIn(0f, 1f)
     }
     fun accentNow(): Color = lerp(items[from.intValue].accent, items[selected].accent, progress())
+
+    /** Where the bead is drawn: overshoot past the first / last tab is halved so it stays on screen. */
+    fun beadAt(): Float {
+        val p = position.value
+        val last = items.lastIndex.toFloat()
+        return when {
+            p < 0f -> p * 0.5f
+            p > last -> last + (p - last) * 0.5f
+            else -> p
+        }
+    }
 
     BoxWithConstraints(
         modifier
@@ -166,7 +174,7 @@ fun AuraDock(
         Canvas(Modifier.fillMaxWidth().fillMaxHeight()) {
             val c = accentNow()
             val itemW = size.width / count
-            val cx = itemW * (position.value + 0.5f)
+            val cx = itemW * (beadAt() + 0.5f)
             val top = RISE.dp.toPx()
             val bottom = size.height
             val by = top - BEAD_ABOVE_EDGE.dp.toPx()
@@ -219,12 +227,24 @@ fun AuraDock(
                 radius = r * 1.9f,
                 center = glowB,
             )
-            drawCircle(
-                Brush.radialGradient(listOf(lerp(c, Color.White, 0.22f), c, lerp(c, Color.Black, 0.12f)), center = Offset(cx, by - r * 0.45f), radius = r * 1.6f),
-                radius = r,
-                center = Offset(cx, by),
+            // Liquid squash & stretch: the bead widens and flattens with its speed (≈1.25 × 0.9 at
+            // the peak of a long jump in the reference), and is round again when it stops.
+            val s = (abs(position.velocity) / 20f).coerceIn(0f, 1f)
+            val rx = r * (1f + 0.26f * s)
+            val ry = r * (1f - 0.12f * s)
+            val bead = androidx.compose.ui.geometry.Rect(cx - rx, by - ry, cx + rx, by + ry)
+            drawOval(
+                Brush.radialGradient(listOf(lerp(c, Color.White, 0.22f), c, lerp(c, Color.Black, 0.12f)), center = Offset(cx, by - ry * 0.45f), radius = rx * 1.6f),
+                topLeft = bead.topLeft,
+                size = bead.size,
             )
-            drawCircle(Color.White.copy(alpha = 0.22f), radius = r - 0.5.dp.toPx(), center = Offset(cx, by), style = Stroke(1.dp.toPx()))
+            val rim = 0.5.dp.toPx()
+            drawOval(
+                Color.White.copy(alpha = 0.22f),
+                topLeft = Offset(bead.left + rim, bead.top + rim),
+                size = androidx.compose.ui.geometry.Size(bead.width - 2 * rim, bead.height - 2 * rim),
+                style = Stroke(1.dp.toPx()),
+            )
         }
 
         // Resting icons: each fades as the bead passes over its place and returns once it has gone.
@@ -256,7 +276,7 @@ fun AuraDock(
                             .padding(top = (RISE + (DOCK_HEIGHT - ICON_SIZE) / 2f).dp)
                             .size(ICON_SIZE.dp)
                             .graphicsLayer {
-                                val near = (1f - abs(position.value - index) * 1.6f).coerceIn(0f, 1f)
+                                val near = (1f - abs(beadAt() - index) * 1.6f).coerceIn(0f, 1f)
                                 alpha = 0.85f * (1f - near)
                             },
                     )
@@ -266,7 +286,7 @@ fun AuraDock(
 
         // The bead's icon: the old one fades out as the new one fades in, in step with the travel.
         val beadOffset = Modifier.offset {
-            val cx = itemWidth.toPx() * (position.value + 0.5f)
+            val cx = itemWidth.toPx() * (beadAt() + 0.5f)
             val cy = (RISE - BEAD_ABOVE_EDGE).dp.toPx()
             val half = 11.dp.toPx()
             IntOffset((cx - half).roundToInt(), (cy - half).roundToInt())
@@ -302,9 +322,9 @@ fun AuraDock(
                     IntOffset((cx - labelWidth.toPx() / 2).roundToInt(), (RISE + DOCK_HEIGHT - 22f).dp.roundToPx())
                 }
                 .width(labelWidth)
-                // Hidden while the bead is away (also on the first frame after a tap, before the
-                // effect has reset the fade).
-                .graphicsLayer { alpha = if (abs(position.value - selected) > 0.02f) 0f else label.value },
+                // Fades in as the bead closes in on its tab (already during the final settle, as in
+                // the reference) and is hidden while it is away.
+                .graphicsLayer { alpha = ((0.3f - abs(position.value - selected)) / 0.3f).coerceIn(0f, 1f) },
         )
     }
 }

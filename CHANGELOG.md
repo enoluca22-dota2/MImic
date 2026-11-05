@@ -1,5 +1,15 @@
 # Changelog
 
+## 4.7.0-beta.3
+Floating Aura motion tuned frame by frame against the reference video.
+
+- **Liquid bead.** The bead stretches wide and flattens while it travels (most on long jumps)
+  and is round again when it stops.
+- **Springier glide.** The bead now swings slightly past its tab and back, like the reference —
+  clearly on a long jump (Settings → Home), barely on a one-tab move.
+- **Name arrives with the bead.** The tab's name fades in as the bead reaches its tab, during the
+  last settle, instead of after it has stopped.
+
 ## 4.7.0-beta.2
 Floating Aura rebuilt from the reference video and screenshots — it now matches the original
 design much more closely. Still optional; nothing changes unless you pick the theme.
