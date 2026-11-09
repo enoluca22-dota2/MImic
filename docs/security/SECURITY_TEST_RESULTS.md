@@ -16,7 +16,7 @@ Only tests that actually ran are marked PASS. Nothing here was run on a physical
 | Security gate — merged release manifests (full + standard) | **PASS** — no debuggable/testOnly, network config present, only reviewed exported components |
 | Security gate — APK signers | **PASS** — every APK signed only by C03C5107…4F88087D, package `com.example.mimic`, not debuggable |
 | CycloneDX SBOM | generated (`build/security/sbom.cdx.json`) |
-| GitHub workflows `security.yml`, `codeql.yml` | NOT VERIFIED yet — they first run when pushed (results under Actions / Security) |
+| GitHub workflows on `main` @ b55236f: Security, CI, CodeQL | **PASS** — all three succeeded; CodeQL raised 16 alerts, triaged in SECURITY_REPORT.md |
 
 ## Emulator (YTD_Test_4K, reported as emulator-5554; signed release x86_64 APK)
 

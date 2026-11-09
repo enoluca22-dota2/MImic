@@ -82,6 +82,9 @@ class PoTokenWebView private constructor(
         webViewSettings.javaScriptEnabled = true
         webViewSettings.userAgentString = USER_AGENT
         webViewSettings.blockNetworkLoads = true // the WebView does not need internet access
+        // Its page is loaded from a string (https base URL); it never needs files or content URIs.
+        webViewSettings.allowFileAccess = false
+        webViewSettings.allowContentAccess = false
 
         // so that we can run async functions and get back the result
         webView.addJavascriptInterface(this, JS_INTERFACE)

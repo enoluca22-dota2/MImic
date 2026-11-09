@@ -47,6 +47,24 @@ secrets never committed, secret scanning + push protection, branch protection.
   account plan); provider secret scanning and push protection are on.
 - **R8/minification** stays off (control 17, not a security control for open-source code).
 
+## GitHub workflows after publishing (commit b55236f)
+
+Security (Gitleaks full history, OSV, manifest/release policy, security tests), CI and CodeQL:
+all **success**. Dependabot opened 6 update PRs (#1–#6); none merged (your review).
+
+CodeQL's first scan (security-extended) raised 16 alerts. Triage — none changes the control
+statuses above; they stay open on GitHub for your review (dismiss with the reasons below):
+
+| CodeQL alert | Where | Triage |
+|---|---|---|
+| Critical — arbitrary APK installation | `UpdateManager.kt` install session | Intended: the in-app updater. Only an APK that passed the pinned-certificate, installed-signer, package and newer-version checks is handed to Android, which asks the user (controls 32–34). |
+| High — backup enabled | `AndroidManifest.xml` | Intended; sign-ins are excluded by the new backup rules (control 14). |
+| High — cleartext storage in SharedPreferences | `AuthStore.kt` | Values go to EncryptedSharedPreferences; plain prefs only on the documented fallback when the Keystore is unusable (OEM bug), and that file is now excluded from backups. Accepted. |
+| High — weak hash (MD5 / SHA-1) | `SubsonicAuth.kt`, `Innertube.kt` | Required by the protocols (Subsonic token = md5(password+salt); Google's SAPISIDHASH = SHA-1). Not used for MImic's own security. Accepted. |
+| High — JavaScript enabled / JavaScript interface | `PoTokenWebView.kt`, `YtMusicLoginScreen.kt` | Required (Google sign-in; YouTube BotGuard). PoToken WebView is offline (`blockNetworkLoads`); the sign-in WebView has no JavaScript interface. Accepted. |
+| Medium — content access allowed | `PoTokenWebView.kt`, `YtMusicLoginScreen.kt` | Fixed: file + content access off in both WebViews (sign-in in 4.7.0-beta.4; PoToken committed for the next release). |
+| Medium — missing certificate pinning | `UpdateManager`, `SubsonicClient`, `RadioRepository` | Deliberate: pinning would break self-hosted Navidrome and radio; update authenticity comes from the pinned APK signing certificate. |
+
 ## What could not be verified
 Navidrome sign-in/streaming/reconnection on the emulator (no local test credentials; Docker off),
 downloads and offline playback on the emulator (emulator stopped by the OS for low memory), fresh

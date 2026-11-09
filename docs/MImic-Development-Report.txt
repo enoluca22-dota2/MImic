@@ -1,8 +1,8 @@
 MIMIC — COMPLETE DEVELOPMENT REPORT
 ===================================
-Last updated: 2026-11-05 session 3 (4.7.0-beta.3 — Floating Aura motion tuned frame by frame
-              against the reference video)
-Previous: 2026-11-05 session 2 (4.7.0-beta.2 — Floating Aura rebuilt from the reference); session 1 (4.7.0-beta.1 — first Floating Aura, built from text only); 2026-11-02 session 3 (4.6.0-beta.3 — automatic playlist loading); session 2 (4.6.0-beta.2 — Mix preview); session 1 (4.6.0-beta.1 — playlist downloads with per-song selection +
+Last updated: 2026-11-09 (4.7.0-beta.4 — security hardening: 40-control audit, backup/network
+              policy, release security gate, GitHub scanning; see docs/security/)
+Previous: 2026-11-05 session 3 (4.7.0-beta.3 — Floating Aura motion from the video); session 2 (4.7.0-beta.2 — Floating Aura rebuilt from the reference); session 1 (4.7.0-beta.1 — first Floating Aura, built from text only); 2026-11-02 session 3 (4.6.0-beta.3 — automatic playlist loading); session 2 (4.6.0-beta.2 — Mix preview); session 1 (4.6.0-beta.1 — playlist downloads with per-song selection +
               compact mini player, recovered from the second PC's APK); 2026-10-26 (Listen Together + automatic lyrics + icons, 4.5.0-beta.1 … beta.4)
 Keep this file current after every session. Plain text, written so it can be pasted into a
 new ChatGPT / Claude conversation without access to the repository.
@@ -11,7 +11,7 @@ new ChatGPT / Claude conversation without access to the repository.
 A. PROJECT IDENTITY
 -------------------
 App name ............ MImic
-Current version ..... 4.7.0-beta.3  (versionCode 400700036)
+Current version ..... 4.7.0-beta.4  (versionCode 400700037)
 Application ID ...... com.example.mimic  (never change)
 Repository .......... https://github.com/enoluca22-dota2/MImic  (PUBLIC — owner's decision on
                       2026-10-25, because the in-app updater downloads release assets anonymously)
@@ -97,7 +97,7 @@ Diagnostics: Settings → Advanced → Download Diagnostics (full): link-analysi
   resolver log). Shared as TXT through the share sheet.
 
 
-C. FEATURE INVENTORY (status as of 4.7.0-beta.3)
+C. FEATURE INVENTORY (status as of 4.7.0-beta.4)
 --------------------------------------------------
 Statuses: WORKING (verified this or an earlier session) / PARTIAL / BLOCKED / NOT TESTED / PLANNED
 
@@ -112,6 +112,8 @@ Smart Collections (Never/Least played, Forgotten fav, Random). WORKING (earlier 
 Radio (Albania default, + / − countries, playback) ........... WORKING (emulator, after 4.4 update)
 Theme Studio / player layouts / Dynamic Now Playing .......... WORKING (earlier sessions); unchanged
 Floating Aura theme + animated dock (optional, 4.7) ........... WORKING (emulator, 4.7.0-beta.3)
+Security gate + GitHub scanning (4.7.0-beta.4) ................ WORKING (local gate PASS; workflows
+                                                                Security, CI and CodeQL workflows PASS on b55236f)
 Online search (YouTube Music + YouTube fallback) ............. WORKING (emulator, Albania IP):
    suggestions, artists, playlists, songs with real metadata/artwork, Load more.
    Albums/songs from the YouTube Music catalogue: region-limited here (see I-1).
@@ -242,6 +244,27 @@ UI: ui/party/ListenTogetherScreen.kt (Settings → Listen Together): name card, 
 Invites: mimic://party/CODE?server=URL (manifest intent filter) and http(s)://<server>/invite/CODE
   (server landing page with "Join the party in MImic"). Docs: docs/LISTEN_TOGETHER.md (LAN,
   Tailscale, optional Tailscale Funnel — not enabled by Claude).
+E0000000. CHANGES IN 4.7.0-beta.4 (2026-11-09) — security hardening
+-------------------------------------------------------------------
+Full audit, evidence and decisions: docs/security/ (SECURITY_BASELINE, _CHECKLIST (40 controls),
+_REPORT, _CHANGELOG, _TEST_RESULTS, _RELEASE_READINESS, SECRET_ROTATION, controls.json).
+Controls: baseline 33 PASS / 6 FAIL / 1 N/A → now 36 PASS / 3 FAIL / 1 N/A (open, owner decision:
+#6 tailnet details remain in old public commits, #16 yt-dlp self-update unsigned, #37 23 reviewed
+advisories inside youtubedl-android that need minSdk 26 to fix).
+App: backup_rules / data_extraction_rules exclude sign-ins (Navidrome store, bitchord_auth*,
+  app_webview/, party token); network_security_config replaces usesCleartextTraffic (HTTP kept for
+  home servers + radio; GitHub/googleapis/accounts.google/YouTube Music/LRCLIB HTTPS-only; system
+  CAs only); updater size cap + UpdateVerification (identity checks, unit-tested);
+  DownloadRepository.safeFileName; sign-in WebView file/content access off; jsoup 1.23.2, Guava
+  33.7.2-android, protobuf-javalite 3.25.8, Jackson 2.13.5 (constraints in app/build.gradle.kts).
+Project: SecurityRegressionTest; scripts/security (security_gate.sh run by release.sh before
+  publishing: Gitleaks + OSV + SBOM + merged-manifest policy + APK signers; osv-allowlist.txt;
+  check_manifest.py; dashboard.py); .gitleaks.toml; workflows security.yml + codeql.yml +
+  dependabot.yml; ci.yml actions pinned to SHAs. GitHub settings: Dependabot alerts + security
+  updates + private vulnerability reporting enabled. Tools installed (winget, official): Gitleaks
+  8.30.1, OSV-Scanner 2.7.0. docs/REMOTE_ACCESS.md: tailnet name/host/IP replaced by placeholders.
+Commits fa2f7d5 + b55236f (tag v4.7.0-beta.4).
+
 E000000. CHANGES IN 4.7.0-beta.3 (2026-11-05) — Floating Aura motion from the video
 ------------------------------------------------------------------------------------
 Method: every frame of 5.mp4 cropped to the dock and differenced; the five tab changes are at
@@ -510,6 +533,21 @@ Environment variable names used in tooling: JAVA_HOME (Android Studio jbr), LOCA
   MIMIC_LIVE_PROBE=1 (opt-in live network probe test), MIMIC_WEBM (tagger probe), MIMIC_MUSIC_DIR
   (Navidrome compose).
 
+
+H000000. TEST RESULTS (2026-11-09, 4.7.0-beta.4) — details: docs/security/SECURITY_TEST_RESULTS.md
+--------------------------------------------------
+Unit tests ................ PASS — full 315 (3 skipped), standard 197 (1 skipped), 0 failures
+                            (incl. SecurityRegressionTest 14/14 per edition)
+Lint ...................... PASS — 0 errors
+Release dry run + publish . PASS — incl. security gate (secrets, OSV 0 blocking, manifests, signers)
+Emulator YTD_Test_4K (emulator-5554, dry-run x86_64 APK): upgrade over beta.3 keeping data, launch,
+  playback, background playback, notification, media-button pause/play, theme switch + restart,
+  HTTPS update check, tampered APK refused (v2 digest), downgrade refused, hostile links (no
+  crash), private providers/service/receiver unreachable ... PASS.
+NOT TESTED / BLOCKED: search, downloads, offline playback (emulator stopped by the OS for low
+  memory); Navidrome sign-in/streaming/reconnect (no local test credentials, Docker off); fresh
+  install; differently-signed APK on a device (unit-tested only); in-app update beta.3 → beta.4 on
+  an emulator after publishing; physical phones.
 
 H00000. TEST RESULTS (2026-11-05, 4.7.0-beta.3)
 ----------------------------------------------
@@ -789,33 +827,38 @@ I-19 (4.7.0-beta.1/2) Floating Aura shows six dock buttons, not the five in the 
 
 J. GITHUB AND RELEASE
 ---------------------
-Version name / code ..... 4.7.0-beta.3 / 400700036 (higher than 4.7.0-beta.2 = 400700035)
-Branch / commit ......... main @ 4954621 (tag v4.7.0-beta.3); this report is committed afterwards
+Version name / code ..... 4.7.0-beta.4 / 400700037 (higher than 4.7.0-beta.3 = 400700036)
+Branch / commit ......... main @ b55236f (tag v4.7.0-beta.4; branch security/hardening, checkpoint
+                          tag checkpoint/pre-security-hardening = ff8a2c4); this report afterwards
 Repository status ....... pushed; public (owner's decision; updater reads assets anonymously)
-Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.7.0-beta.3
+Release ................. https://github.com/enoluca22-dota2/MImic/releases/tag/v4.7.0-beta.4
                           (pre-release; full universal / arm64-v8a / armeabi-v7a / x86_64,
-                          standard, SHA256SUMS.txt). Previous releases kept.
-SHA-256 ................. full-arm64-v8a 3fd789c46221af055c9914346fd214256151ebeedf9df27ff2f1a609bfefadbf
-                          full (universal) a168de7c356633247c44f65c4949c6a38357a2048a6b140e738828d977594d37
-                          full-armeabi-v7a 4ac9f8da72c4211f213529df923bb3bd2015d717e33472ee198794e32298e0cc
-                          full-x86_64 fd23d1669ca26d1b9cde0633b10da878f992ef92c69b47f8986e2041a3fb77fd
-                          standard fcc997f0862672cf5f7be825e33e176eb9532b329ae3719da5e3f93d2ac6a5dd
+                          standard, SHA256SUMS.txt, CycloneDX SBOM). Previous releases kept.
+SHA-256 ................. full-arm64-v8a 6cc8ec1e70fe38f6daece7dd2a13e4b383da3880049c6c34f3942c4f05bb9270
+                          full (universal) beea1e2468bd25ee01a651f24655f5b641bc1822dd2bfe4cda9add668c534884
+                          full-armeabi-v7a 38fb0c2c402cb8fdce69344b32ffdc099a73888e4d874fc0dbcc17929a400e3f
+                          full-x86_64 4fba6b3fe59cc45bf0a6332af1ca2b73bfd206e6d19c88b6cbec044a101325b3
+                          standard 24dfb0ae191d97ec8314a66a52f4432c03d601348314af6cec27922daaa9a0d0
                           (= the published SHA256SUMS.txt)
-Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.7.0-beta.3-signed.apk
-                          (arm64-v8a; hash identical to the GitHub asset) and
-                          MImic-v4.7.0-beta.3-signed-universal.apk (identical too); older kept.
-Signing compatibility ... PASS — published APKs signed with C0:3C:51:07…4F:88:08:7D (the
-                          laptop's ~/.android/debug.keystore, same as all previous releases);
-                          no key generated, no secrets committed
-Updater verification .... PASS on emulator Pixel_10a (4.7.0-beta.2 → 4.7.0-beta.3, Beta channel,
-                          data kept; see H00000). Physical phone: NOT TESTED.
+Desktop APK ............. C:\Users\Eno\Desktop\MImic-Releases\MImic-v4.7.0-beta.4-signed.apk
+                          (arm64-v8a) and MImic-v4.7.0-beta.4-signed-universal.apk; both hashes
+                          identical to the GitHub assets; older kept.
+Signing compatibility ... PASS — c03c5107…4f88087d (same key as every release; no key generated,
+                          no secrets committed); package com.example.mimic
+Updater verification .... NOT TESTED after publishing (no emulator running: stopped by the OS for
+                          low memory). beta.3 → beta.4 uses the installed beta.3 updater, which
+                          is unchanged and PASSed on three earlier releases.
+Dependabot .............. opened 6 PRs right after enabling (#1–#6: Actions major bumps, androidx
+                          group) — NOT merged; owner to review.
 
 K. FUTURE DEVELOPMENT
 ---------------------
 Priority next:
-  0. Install 4.7.0-beta.3 on the physical phone via Settings → App Updates (Beta channel); in
-     Settings → Theme Studio apply Floating Aura, compare the dock with the reference video, then
-     switch back. Also still open from 4.6.0-beta.3: a 200+ song playlist unticked while loading,
+  0. Install 4.7.0-beta.4 on the physical phone via Settings → App Updates (Beta channel); check
+     playback, Navidrome, a download and Theme Studio (Floating Aura vs the reference video).
+     Security decisions waiting (docs/security/SECURITY_REPORT.md): old commits with tailnet
+     details, yt-dlp self-update, minSdk 26 for the last library fixes, Gradle dependency
+     verification, Dependabot PRs #1–#6. Also still open from 4.6.0-beta.3: a 200+ song playlist unticked while loading,
      and a Mix shared from the YouTube app.
   1. Listen Together on real phones: run the party server, give friends the Tailscale address (or
      decide on Tailscale Funnel), test over Wi-Fi + mobile data, kick / host-only on device,
