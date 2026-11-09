@@ -85,6 +85,7 @@ echo "Install: update from Settings → App Updates in MImic, or download the AP
 
 step "Security gate (secrets, dependencies, manifests, APK signers)"
 scripts/security/security_gate.sh || die "security gate failed — see build/security/ (nothing was published)"
+cp build/security/sbom.cdx.json "dist/MImic-$TAG-sbom.cdx.json"
 
 if ! $PUBLISH; then
   echo; echo "Dry run complete — dist/ is ready. Re-run with --publish to create $TAG on GitHub."
@@ -95,7 +96,7 @@ step "Publish $TAG"
 git tag -a "$TAG" -m "MImic $TAG"
 git push origin HEAD "$TAG"
 FLAGS=(); $PRERELEASE && FLAGS+=(--prerelease)
-gh release create "$TAG" dist/*.apk dist/SHA256SUMS.txt --title "MImic $TAG" --notes-file dist/NOTES.md --verify-tag "${FLAGS[@]}"
+gh release create "$TAG" dist/*.apk dist/SHA256SUMS.txt dist/*.cdx.json --title "MImic $TAG" --notes-file dist/NOTES.md --verify-tag "${FLAGS[@]}"
 
 step "Verify the published release"
 REPO=$(gh repo view --json nameWithOwner -q .nameWithOwner)
