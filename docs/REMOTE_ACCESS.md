@@ -5,28 +5,31 @@ just a different address — no app change needed. **Never expose Navidrome dire
 internet.** This project uses Tailscale (private, WireGuard-encrypted mesh), not port forwarding.
 
 ## Current status (MImic 2.8, verified 2026-10-17)
-- **Tailscale**: installed (v1.104.1), service running, this laptop signed in as node **`eno`**
-  (tailnet `tailee647d.ts.net`, account `enoluca22@`). MagicDNS name: **`eno.tailee647d.ts.net`**.
+  (This public document uses placeholders: `<pc>` = the laptop's Tailscale machine name,
+  `<tailnet>` = the tailnet's MagicDNS suffix, `100.x.y.z` = its Tailscale IP. The real values are
+  in the Tailscale admin console and are not published here.)
+- **Tailscale**: installed (v1.104.1), service running, this laptop signed in as node **`<pc>`**.
+  MagicDNS name: **`<pc>.<tailnet>.ts.net`**.
 - ✅ **Direct tailnet access WORKS**: from any device on the tailnet,
-  **`http://eno.tailee647d.ts.net:4533`** (or `http://100.64.255.5:4533`) reaches Navidrome
+  **`http://<pc>.<tailnet>.ts.net:4533`** (or `http://100.x.y.z:4533`) reaches Navidrome
   — verified: `/app/` → HTTP 200, API returns `type=navidrome 0.64.2`. Transport is
   WireGuard-encrypted and restricted to your authorized devices. No public ports. No Funnel.
-- ⏳ **Serve HTTPS (TLS hostname `https://eno.tailee647d.ts.net`) is PENDING**: provisioning a
+- ⏳ **Serve HTTPS (TLS hostname `https://<pc>.<tailnet>.ts.net`) is PENDING**: provisioning a
   cert fails with *"your Tailscale account does not support getting TLS certs"* — **HTTPS
   Certificates must be enabled in the admin console** (see below). Once enabled, run
-  `tailscale serve --bg 4533` and the URL becomes `https://eno.tailee647d.ts.net` (no `:4533`).
+  `tailscale serve --bg 4533` and the URL becomes `https://<pc>.<tailnet>.ts.net` (no `:4533`).
 
 ## Enable Serve HTTPS (one-time, admin console)
 1. Open https://login.tailscale.com/admin/dns
 2. Ensure **MagicDNS** is on (it is), then under **HTTPS Certificates** click **Enable HTTPS**.
 3. Back on the laptop: `& "C:\Program Files\Tailscale\tailscale.exe" serve --bg 4533`
-4. `tailscale serve status` should list `https://eno.tailee647d.ts.net` → `http://127.0.0.1:4533`.
+4. `tailscale serve status` should list `https://<pc>.<tailnet>.ts.net` → `http://127.0.0.1:4533`.
    Use that HTTPS URL in MImic → Account. (Serve config persists across reboots.)
 
 ## Use it in MImic
 - **At home (same Wi-Fi):** `http://<laptop-LAN-IP>:4533`
-- **Anywhere, now (tailnet):** `http://eno.tailee647d.ts.net:4533` (both devices on the tailnet)
-- **Anywhere, after HTTPS enabled:** `https://eno.tailee647d.ts.net`
+- **Anywhere, now (tailnet):** `http://<pc>.<tailnet>.ts.net:4533` (both devices on the tailnet)
+- **Anywhere, after HTTPS enabled:** `https://<pc>.<tailnet>.ts.net`
 Local on-device music always plays without any account/server.
 
 ## Reliable startup after a Windows reboot

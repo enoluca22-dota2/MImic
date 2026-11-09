@@ -38,3 +38,7 @@ cloud.properties
 # Firebase project values for the MImic account (4.4) — per-user, see docs/ACCOUNT_SETUP.md
 firebase.properties
 google-services.json
+
+# Other private key / certificate containers — never commit
+*.p12
+*.pfx

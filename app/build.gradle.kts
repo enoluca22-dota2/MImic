@@ -38,7 +38,7 @@ android {
         // ── App version: change ONLY versionName for a release (see docs/RELEASING.md). versionCode
         // is derived from it (4.1.2 → 400_100_299; betas get their own lower codes), so every
         // release is higher than the last and installs over it. 3.3 was versionCode 19.
-        versionName = "4.7.0-beta.3"
+        versionName = "4.7.0-beta.4"
         versionCode = versionCodeFor(versionName!!)
 
         // In-app updater: the public repository whose GitHub Releases MImic trusts (docs/RELEASING.md).
@@ -202,7 +202,7 @@ dependencies {
     // NewPipeExtractor v0.26.3 minus its Utils class (a patched copy lives in src/full, as in BitChord).
     "fullImplementation"(files(newPipeExtractorStripped))
     "fullImplementation"("com.github.TeamNewPipe:nanojson:e9d656ddb49a412a5a0a5d5ef20ca7ef09549996")
-    "fullImplementation"("org.jsoup:jsoup:1.22.2")
+    "fullImplementation"("org.jsoup:jsoup:1.23.2")
     "fullImplementation"("com.google.code.findbugs:jsr305:3.0.2")
     "fullImplementation"("com.google.protobuf:protobuf-javalite:4.35.0")
     "fullImplementation"("org.mozilla:rhino:1.8.1")
@@ -224,6 +224,17 @@ dependencies {
     implementation(libs.kyant.shapes)
     implementation(libs.material.color.utilities)
     implementation(libs.colorpicker.compose)
+    // Security floors for transitive libraries with published advisories (scripts/security/osv_gradle.py;
+    // reviewed leftovers in scripts/security/osv-allowlist.txt). Constraints only raise a version.
+    constraints {
+        implementation("com.google.guava:guava:33.7.2-android") { because("GHSA-xxph-c9ww-hj94") }
+        implementation("com.google.protobuf:protobuf-javalite:3.25.8") { because("GHSA-735f-pc8j-v9w8 (standard edition; full pins 4.x)") }
+        // youtubedl-android 0.18.1 bundles Jackson 2.11.1; 2.13.5 is the newest line that still supports
+        // Android 7 (Jackson 2.14+ needs API 26) and fixes the 2021–2022 databind advisories.
+        "fullImplementation"("com.fasterxml.jackson.core:jackson-databind:2.13.5") { because("GHSA-57j2-w4cx-62h2, GHSA-jjjh-jjxp-wpff, GHSA-rgv9-q543-rqg4, GHSA-3x8x-79m2-3w2w") }
+        "fullImplementation"("com.fasterxml.jackson.core:jackson-core:2.13.5") { because("matches jackson-databind") }
+        "fullImplementation"("com.fasterxml.jackson.core:jackson-annotations:2.13.5") { because("matches jackson-databind") }
+    }
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.json.test) // real org.json for JVM tests (android.jar only has stubs)

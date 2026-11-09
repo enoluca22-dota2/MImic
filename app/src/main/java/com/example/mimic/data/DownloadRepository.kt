@@ -164,8 +164,25 @@ class DownloadRepository(private val context: Context, private val dao: Download
         fileMissing = fileMissing,
     )
 
-    private fun safeName(s: String) = s.replace(Regex("[^A-Za-z0-9._-]"), "_")
+    private fun safeName(s: String) = safeFileName(s)
 
-    private fun sha(s: String) = java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray())
-        .joinToString("") { "%02x".format(it) }
+    private fun sha(s: String) = Companion.sha(s)
+
+    companion object {
+        /**
+         * A file name for a server-supplied id/suffix inside the downloads folder: only
+         * [A-Za-z0-9._-] (so never a path separator), never ".", ".." or a hidden name, and short
+         * enough for any filesystem. Ordinary Navidrome ids map to themselves, so existing
+         * downloads keep their names.
+         */
+        internal fun safeFileName(s: String): String {
+            var name = s.replace(Regex("[^A-Za-z0-9._-]"), "_")
+            if (name.isEmpty() || name.startsWith(".")) name = "_$name"
+            if (name.length > 120) name = name.take(80) + "_" + sha(s).take(16)
+            return name
+        }
+
+        private fun sha(s: String) = java.security.MessageDigest.getInstance("SHA-256").digest(s.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+    }
 }

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+   Plain HTTP stays allowed in general: home Navidrome servers (http://192.168.x.x:4533, Tailscale
+   http://100.x.x.x / *.ts.net) and many internet radio streams only speak HTTP. The services below
+   are always HTTPS, so HTTP to them is refused outright — the updater, sign-in, sync and lyrics can
+   never be downgraded. Only the system's certificate authorities are trusted (no user-added CAs,
+   no pinning, so self-hosted servers with normal certificates keep working).
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="false">github.com</domain>
+        <domain includeSubdomains="false">api.github.com</domain>
+        <domain includeSubdomains="true">githubusercontent.com</domain>
+        <domain includeSubdomains="true">googleapis.com</domain>
+        <domain includeSubdomains="false">accounts.google.com</domain>
+        <domain includeSubdomains="false">music.youtube.com</domain>
+        <domain includeSubdomains="false">www.youtube.com</domain>
+        <domain includeSubdomains="false">lrclib.net</domain>
+    </domain-config>
+</network-security-config>

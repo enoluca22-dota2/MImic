@@ -83,6 +83,9 @@ awk -v v="## $VERSION" 'index($0, v)==1 {on=1; next} /^## / && on {exit} on' CHA
 echo >> dist/NOTES.md
 echo "Install: update from Settings → App Updates in MImic, or download the APK for your phone (arm64-v8a for almost every phone; the plain -full.apk works everywhere). Verify with SHA256SUMS.txt." >> dist/NOTES.md
 
+step "Security gate (secrets, dependencies, manifests, APK signers)"
+scripts/security/security_gate.sh || die "security gate failed — see build/security/ (nothing was published)"
+
 if ! $PUBLISH; then
   echo; echo "Dry run complete — dist/ is ready. Re-run with --publish to create $TAG on GitHub."
   exit 0

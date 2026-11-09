@@ -1,0 +1,15 @@
+# Gitleaks configuration for MImic: the default rules plus reviewed false positives.
+# Run locally:  gitleaks git . --redact --config .gitleaks.toml      (history)
+#               gitleaks dir . --redact --config .gitleaks.toml      (working tree)
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "YouTube's public web-client API key and BotGuard request key, embedded in YouTube's own web player and in upstream NewPipe/BitChord. Public identifiers, not credentials (reviewed 2026-11-09)."
+paths = ['''app/src/full/java/com/example/mimic/online/data/innertube/potoken/PoTokenWebView\.kt''']
+regexTarget = "line"
+regexes = ['''GOOGLE_API_KEY = "''', '''REQUEST_KEY = "''']
+
+[[allowlists]]
+description = "Build outputs, release artifacts and local tool state are never committed."
+paths = ['''(^|/)build/''', '''^dist/''', '''^\.gradle/''', '''^\.idea/''', '''^\.claude/''', '''^server/navidrome-data/''', '''^local\.properties$''', '''^keystore\.properties$''']

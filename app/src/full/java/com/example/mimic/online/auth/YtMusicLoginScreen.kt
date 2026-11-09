@@ -106,6 +106,9 @@ fun YtMusicLoginScreen(
                 }
                 settings.javaScriptEnabled = true
                 settings.domStorageEnabled = true
+                // A Google sign-in page never needs the phone's files or other apps' content.
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
                 configureWebView(this)
 
                 webViewClient = object : WebViewClient() {

@@ -228,6 +228,11 @@ class UpdateManager(
             }
             val body = resp.body ?: throw IOException("empty response")
             val total = body.contentLength().takeIf { it > 0 } ?: expectedSize
+            // The release JSON states the size; a body that is larger (or claims to be) is not that asset.
+            val limit = minOf(expectedSize ?: MAX_APK_BYTES, MAX_APK_BYTES)
+            if (total != null && total > limit) {
+                throw UpdateProblem("${release.apk.name} is larger than expected (${total / 1_048_576} MB). It was not downloaded.")
+            }
             var downloaded = 0L
             var lastEmit = 0L
             _state.value = State.Downloading(release, 0, total)
@@ -238,8 +243,9 @@ class UpdateManager(
                         coroutineContext.ensureActive()
                         val read = input.read(buffer)
                         if (read < 0) break
-                        output.write(buffer, 0, read)
                         downloaded += read
+                        if (downloaded > limit) throw UpdateProblem("${release.apk.name} is larger than expected. It was not downloaded.")
+                        output.write(buffer, 0, read)
                         val now = System.currentTimeMillis()
                         if (now - lastEmit >= 200) {
                             lastEmit = now
@@ -284,19 +290,18 @@ class UpdateManager(
         val archive = pm.getPackageArchiveInfo(apk.path, flags)
             ?: throw VerificationFailed("APK could not be parsed", "Android can't read the downloaded APK. Try again.", "getPackageArchiveInfo null")
         val installed = pm.getPackageInfo(context.packageName, flags)
-        // 4. It is this app.
-        if (archive.packageName != context.packageName) {
-            throw VerificationFailed("Wrong app", "the APK is ${archive.packageName}, not ${context.packageName}.", "package mismatch")
-        }
-        // 5. Newer versionCode (what Android compares) — never a downgrade or reinstall.
-        if (archive.longVersionCodeCompat() <= installed.longVersionCodeCompat()) {
-            throw VerificationFailed(
-                "Not newer",
-                "the APK's versionCode (${archive.longVersionCodeCompat()}) isn't higher than the installed one (${installed.longVersionCodeCompat()}).",
-                "archive ${archive.longVersionCodeCompat()} <= installed ${installed.longVersionCodeCompat()}",
-            )
-        }
-        // 6. Runs on this Android version and CPU.
+        // 4. This app, a higher versionCode, and signed with the pinned certificate AND the installed app's.
+        UpdateVerification.check(
+            installedPackage = context.packageName,
+            archivePackage = archive.packageName,
+            archiveVersionCode = archive.longVersionCodeCompat(),
+            installedVersionCode = installed.longVersionCodeCompat(),
+            archiveCerts = signatures(archive),
+            installedCerts = signatures(installed),
+            trustedCert = UpdateConfig.trustedCertSha256,
+            releasesPage = UpdateConfig.releasesPage,
+        )?.let { throw VerificationFailed(it.check, it.message, it.technical) }
+        // 5. Runs on this Android version and CPU.
         val minSdk = archive.applicationInfo?.minSdkVersion ?: 1
         if (minSdk > Build.VERSION.SDK_INT) {
             throw VerificationFailed("Needs newer Android", "this update requires Android API $minSdk; this phone has ${Build.VERSION.SDK_INT}.", "minSdk $minSdk")
@@ -306,24 +311,6 @@ class UpdateManager(
         }
         if (apkAbis.isNotEmpty() && apkAbis.none { it in Build.SUPPORTED_ABIS }) {
             throw VerificationFailed("Unsupported CPU", "the APK is built for ${apkAbis.joinToString()}.", "apk $apkAbis device ${Build.SUPPORTED_ABIS.toList()}")
-        }
-        // 7. Authenticity: signed with the pinned release certificate AND the installed app's.
-        val archiveCerts = signatures(archive)
-        val installedCerts = signatures(installed)
-        if (archiveCerts != setOf(UpdateConfig.trustedCertSha256)) {
-            throw VerificationFailed(
-                "Untrusted signature",
-                "the APK isn't signed with MImic's release certificate. It was not installed.",
-                "apk $archiveCerts, trusted ${UpdateConfig.trustedCertSha256}",
-            )
-        }
-        if (archiveCerts != installedCerts) {
-            throw VerificationFailed(
-                "Signing certificate mismatch",
-                "this installed copy is signed with a different key, so Android can't update it in place. " +
-                    "Install the release once from ${UpdateConfig.releasesPage} (back up your data first).",
-                "apk $archiveCerts, installed $installedCerts",
-            )
         }
         Log.i(TAG, "Update ${release.tag} verified (sha256 + package + versionCode + ABI + pinned certificate)")
     }
@@ -453,6 +440,9 @@ class UpdateManager(
         private const val KEY_NOTIFIED = "notified_tag"
         private const val KEY_AUTO = "auto_check"
         private const val KEY_CHANNEL = "channel"
+
+        /** No MImic APK comes near this (the universal full APK is ~180 MB); stops a runaway download. */
+        private const val MAX_APK_BYTES = 400L * 1024 * 1024
 
         fun sha256(file: File): String {
             val digest = MessageDigest.getInstance("SHA-256")

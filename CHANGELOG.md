@@ -1,5 +1,25 @@
 # Changelog
 
+## 4.7.0-beta.4
+Security hardening release. Nothing changes in how MImic looks or plays; your settings, library,
+downloads and sign-ins stay as they are.
+
+- **Sign-ins stay on this phone.** Android's cloud backup and phone-to-phone transfer now skip the
+  Navidrome login, the YouTube Music session, browser cookies and the Listen Together token. After
+  restoring MImic on a NEW phone you sign in again; nothing else in the backup changes.
+- **HTTPS-only services.** Updates (GitHub), Google sign-in/sync and lyrics (LRCLIB) can never be
+  reached over plain HTTP. Home Navidrome servers and HTTP radio stations work exactly as before.
+  Only the system's certificate authorities are trusted.
+- **Safer updates.** An update download that is larger than the release says (or than any MImic
+  APK could be) is stopped. The package / newer-version / pinned-certificate checks are unchanged
+  and now covered by dedicated tests.
+- **Safer files.** Downloaded songs get file names that can never point outside MImic's folder,
+  whatever a server sends; the YouTube Music sign-in page has no access to the phone's files.
+- **Libraries.** jsoup 1.23.2, Guava 33.7.2, protobuf-javalite 3.25.8 (standard edition) and the
+  downloader's Jackson 2.13.5 — each fixes published vulnerabilities.
+- **Project.** Security tests, a secret/dependency/manifest gate that runs before every release,
+  and GitHub security scanning (Dependabot, CodeQL, Gitleaks). See docs/security/.
+
 ## 4.7.0-beta.3
 Floating Aura motion tuned frame by frame against the reference video.
 
