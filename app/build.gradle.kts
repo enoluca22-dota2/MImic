@@ -231,7 +231,7 @@ dependencies {
         implementation("com.google.protobuf:protobuf-javalite:3.25.8") { because("GHSA-735f-pc8j-v9w8 (standard edition; full pins 4.x)") }
         // youtubedl-android 0.18.1 bundles Jackson 2.11.1; 2.13.5 is the newest line that still supports
         // Android 7 (Jackson 2.14+ needs API 26) and fixes the 2021–2022 databind advisories.
-        "fullImplementation"("com.fasterxml.jackson.core:jackson-databind:2.13.5") { because("GHSA-57j2-w4cx-62h2, GHSA-jjjh-jjxp-wpff, GHSA-rgv9-q543-rqg4, GHSA-3x8x-79m2-3w2w") }
+        "fullImplementation"("com.fasterxml.jackson.core:jackson-databind:2.22.4") { because("GHSA-57j2-w4cx-62h2, GHSA-jjjh-jjxp-wpff, GHSA-rgv9-q543-rqg4, GHSA-3x8x-79m2-3w2w") }
         "fullImplementation"("com.fasterxml.jackson.core:jackson-core:2.13.5") { because("matches jackson-databind") }
         "fullImplementation"("com.fasterxml.jackson.core:jackson-annotations:2.13.5") { because("matches jackson-databind") }
     }
