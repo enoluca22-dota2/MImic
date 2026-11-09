@@ -207,7 +207,7 @@ dependencies {
     "fullImplementation"("com.google.protobuf:protobuf-javalite:4.35.0")
     "fullImplementation"("org.mozilla:rhino:1.8.1")
     "fullImplementation"("org.mozilla:rhino-engine:1.8.1")
-    "fullImplementation"("io.github.dokar3:quickjs-kt-android:1.0.14")
+    "fullImplementation"("io.github.dokar3:quickjs-kt-android:1.0.17")
     "fullImplementation"("androidx.security:security-crypto:1.1.0-alpha06")
     "fullImplementation"("io.ktor:ktor-client-okhttp:3.5.2")
     "fullImplementation"("io.ktor:ktor-client-content-negotiation:3.5.2")
