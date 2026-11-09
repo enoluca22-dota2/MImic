@@ -212,7 +212,7 @@ dependencies {
     "fullImplementation"("io.ktor:ktor-client-okhttp:3.5.2")
     "fullImplementation"("io.ktor:ktor-client-content-negotiation:3.5.2")
     "fullImplementation"("io.ktor:ktor-serialization-kotlinx-json:3.5.2")
-    "fullImplementation"("org.jetbrains.kotlinx:kotlinx-serialization-json:1.11.0")
+    "fullImplementation"("org.jetbrains.kotlinx:kotlinx-serialization-json:1.12.0")
     // MImic account + sync (4.4): Sign in with Google via Credential Manager, Firebase Auth, Firestore.
     implementation(platform("com.google.firebase:firebase-bom:33.7.0"))
     implementation("com.google.firebase:firebase-auth")
