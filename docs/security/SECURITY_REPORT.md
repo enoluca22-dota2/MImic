@@ -65,6 +65,9 @@ statuses above; they stay open on GitHub for your review (dismiss with the reaso
 | Medium — content access allowed | `PoTokenWebView.kt`, `YtMusicLoginScreen.kt` | Fixed: file + content access off in both WebViews (sign-in in 4.7.0-beta.4; PoToken committed for the next release). |
 | Medium — missing certificate pinning | `UpdateManager`, `SubsonicClient`, `RadioRepository` | Deliberate: pinning would break self-hosted Navidrome and radio; update authenticity comes from the pinned APK signing certificate. |
 
+Follow-up review of every open item (CodeQL, Dependabot PRs, advisories, yt-dlp updates):
+`docs/security/REVIEW_2026-11-10.md`.
+
 ## What could not be verified
 Navidrome sign-in/streaming/reconnection on the emulator (no local test credentials; Docker off),
 downloads and offline playback on the emulator (emulator stopped by the OS for low memory), fresh

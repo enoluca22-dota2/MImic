@@ -534,6 +534,21 @@ Environment variable names used in tooling: JAVA_HOME (Android Studio jbr), LOCA
   (Navidrome compose).
 
 
+H0000000. TEST RESULTS (2026-11-10, published 4.7.0-beta.4) — docs/security/SECURITY_TEST_RESULTS.md
+---------------------------------------------------------
+In-app update beta.3 → beta.4 (Pixel_10a) ... PASS — verified log line, Android dialog, 400700037,
+  firstInstallTime 2026-10-17 kept; Library & Storage identical (5 songs/1 hidden/3 folders,
+  132.3 MB downloads), theme kept. Offline playback of existing downloads (airplane) ... PASS.
+YTD_Test_4K (published x86_64 APK): online search (YouTube fallback) PASS; online streaming PASS;
+  YouTube playlist link 15 songs → 13 of 15 selected → 13 MP3 downloaded in 140 s, unticked ones
+  absent, Completed 33→46, Failed 0 ... PASS; offline playback of a new download PASS;
+  music.youtube.com playlist link (15) analysis PASS; full player layout + pause/play/seek/previous
+  PASS; main build (540b10d) online playback PASS (PoToken WebView not exercised).
+BLOCKED: in-app YouTube Music playlist search (catalogue unavailable from Albania; no spoofing);
+  Navidrome tests (need local credentials via server\set-creds.ps1 + Docker Desktop).
+Review of CodeQL / Dependabot / OSV / yt-dlp: docs/security/REVIEW_2026-11-10.md (nothing merged,
+  dismissed or rewritten; no code changed; no release made).
+
 H000000. TEST RESULTS (2026-11-09, 4.7.0-beta.4) — details: docs/security/SECURITY_TEST_RESULTS.md
 --------------------------------------------------
 Unit tests ................ PASS — full 315 (3 skipped), standard 197 (1 skipped), 0 failures
@@ -856,6 +871,8 @@ K. FUTURE DEVELOPMENT
 Priority next:
   0. Install 4.7.0-beta.4 on the physical phone via Settings → App Updates (Beta channel); check
      playback, Navidrome, a download and Theme Studio (Floating Aura vs the reference video).
+     Recommended next action: decide the yt-dlp update remedy (REVIEW_2026-11-10.md §4), close
+     Dependabot #4 in favour of one init+analyze bump, merge #1/#3 and #2+#5, regression-test #6.
      Security decisions waiting (docs/security/SECURITY_REPORT.md): old commits with tailnet
      details, yt-dlp self-update, minSdk 26 for the last library fixes, Gradle dependency
      verification, Dependabot PRs #1–#6. Also still open from 4.6.0-beta.3: a 200+ song playlist unticked while loading,
