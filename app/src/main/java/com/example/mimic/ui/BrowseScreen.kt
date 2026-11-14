@@ -1,5 +1,6 @@
 package com.example.mimic.ui
 
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -95,8 +96,7 @@ fun BrowseScreen(
                         LibraryEntry(
                             leading = {
                                 Box(
-                                    Modifier.size(52.dp).clip(RoundedCornerShape(6.dp))
-                                        .background(MaterialTheme.colorScheme.surfaceVariant),
+                                    Modifier.size(52.dp).depthPanel(RoundedCornerShape(6.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                                     contentAlignment = Alignment.Center,
                                 ) { Icon(type.icon(), contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                             },

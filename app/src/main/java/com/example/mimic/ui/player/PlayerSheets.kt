@@ -1,5 +1,7 @@
 package com.example.mimic.ui.player
 
+import com.example.mimic.ui.components.MimicSlider
+import com.example.mimic.ui.components.MimicSwitch
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
@@ -40,8 +42,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -100,7 +100,7 @@ fun SpeedSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
         Column(Modifier.fillMaxWidth().padding(start = 24.dp, end = 24.dp, bottom = 32.dp)) {
             Text("Playback speed", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
             Text(speedLabel(slider), style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary, modifier = Modifier.padding(vertical = 8.dp))
-            Slider(
+            MimicSlider(
                 value = slider,
                 onValueChange = { slider = (it * 20).roundToInt() / 20f },
                 onValueChangeFinished = { vm.setSpeed(slider) },
@@ -117,7 +117,7 @@ fun SpeedSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
                     Text("Keep original pitch")
                     Text("Off = faster sounds higher, like speeding up a tape", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(checked = audio.keepPitch, onCheckedChange = { vm.setAudio(audio.copy(keepPitch = it)) })
+                MimicSwitch(checked = audio.keepPitch, onCheckedChange = { vm.setAudio(audio.copy(keepPitch = it)) })
             }
             Text("Applies to every song until you change it back.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 8.dp))
         }
@@ -218,7 +218,7 @@ fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
                             .background(
                                 when {
                                     dragging -> MaterialTheme.colorScheme.surfaceVariant
-                                    isCurrent -> MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
+                                    isCurrent -> if (com.example.mimic.ui.designsystem.LocalDepth.current.on) androidx.compose.ui.graphics.Color.Transparent else MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)
                                     else -> androidx.compose.ui.graphics.Color.Transparent
                                 },
                             )
@@ -328,7 +328,7 @@ fun PlaybackSettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             Text(if (a.crossfadeSec == 0) "Crossfade: off" else "Crossfade: ${a.crossfadeSec} s", style = MaterialTheme.typography.bodyLarge)
             Text("Fades each song out at the end and the next one in. One player, so songs never double up.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             var cf by remember(a.crossfadeSec) { mutableFloatStateOf(a.crossfadeSec.toFloat()) }
-            Slider(value = cf, onValueChange = { cf = it }, onValueChangeFinished = { vm.setAudio(a.copy(crossfadeSec = cf.roundToInt())) }, valueRange = 0f..AudioPrefs.MAX_CROSSFADE_SEC.toFloat(), steps = AudioPrefs.MAX_CROSSFADE_SEC - 1)
+            MimicSlider(value = cf, onValueChange = { cf = it }, onValueChangeFinished = { vm.setAudio(a.copy(crossfadeSec = cf.roundToInt())) }, valueRange = 0f..AudioPrefs.MAX_CROSSFADE_SEC.toFloat(), steps = AudioPrefs.MAX_CROSSFADE_SEC - 1)
         }
         SettingSwitch("Skip silence", "Shortens long silent gaps inside tracks (audiobooks, live recordings).", a.skipSilence) { vm.setAudio(a.copy(skipSilence = it)) }
 
@@ -358,7 +358,7 @@ fun PlaybackSettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                     var v by remember(level) { mutableFloatStateOf(level.toFloat()) }
                     Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text(if (hz >= 1000) "${hz / 1000} kHz" else "$hz Hz", modifier = Modifier.width(72.dp), style = MaterialTheme.typography.bodySmall)
-                        Slider(
+                        MimicSlider(
                             value = v, onValueChange = { v = it }, modifier = Modifier.weight(1f),
                             valueRange = info.minLevel.toFloat()..info.maxLevel.toFloat(),
                             onValueChangeFinished = {
@@ -373,7 +373,7 @@ fun PlaybackSettingsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                     var bb by remember(a.bassBoost) { mutableFloatStateOf(a.bassBoost.toFloat()) }
                     Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                         Text("Bass boost", modifier = Modifier.width(72.dp), style = MaterialTheme.typography.bodySmall)
-                        Slider(value = bb, onValueChange = { bb = it }, onValueChangeFinished = { vm.setAudio(a.copy(bassBoost = bb.roundToInt())) }, valueRange = 0f..1000f, modifier = Modifier.weight(1f))
+                        MimicSlider(value = bb, onValueChange = { bb = it }, onValueChangeFinished = { vm.setAudio(a.copy(bassBoost = bb.roundToInt())) }, valueRange = 0f..1000f, modifier = Modifier.weight(1f))
                     }
                 }
                 TextButton(onClick = { vm.setAudio(a.copy(eqBands = emptyList(), bassBoost = 0)) }, modifier = Modifier.padding(horizontal = 8.dp)) { Text("Reset to flat") }
@@ -412,6 +412,6 @@ private fun SettingSwitch(title: String, subtitle: String, checked: Boolean, ena
             Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(checked = checked, onCheckedChange = onChange, enabled = enabled)
+        MimicSwitch(checked = checked, onCheckedChange = onChange, enabled = enabled)
     }
 }

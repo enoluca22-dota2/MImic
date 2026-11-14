@@ -1,5 +1,6 @@
 package com.example.mimic.ui
 
+import com.example.mimic.ui.components.MimicSwitch
 import androidx.compose.foundation.horizontalScroll
 import com.example.mimic.data.ControlStyle
 import com.example.mimic.data.PlayerBackground
@@ -33,7 +34,6 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -118,11 +118,23 @@ fun PlayerLayoutStudioScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
         SelectRow(
             "Controls",
-            listOf("Auto", "Filled", "Liquid Glass", "Minimal"),
+            listOf("Auto", "Filled", "Liquid Glass", "Minimal", "3D"),
             config.controlStyle.ordinal,
         ) { update(config.copy(controlStyle = ControlStyle.entries[it])) }
         Text(
-            "Auto follows the theme: Liquid Glass themes get glass controls over the blurred cover.",
+            "Auto follows the theme: Liquid Glass themes get glass controls over the blurred cover, 3D styles get 3D buttons. \"3D\" needs a 3D style (Theme Studio → 3D Styles).",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+
+        SelectRow(
+            "Volume control",
+            listOf("Auto", "Off", "Slider", "Dial"),
+            config.volumeControl.ordinal,
+        ) { update(config.copy(volumeControl = com.example.mimic.data.VolumeControl.entries[it])) }
+        Text(
+            "Changes the phone's media volume (same as the volume keys). Auto shows a dial with 3D controls. Short screens get the slider.",
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(horizontal = 16.dp),
@@ -153,8 +165,13 @@ fun SelectRow(title: String, options: List<String>, selected: Int, onSelect: (In
             Modifier.horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            val depth = com.example.mimic.ui.designsystem.LocalDepth.current.on
             options.forEachIndexed { index, label ->
                 val isSelected = index == selected
+                if (depth) {
+                    com.example.mimic.ui.components.DepthChip(label, isSelected) { onSelect(index) }
+                    return@forEachIndexed
+                }
                 Box(
                     Modifier
                         .clip(RoundedCornerShape(20.dp))
@@ -184,7 +201,7 @@ fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, Modifier.weight(1f), color = MaterialTheme.colorScheme.onBackground)
-        Switch(checked = checked, onCheckedChange = onChange)
+        MimicSwitch(checked = checked, onCheckedChange = onChange)
     }
 }
 
@@ -302,7 +319,7 @@ private fun DynamicPlayerSettings(
         ToggleRow("Glass controls", c.glassControls) { set(c.copy(glassControls = it)) }
         Column(Modifier.padding(horizontal = 16.dp, vertical = 4.dp)) {
             Text("Background brightness", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
-            androidx.compose.material3.Slider(
+            com.example.mimic.ui.components.MimicSlider(
                 value = c.brightness,
                 onValueChange = { set(c.copy(brightness = it)) },
                 valueRange = -0.4f..0.4f,

@@ -151,6 +151,8 @@ fun Modifier.glassSurface(
     opacityBoost: Float = 0f,
 ): Modifier {
     val env = LocalGlass.current
+    // 3D themes (4.8): the floating nav, mini-player and player deck become raised 3D panels.
+    if (!env.enabled && LocalDepth.current.on) return this.depthPanel(shape, inset = false)
     if (!env.enabled) return this.clip(shape).background(fallback)
 
     val style = env.style

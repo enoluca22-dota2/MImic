@@ -1,5 +1,6 @@
 package com.example.mimic.ui
 
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.outlined.Info
@@ -166,7 +167,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Default.PlayArrow, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -184,7 +185,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Default.Home, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -209,7 +210,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Default.GraphicEq, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -233,7 +234,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(androidx.compose.material.icons.Icons.Default.Radio, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -247,7 +248,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(androidx.compose.material.icons.Icons.Default.Folder, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -261,7 +262,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(androidx.compose.material.icons.Icons.Default.Groups, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -275,7 +276,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(androidx.compose.material.icons.Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -289,7 +290,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(androidx.compose.material.icons.Icons.Default.SettingsBackupRestore, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -303,7 +304,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(androidx.compose.material.icons.Icons.Default.Build, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -317,7 +318,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Default.SystemUpdate, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -335,7 +336,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Default.LibraryMusic, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -353,7 +354,7 @@ fun SettingsScreen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Box(
-                Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
+                Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                 contentAlignment = Alignment.Center,
             ) { Icon(Icons.Default.Dns, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
             Spacer(Modifier.width(16.dp))
@@ -815,8 +816,7 @@ fun SmartCollectionsScreen(
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(
-                            Modifier.size(48.dp).clip(RoundedCornerShape(8.dp))
-                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            Modifier.size(48.dp).depthPanel(RoundedCornerShape(8.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
                             contentAlignment = Alignment.Center,
                         ) { Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant) }
                         Spacer(Modifier.width(16.dp))

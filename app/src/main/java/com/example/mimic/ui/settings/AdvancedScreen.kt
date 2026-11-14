@@ -1,5 +1,6 @@
 package com.example.mimic.ui.settings
 
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -38,7 +39,7 @@ fun AdvancedScreen(onBack: () -> Unit, onOpenDownloadDiagnostics: () -> Unit) {
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Box(
-                    Modifier.size(44.dp).clip(RoundedCornerShape(10.dp)).background(c.surfaceVariant),
+                    Modifier.size(44.dp).depthPanel(RoundedCornerShape(10.dp), c.surfaceVariant, elevation = 4.dp),
                     contentAlignment = Alignment.Center,
                 ) { Icon(Icons.Default.BugReport, contentDescription = null, tint = c.onSurfaceVariant) }
                 Spacer(Modifier.width(16.dp))

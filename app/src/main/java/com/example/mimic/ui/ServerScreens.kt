@@ -1,5 +1,6 @@
 package com.example.mimic.ui
 
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -384,7 +385,7 @@ private fun RemoteSongRow(vm: PlayerViewModel, song: RemoteSong, downloaded: Boo
 
 @Composable
 private fun RemoteArt(url: String?, modifier: Modifier) {
-    Box(modifier.clip(RoundedCornerShape(6.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+    Box(modifier.depthPanel(RoundedCornerShape(6.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp), contentAlignment = Alignment.Center) {
         if (url != null) {
             AsyncImage(model = url, contentDescription = null, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(6.dp)))
         } else {

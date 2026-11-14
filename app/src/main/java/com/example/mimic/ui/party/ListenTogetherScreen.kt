@@ -1,5 +1,8 @@
 package com.example.mimic.ui.party
 
+import com.example.mimic.ui.components.MimicCard
+import com.example.mimic.ui.components.MimicSwitch
+import com.example.mimic.ui.designsystem.depthPanel
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
@@ -42,8 +45,6 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.HorizontalDivider
@@ -53,7 +54,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -120,15 +120,15 @@ fun ListenTogetherScreen(vm: PlayerViewModel, onBack: () -> Unit) {
 
 @Composable
 private fun SectionCard(content: @Composable () -> Unit) {
-    Card(
+    MimicCard(
         Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
     ) { Column(Modifier.padding(18.dp)) { content() } }
 }
 
 @Composable
 private fun ErrorCard(msg: String, onDismiss: () -> Unit) {
-    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+    MimicCard(Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp), containerColor = MaterialTheme.colorScheme.errorContainer) {
         Row(Modifier.padding(start = 16.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(msg, color = MaterialTheme.colorScheme.onErrorContainer, modifier = Modifier.weight(1f))
             IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Dismiss", tint = MaterialTheme.colorScheme.onErrorContainer) }
@@ -472,7 +472,7 @@ private fun AddSongsDialog(vm: PlayerViewModel, onDismiss: () -> Unit) {
         (if (q.isEmpty()) songs else songs.filter { it.title.lowercase().contains(q) || it.artist.lowercase().contains(q) || it.album.lowercase().contains(q) }).take(200)
     }
     androidx.compose.ui.window.Dialog(onDismissRequest = onDismiss, properties = androidx.compose.ui.window.DialogProperties(usePlatformDefaultWidth = false)) {
-        Card(Modifier.fillMaxWidth().padding(16.dp).height(560.dp), shape = RoundedCornerShape(24.dp)) {
+        MimicCard(Modifier.fillMaxWidth().padding(16.dp).height(560.dp), shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(16.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text("Add to the party", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -507,7 +507,7 @@ private fun HostCard(vm: PlayerViewModel, party: ListenTogether.State) {
                 Text("Only I control the music")
                 Text("Friends can still vote to skip and pause their own phone.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            Switch(checked = party.hostOnlyControl, onCheckedChange = vm::setPartyHostOnly)
+            MimicSwitch(checked = party.hostOnlyControl, onCheckedChange = vm::setPartyHostOnly)
         }
     }
 }
@@ -563,7 +563,7 @@ private fun Avatar(name: String, url: String?, size: androidx.compose.ui.unit.Dp
 
 @Composable
 private fun Artwork(url: String?, size: androidx.compose.ui.unit.Dp) {
-    Box(Modifier.size(size).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).depthPanel(RoundedCornerShape(12.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp), contentAlignment = Alignment.Center) {
         if (url != null) AsyncImage(url, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         else Icon(Icons.Default.MusicNote, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }

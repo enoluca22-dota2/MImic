@@ -1,5 +1,6 @@
 package com.example.mimic.ui.player
 
+import com.example.mimic.ui.components.MimicCard
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -13,7 +14,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -46,7 +46,7 @@ fun MissingLyricsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
             Text("Lyrics", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
         }
         Column(Modifier.verticalScroll(rememberScrollState()).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Card(Modifier.fillMaxWidth()) {
+            MimicCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Saved lyrics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Spacer(Modifier.height(6.dp))
@@ -68,7 +68,7 @@ fun MissingLyricsScreen(vm: PlayerViewModel, onBack: () -> Unit) {
                     )
                 }
             }
-            Card(Modifier.fillMaxWidth()) {
+            MimicCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) {
                     Text("Find Missing Lyrics", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
                     Text(

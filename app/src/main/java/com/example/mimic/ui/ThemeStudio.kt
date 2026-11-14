@@ -1,5 +1,6 @@
 package com.example.mimic.ui
 
+import com.example.mimic.ui.components.MimicSlider
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -40,7 +41,6 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -73,6 +73,7 @@ import com.example.mimic.ui.components.GlassNavBar
 import com.example.mimic.ui.components.GlassNavItem
 import com.example.mimic.ui.components.MiniPlayer
 import com.example.mimic.ui.designsystem.ControlShape
+import com.example.mimic.ui.designsystem.DepthStyle
 import com.example.mimic.ui.designsystem.FontChoice
 import com.example.mimic.ui.designsystem.GlassTone
 import com.example.mimic.ui.designsystem.LocalGlass
@@ -83,6 +84,14 @@ import com.example.mimic.ui.designsystem.ThemeRegistry
 import com.example.mimic.ui.designsystem.ThemeStyle
 import com.example.mimic.ui.designsystem.controlShapeValue
 import com.example.mimic.ui.theme.MImicTheme
+import com.example.mimic.ui.designsystem.depthControl
+import com.example.mimic.ui.designsystem.depthPanel
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.role
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.SkipNext
+import androidx.compose.material.icons.filled.SkipPrevious
 import com.github.skydoves.colorpicker.compose.BrightnessSlider
 import com.github.skydoves.colorpicker.compose.HsvColorPicker
 import com.github.skydoves.colorpicker.compose.rememberColorPickerController
@@ -129,8 +138,10 @@ fun ThemeStudioScreen(
     val flagship = themes.firstOrNull { it.id == "mimic_liquid_glass" }
     val aura = themes.firstOrNull { it.id == ThemeRegistry.AURA_ID }
     val legacy = themes.filter {
-        it.builtIn && it.id != "mimic_liquid_glass" && it.id != ThemeRegistry.AURA_ID && it.id !in ThemeRegistry.CANONICAL_IDS
+        it.builtIn && it.id != "mimic_liquid_glass" && it.id != ThemeRegistry.AURA_ID && it.id !in ThemeRegistry.CANONICAL_IDS &&
+            it.id !in ThemeRegistry.DEPTH_IDS
     }
+    val depthPresets = themes.filter { it.id in ThemeRegistry.DEPTH_IDS }
     val custom = themes.filter { !it.builtIn }
 
     Column(Modifier.fillMaxSize()) {
@@ -145,6 +156,16 @@ fun ThemeStudioScreen(
             }
         })
         LazyColumn(Modifier.fillMaxSize()) {
+            item(key = "depth3d") {
+                DepthStylesSection(
+                    themes = themes,
+                    activeId = settings.themeId,
+                    lastFlatId = settings.lastFlatThemeId,
+                    quality = settings.glassQuality,
+                    onApply = vm::applyDepthTheme,
+                    onReturn = vm::setThemeId,
+                )
+            }
             item(key = "quality") { GlassQualityPicker(settings.glassQuality, vm::setGlassQuality) }
             item(key = "dynamic") {
                 val inUse = settings.playerLayout.layout == com.example.mimic.data.PlayerLayout.DYNAMIC
@@ -199,6 +220,7 @@ fun ThemeStudioScreen(
             if (custom.isNotEmpty()) {
                 themeSection("Your themes", custom, settings.themeId, vm, onEdit, onExportFile, onShare) { confirmDelete = it }
             }
+            themeSection("3D style presets", depthPresets, settings.themeId, vm, onEdit, onExportFile, onShare) { confirmDelete = it }
             themeSection("More presets", legacy, settings.themeId, vm, onEdit, onExportFile, onShare) { confirmDelete = it }
             item(key = "footer") { Spacer(Modifier.height(24.dp)) }
         }
@@ -351,6 +373,7 @@ private fun ThemeRow(
             val tags = buildList {
                 add(if (theme.colors.isDark) "Dark" else "Light")
                 if (theme.style.glass) add("Glass")
+                if (theme.style.depth != DepthStyle.FLAT) add("3D · ${theme.style.depth.label}")
                 if (theme.style.albumAdaptive) add("Adaptive")
                 add(if (theme.builtIn) "Built-in" else "Custom")
             }
@@ -384,7 +407,7 @@ private fun ThemeRow(
 }
 
 private enum class EditorSection(val label: String) {
-    COLORS("Colors"), GLASS("Glass"), SHAPES("Shapes"), TEXT("Text"), MOTION("Motion"), NAV("Navigation")
+    COLORS("Colors"), DEPTH("3D"), GLASS("Glass"), SHAPES("Shapes"), TEXT("Text"), MOTION("Motion"), NAV("Navigation")
 }
 
 @Composable
@@ -487,6 +510,28 @@ fun ThemeEditorScreen(
                     ToggleRow("Gradient background", st.gradientBackground) { v -> style { copy(gradientBackground = v) } }
                     if (st.gradientBackground) {
                         ColorTokenRow("Gradient color", colorOf("gradient"), auto = st.gradientColor == 0L, onReset = { style { copy(gradientColor = 0L) } }) { picking = "gradient" }
+                    }
+                }
+                EditorSection.DEPTH -> {
+                    SelectRow("3D style", DepthStyle.entries.map { it.label }, st.depth.ordinal) { i -> style { copy(depth = DepthStyle.entries[i]) } }
+                    Hint(
+                        when (st.depth) {
+                            DepthStyle.FLAT -> "Flat: the classic MImic look."
+                            DepthStyle.NEUMORPHIC -> "Soft raised and recessed surfaces lit from the top-left."
+                            DepthStyle.SKEUOMORPHIC -> "Physical materials: beveled buttons, metal knobs, recessed grooves."
+                            DepthStyle.HYBRID -> "Soft neumorphic pages with realistic 3D player controls."
+                        },
+                    )
+                    if (st.depth != DepthStyle.FLAT) {
+                        LabeledSlider("Depth intensity", st.depthStrength, 0.4f..1.6f, percent = true) { v -> style { copy(depthStrength = v) } }
+                        if (st.glass) Hint("Liquid Glass is on: glass wins on the bars and player. Turn it off in the Glass tab for full 3D.")
+                        if (draft.colors.surface != draft.colors.background) {
+                            Hint("Neumorphism reads best when cards are the same color as the page.")
+                            TextButton(
+                                onClick = { draft = draft.copy(colors = draft.colors.copy(surface = draft.colors.background)) },
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                            ) { Text("Use the background color for surfaces") }
+                        }
                     }
                 }
                 EditorSection.GLASS -> {
@@ -616,7 +661,7 @@ private fun LabeledSlider(
                 style = MaterialTheme.typography.bodySmall,
             )
         }
-        Slider(value = value.coerceIn(range), onValueChange = onChange, valueRange = range)
+        MimicSlider(value = value.coerceIn(range), onValueChange = onChange, valueRange = range)
     }
 }
 
@@ -800,7 +845,7 @@ fun ColorPickerDialog(initial: Long, onDismiss: () -> Unit, onPick: (Long) -> Un
 private fun ChannelSlider(label: String, value: Int, onChange: (Int) -> Unit) {
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.width(20.dp), color = MaterialTheme.colorScheme.onSurface)
-        Slider(
+        MimicSlider(
             value = value.toFloat(),
             onValueChange = { onChange(it.toInt()) },
             valueRange = 0f..255f,
@@ -846,3 +891,185 @@ fun ImportThemeDialog(onDismiss: () -> Unit, onImport: (String) -> String?) {
     )
 }
 
+
+
+// ---------------------------------------------------------------------------------------------
+// Theme Studio → 3D Styles (4.8)
+// ---------------------------------------------------------------------------------------------
+
+private val depthBlurbs = mapOf(
+    DepthStyle.NEUMORPHIC to "Soft ice-blue, raised and recessed",
+    DepthStyle.SKEUOMORPHIC to "Matte black, orange light, real knobs",
+    DepthStyle.HYBRID to "Soft pages, realistic controls",
+)
+
+/**
+ * The three 3D styles as live preview cards (each rendered in its own theme). Tapping a card
+ * applies it at once and persists it; Light / Dark picks the variant; "Back to …" returns to the
+ * theme that was in use before. Everything else in Theme Studio stays as it was.
+ */
+@Composable
+private fun DepthStylesSection(
+    themes: List<ThemeDefinition>,
+    activeId: String,
+    lastFlatId: String?,
+    quality: GlassQuality,
+    onApply: (String) -> Unit,
+    onReturn: (String) -> Unit,
+) {
+    val active = themes.firstOrNull { it.id == activeId }
+    val activeDepth = active?.style?.depth ?: DepthStyle.FLAT
+    val activeIsPreset = activeId in ThemeRegistry.DEPTH_IDS
+    // Variant shown on the cards: follows the active 3D theme, else the current theme's darkness.
+    var dark by remember(activeId) { mutableStateOf(active?.colors?.isDark ?: false) }
+    Column(Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp)) {
+        Text(
+            "3D Styles",
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.Bold,
+            color = MaterialTheme.colorScheme.onBackground,
+            modifier = Modifier.padding(start = 16.dp, top = 8.dp),
+        )
+        Text(
+            "Tap a style to use it now. It stays after a restart; your other themes are below.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 16.dp),
+        )
+        SelectRow("Variant", listOf("Light", "Dark"), if (dark) 1 else 0) { i ->
+            dark = i == 1
+            // Switching the variant of the style in use applies it straight away.
+            if (activeIsPreset) ThemeRegistry.depthPresetId(activeDepth, dark)?.let(onApply)
+        }
+        Row(
+            Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            ThemeRegistry.DEPTH_PRESETS.keys.forEach { style ->
+                val id = ThemeRegistry.depthPresetId(style, dark) ?: return@forEach
+                val theme = themes.firstOrNull { it.id == id } ?: return@forEach
+                DepthStyleCard(
+                    theme = theme,
+                    label = style.label,
+                    blurb = depthBlurbs[style].orEmpty(),
+                    selected = activeId == id,
+                    quality = quality,
+                    onClick = { onApply(id) },
+                )
+            }
+        }
+        if (activeDepth != DepthStyle.FLAT) {
+            val back = themes.firstOrNull { it.id == lastFlatId && it.style.depth == DepthStyle.FLAT }
+                ?: ThemeRegistry.byId(ThemeRegistry.DEFAULT_ID)
+            OutlinedButton(
+                onClick = { onReturn(back.id) },
+                modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
+            ) { Text("Back to ${back.name}", maxLines = 1, overflow = TextOverflow.Ellipsis) }
+        }
+    }
+}
+
+/** One 3D style card: a static miniature rendered in that style's own theme, plus its name. */
+@Composable
+private fun DepthStyleCard(
+    theme: ThemeDefinition,
+    label: String,
+    blurb: String,
+    selected: Boolean,
+    quality: GlassQuality,
+    onClick: () -> Unit,
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    Column(
+        Modifier
+            .width(164.dp)
+            .clip(RoundedCornerShape(22.dp))
+            .then(if (selected) Modifier.border(2.dp, primary, RoundedCornerShape(22.dp)) else Modifier)
+            .clickable(onClickLabel = "Apply $label", onClick = onClick)
+            .cardSemantics("$label, ${if (theme.colors.isDark) "dark" else "light"}${if (selected) ", in use" else ""}")
+            .padding(6.dp),
+    ) {
+        MImicTheme(theme = theme, quality = quality) {
+            DepthStyleMiniature(Modifier.fillMaxWidth().height(196.dp))
+        }
+        Row(Modifier.padding(start = 6.dp, top = 8.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                label,
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.weight(1f),
+                maxLines = 2,
+            )
+            if (selected) Icon(Icons.Default.Check, contentDescription = null, tint = primary, modifier = Modifier.size(18.dp))
+        }
+        Text(
+            blurb,
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 6.dp),
+            maxLines = 2,
+            overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** Card label for TalkBack: the whole card reads as one item. */
+private fun Modifier.cardSemantics(description: String): Modifier =
+    this.then(Modifier.clearAndSetSemantics { contentDescription = description; role = androidx.compose.ui.semantics.Role.Button })
+
+/**
+ * A static picture of the style: page, a raised card, a groove with a lit fill, transport buttons
+ * and a knob. Drawn with the real depth modifiers but deliberately NOT interactive — the card it
+ * sits in applies the style.
+ */
+@Composable
+private fun DepthStyleMiniature(modifier: Modifier) {
+    val scheme = MaterialTheme.colorScheme
+    val depth = com.example.mimic.ui.designsystem.LocalDepth.current
+    Box(modifier.clip(RoundedCornerShape(18.dp)).background(scheme.background).padding(14.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(
+                Modifier.fillMaxWidth().depthPanel(RoundedCornerShape(14.dp), elevation = 4.dp).padding(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Box(Modifier.size(30.dp).depthPanel(RoundedCornerShape(8.dp), scheme.primary.copy(alpha = 0.55f), elevation = 2.dp))
+                Spacer(Modifier.width(8.dp))
+                Column {
+                    Box(Modifier.width(60.dp).height(6.dp).clip(CircleShape).background(scheme.onSurface.copy(alpha = 0.75f)))
+                    Spacer(Modifier.height(5.dp))
+                    Box(Modifier.width(40.dp).height(5.dp).clip(CircleShape).background(scheme.onSurfaceVariant.copy(alpha = 0.6f)))
+                }
+            }
+            Box(
+                Modifier.fillMaxWidth().height(8.dp)
+                    .depthPanel(com.kyant.shapes.Capsule(), if (depth.on) depth.c(depth.groove) else scheme.surfaceVariant, inset = true, elevation = 2.dp),
+            ) {
+                Box(Modifier.fillMaxWidth(0.55f).height(8.dp).clip(CircleShape).background(scheme.primary))
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically) {
+                MiniButton(androidx.compose.material.icons.Icons.Default.SkipPrevious, 30.dp, accent = false)
+                MiniButton(androidx.compose.material.icons.Icons.Default.PlayArrow, 42.dp, accent = true)
+                MiniButton(androidx.compose.material.icons.Icons.Default.SkipNext, 30.dp, accent = false)
+            }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                Box(Modifier.size(34.dp).depthControl(CircleShape, elevation = 4.dp), contentAlignment = Alignment.TopCenter) {
+                    Box(Modifier.padding(top = 5.dp).size(5.dp).clip(CircleShape).background(scheme.primary))
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun MiniButton(icon: androidx.compose.ui.graphics.vector.ImageVector, size: androidx.compose.ui.unit.Dp, accent: Boolean) {
+    val depth = com.example.mimic.ui.designsystem.LocalDepth.current
+    Box(Modifier.size(size).depthControl(CircleShape, accent = accent, elevation = 3.dp), contentAlignment = Alignment.Center) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = if (accent) depth.c(depth.onAccent) else MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.size(size * 0.55f),
+        )
+    }
+}

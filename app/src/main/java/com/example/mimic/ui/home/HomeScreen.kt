@@ -1,5 +1,6 @@
 package com.example.mimic.ui.home
 
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -329,8 +330,7 @@ private fun QuickTileView(tile: QuickTile, modifier: Modifier) {
     Row(
         modifier
             .height(56.dp)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (env.style.glass) 0.6f else 1f))
+            .depthPanel(shape, MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (env.style.glass) 0.6f else 1f), elevation = 4.dp)
             .clickable(onClick = tile.onClick),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -376,8 +376,7 @@ private fun ResumeCard(vm: PlayerViewModel, song: Song, isPlaying: Boolean, onMe
         Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (env.style.glass) 0.55f else 1f))
+            .depthPanel(shape, MaterialTheme.colorScheme.surfaceVariant.copy(alpha = if (env.style.glass) 0.55f else 1f), elevation = 4.dp)
             .combinedClickable(onClick = vm::togglePlayPause, onLongClick = onMenu),
     ) {
         Row(Modifier.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -473,8 +472,7 @@ private fun MixCard(mix: SmartMix, songs: List<Song>, onClick: () -> Unit) {
     val covers = remember(songs) { songs.mapNotNull { it.albumArtUri }.distinct().take(4) }
     Column(Modifier.width(144.dp).clickable(onClick = onClick)) {
         Box(
-            Modifier.size(144.dp).clip(RoundedCornerShape((env.style.cornerRadius * 0.45f).dp))
-                .background(MaterialTheme.colorScheme.surfaceVariant),
+            Modifier.size(144.dp).depthPanel(RoundedCornerShape((env.style.cornerRadius * 0.45f).dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp),
             contentAlignment = Alignment.Center,
         ) {
             if (covers.size == 4) {

@@ -1,5 +1,6 @@
 package com.example.mimic.ui.player
 
+import com.example.mimic.ui.designsystem.matteGrain
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
@@ -98,14 +99,25 @@ fun LyricsSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
     val base = MaterialTheme.colorScheme
     val tint = seed?.let { Color(it) } ?: base.primary
     val bg by animateColorAsState(if (dark) lerp(Color.Black, tint, 0.32f) else lerp(Color.White, tint, 0.16f), tween(600), label = "lyricsBg")
-    val colors = LyricsColors(
-        background = bg,
-        onBackground = if (dark) Color.White else Color(0xFF121212),
-        muted = if (dark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.55f),
-        accent = if (dark) lerp(tint, Color.White, 0.45f) else lerp(tint, Color.Black, 0.35f),
-    )
+    val depth = com.example.mimic.ui.designsystem.LocalDepth.current
+    // 3D styles (4.8): lyrics sit on the theme's own material, so its 3D transport reads correctly.
+    val colors = if (depth.on) {
+        LyricsColors(
+            background = base.background,
+            onBackground = base.onBackground,
+            muted = base.onSurfaceVariant,
+            accent = if (depth.physicalControls && depth.dark) depth.c(depth.glow) else base.primary,
+        )
+    } else {
+        LyricsColors(
+            background = bg,
+            onBackground = if (dark) Color.White else Color(0xFF121212),
+            muted = if (dark) Color.White.copy(alpha = 0.6f) else Color.Black.copy(alpha = 0.55f),
+            accent = if (dark) lerp(tint, Color.White, 0.45f) else lerp(tint, Color.Black, 0.35f),
+        )
+    }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        Box(Modifier.fillMaxSize().background(colors.background)) {
+        Box(Modifier.fillMaxSize().background(colors.background).then(Modifier).matteGrain()) {
             Column(Modifier.fillMaxSize().systemBarsPadding()) {
                 LyricsContent(vm, ui, colors, onClose = onDismiss, modifier = Modifier.weight(1f))
                 LyricsTransport(vm, ui, colors)
@@ -337,6 +349,20 @@ private fun LyricsTransport(vm: PlayerViewModel, ui: PlayerUiState, colors: Lyri
             progress = { fraction }, color = colors.accent, trackColor = colors.onBackground.copy(alpha = 0.15f),
             modifier = Modifier.fillMaxWidth().height(4.dp).clip(RoundedCornerShape(2.dp)),
         )
+        if (com.example.mimic.ui.designsystem.LocalDepth.current.on) {
+            val bare = com.example.mimic.ui.designsystem.LocalDepth.current.equipment
+            Row(Modifier.fillMaxWidth().padding(top = 12.dp, bottom = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
+                com.example.mimic.ui.components.DepthIconButton(Icons.Default.SkipPrevious, "Previous", vm::previous, size = 52.dp, iconSize = 28.dp, bare = bare)
+                Spacer(Modifier.width(24.dp))
+                com.example.mimic.ui.components.DepthIconButton(
+                    if (ui.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow, if (ui.isPlaying) "Pause" else "Play",
+                    vm::togglePlayPause, size = 68.dp, iconSize = 34.dp, accent = true,
+                )
+                Spacer(Modifier.width(24.dp))
+                com.example.mimic.ui.components.DepthIconButton(Icons.Default.SkipNext, "Next", vm::next, size = 52.dp, iconSize = 28.dp, bare = bare)
+            }
+            return@Column
+        }
         Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = vm::previous) { Icon(Icons.Default.SkipPrevious, "Previous", tint = colors.onBackground) }
             Spacer(Modifier.width(16.dp))

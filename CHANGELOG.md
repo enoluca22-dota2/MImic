@@ -1,5 +1,40 @@
 # Changelog
 
+## 4.8.0-beta.1
+Three switchable 3D styles. Nothing else changes: your library, downloads, Navidrome, radio,
+playlists and settings stay as they are, and every existing theme looks exactly as before.
+
+- **Theme Studio → 3D Styles.** Three live preview cards — tap one and the whole app switches
+  at once, no restart; the choice is kept after closing the app. A Light / Dark switch picks the
+  variant, and "Back to <your previous theme>" returns to the theme you used before.
+  - **Neumorphism — Soft Ice Blue:** icy-blue pages (#E6EEF9) where cards rise out of the page and
+    buttons press into it, soft white / navy shadows lit from the top-left, serif type, a thick raised
+    rim around the cover, and a play button that is a raised ring with a pressed-in centre.
+    Dark variant: Ice Night.
+  - **Skeuomorphism — Black & Orange:** a premium amplifier look: matte charcoal with a fine grain,
+    near-black equipment panels, matte domed knobs, glowing red-to-amber orange glyphs and LEDs, a
+    recessed seek groove with a glowing fill, uppercase letter-spaced labels and a volume knob with
+    a glowing level ring. Light variant: Studio Ivory.
+  - **Hybrid Soft 3D:** the soft Ice Blue pages with the Black & Orange hardware (graphite knobs,
+    orange light) set into them. Night variant included.
+- **3D player.** Play/pause, previous/next, shuffle/repeat, like, queue, lyrics, speed and sleep
+  buttons are 3D with pressed, selected (lit LED on the realistic styles) and disabled states; the
+  seek bar is a recessed groove with a raised thumb; the controls sit on a raised console.
+- **Volume dial.** Turn the knob to change the phone's media volume (the same volume as the
+  volume keys, and it follows them). Settings → Player Layout → Volume control: Auto / Off /
+  Slider / Dial. Small screens get the slider. Works with TalkBack (volume up / down actions).
+- **Everywhere else.** Mini-player, navigation bar (the selected tab is pressed in), album and
+  artwork tiles, Home cards, settings icons and option chips, switches, sliders (speed, EQ,
+  crossfade), cards, dialogs, menus and sheets follow the 3D style.
+- **Your themes.** The theme editor has a new "3D" tab: give any custom theme a 3D style and
+  depth intensity. Themes exported from 4.8 carry it; older theme files import as flat.
+- **Player Layout.** Controls has a new "3D" option; "Auto" picks 3D controls on 3D styles and
+  keeps glass / filled controls on every other theme. Explicit choices are respected.
+- **Performance.** Shadows are rendered once and reused (no live blur), the grain is one small tile,
+  list-row thumbnails stay flat; press animations follow Android's "Remove animations" setting.
+- **Lyrics and queue** use the 3D style too (3D transport on the lyrics screen; the current song is
+  pressed into the list).
+
 ## 4.7.0-beta.4
 Security hardening release. Nothing changes in how MImic looks or plays; your settings, library,
 downloads and sign-ins stay as they are.

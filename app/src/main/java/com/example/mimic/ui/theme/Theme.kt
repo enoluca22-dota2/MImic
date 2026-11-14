@@ -16,6 +16,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.isSpecified
 import com.example.mimic.data.GlassQuality
 import com.example.mimic.ui.designsystem.AlbumColors
+import com.example.mimic.ui.designsystem.DepthStyle
+import com.example.mimic.ui.designsystem.LocalDepth
+import com.example.mimic.ui.designsystem.depthPalette
 import com.example.mimic.ui.designsystem.FontChoice
 import com.example.mimic.ui.designsystem.GlassEnv
 import com.example.mimic.ui.designsystem.LocalGlass
@@ -45,9 +48,13 @@ fun MImicTheme(
             AlbumColors.themeColors(seed, theme.colors.isDark, amoled = theme.colors.background == 0xFF000000L)
         }
     }
-    val scheme = remember(colors, style.accentColor) {
+    val scheme = remember(colors, style.accentColor, style.depth) {
         val base = colors.toColorScheme()
-        if (style.accentColor != 0L) base.copy(tertiary = Color(style.accentColor)) else base.copy(tertiary = base.secondary)
+        val accented = if (style.accentColor != 0L) base.copy(tertiary = Color(style.accentColor)) else base.copy(tertiary = base.secondary)
+        if (style.depth == DepthStyle.FLAT) accented else depthSurfaces(accented, colors.isDark, style.depth)
+    }
+    val depth = remember(style.depth, style.depthStrength, colors) {
+        depthPalette(style.depth, style.depthStrength, colors.isDark, colors.surface.toInt(), colors.primary.toInt())
     }
     val typography = remember(style.fontFamily, style.fontScale) { typographyFor(style) }
     val shapes = remember(style.cornerRadius) { shapesFor(style) }
@@ -60,7 +67,7 @@ fun MImicTheme(
     val env = remember(style, quality, colors.isDark, reducedMotion) {
         GlassEnv(style = style, quality = quality, isDarkTheme = colors.isDark, reducedMotion = reducedMotion)
     }
-    CompositionLocalProvider(LocalGlass provides env) {
+    CompositionLocalProvider(LocalGlass provides env, LocalDepth provides depth) {
         MaterialTheme(
             colorScheme = scheme,
             typography = typography,
@@ -68,6 +75,33 @@ fun MImicTheme(
             content = content,
         )
     }
+}
+
+/**
+ * 3D themes (4.8): dialogs, menus, bottom sheets and Material containers take the page's own
+ * material instead of Material's default tinted containers, so a sheet over a neumorphic page is
+ * the same ice-blue (or graphite / ivory) with depth, not a purple-grey slab. FLAT themes never
+ * reach this, so their colors are unchanged.
+ */
+private fun depthSurfaces(scheme: androidx.compose.material3.ColorScheme, dark: Boolean, depth: DepthStyle): androidx.compose.material3.ColorScheme {
+    val s = scheme.surface
+    fun shade(t: Float) = androidx.compose.ui.graphics.lerp(s, if (dark) Color.White else Color.Black, t)
+    return scheme.copy(
+        surfaceTint = Color.Transparent,
+        surfaceContainerLowest = s,
+        surfaceContainerLow = s,
+        surfaceContainer = shade(0.02f),
+        surfaceContainerHigh = shade(0.035f),
+        surfaceContainerHighest = shade(0.05f),
+        surfaceBright = shade(0.04f),
+        surfaceDim = androidx.compose.ui.graphics.lerp(s, Color.Black, 0.05f),
+        // Selected chips/tabs: equipment style = a dark part lit orange (reference 02).
+        secondaryContainer = if (depth == DepthStyle.SKEUOMORPHIC && dark) androidx.compose.ui.graphics.lerp(s, scheme.primary, 0.12f)
+        else scheme.primary.copy(alpha = if (dark) 0.28f else 0.16f),
+        onSecondaryContainer = if (depth == DepthStyle.SKEUOMORPHIC && dark) scheme.primary else scheme.onSurface,
+        primaryContainer = if (dark) androidx.compose.ui.graphics.lerp(s, scheme.primary, 0.10f) else androidx.compose.ui.graphics.lerp(s, scheme.primary, 0.08f),
+        outlineVariant = scheme.onSurfaceVariant.copy(alpha = 0.25f),
+    )
 }
 
 private fun FontChoice.family(): FontFamily = when (this) {

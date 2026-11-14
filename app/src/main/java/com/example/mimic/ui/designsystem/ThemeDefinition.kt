@@ -34,6 +34,21 @@ enum class NavIndicator { PILL, DOT }
 enum class GlassTone { AUTO, LIGHT, DARK }
 
 /**
+ * 3D surface style (MImic 4.8). FLAT is every theme before 4.8 and stays the default, so existing
+ * presets, custom themes and imported files render exactly as before.
+ *  - NEUMORPHIC: soft raised / recessed surfaces lit from the top-left, same color as the page.
+ *  - SKEUOMORPHIC: physical materials — beveled buttons, brushed-metal knobs, recessed grooves.
+ *  - HYBRID: neumorphic pages and cards, skeuomorphic player controls and knobs.
+ * Append-only: persisted by name.
+ */
+enum class DepthStyle(val label: String) {
+    FLAT("Flat"),
+    NEUMORPHIC("Neumorphism"),
+    SKEUOMORPHIC("Skeuomorphism"),
+    HYBRID("Hybrid Soft 3D"),
+}
+
+/**
  * Visual *style* of a theme beyond its colors (MImic 2.9). All fields default to the
  * pre-2.9 flat look, so every existing preset, custom theme and v1 JSON import keeps
  * rendering exactly as before. Glass themes opt in by setting [glass] = true.
@@ -65,6 +80,9 @@ data class ThemeStyle(
     val pillNav: Boolean = false,        // theme asks for the floating glass pill navigation
     val navIndicator: NavIndicator = NavIndicator.PILL,
     val auraNav: Boolean = false,        // theme asks for the Floating Aura dock (4.7)
+    // ---- 3D (4.8) ----
+    val depth: DepthStyle = DepthStyle.FLAT,
+    val depthStrength: Float = 1f,       // shadow / bevel intensity, 0.4 .. 1.6
     // ---- Typography ----
     val fontFamily: FontChoice = FontChoice.DEFAULT,
     val fontScale: Float = 1f,
@@ -90,6 +108,7 @@ data class ThemeStyle(
         artistWeight = artistWeight.coerceIn(100, 900) / 100 * 100,
         animationScale = animationScale.finiteOr(1f).coerceIn(0f, 1.5f),
         transitionSpeed = transitionSpeed.finiteOr(1f).coerceIn(0.5f, 2f),
+        depthStrength = depthStrength.finiteOr(1f).coerceIn(0.4f, 1.6f),
     )
 }
 
@@ -170,6 +189,22 @@ object ThemeRegistry {
         animationScale = 1.1f,
     )
 
+    // ---- 3D styles (4.8). Page background == surface, which is what makes neumorphic shadows read
+    // as "raised from the page". Not glass; the floating nav pill is drawn as a raised 3D bar. ----
+    private val NEU = ThemeStyle(
+        depth = DepthStyle.NEUMORPHIC, cornerRadius = 26, navCornerRadius = 30,
+        controlShape = ControlShape.CAPSULE, pillNav = true, headerWeight = 600, titleWeight = 500,
+        fontFamily = FontChoice.SERIF,
+    )
+    private val SKEUO = ThemeStyle(
+        depth = DepthStyle.SKEUOMORPHIC, cornerRadius = 22, navCornerRadius = 26,
+        controlShape = ControlShape.CAPSULE, pillNav = true, headerWeight = 600, titleWeight = 500,
+    )
+    private val HYBRID = ThemeStyle(
+        depth = DepthStyle.HYBRID, cornerRadius = 26, navCornerRadius = 30,
+        controlShape = ControlShape.CAPSULE, pillNav = true, headerWeight = 600, titleWeight = 500,
+    )
+
     /** The MImic flagship: dark liquid glass that re-tints itself from the playing album. */
     private val GLASS_MIMIC = ThemeStyle(
         glass = true, glassOpacity = 0.2f, blurRadius = 10, refraction = 0.85f, edgeHighlight = 0.8f,
@@ -213,6 +248,16 @@ object ThemeRegistry {
         dark("rose_gold", "Rose Gold", 0xFFB76E79, 0xFFE8A2A2, 0xFF171013, 0xFF22171B, 0xFF301F26, text = 0xFFF6E7EC, text2 = 0xFFC79FAC),
         dark("purple_galaxy", "Purple Galaxy", 0xFF8E44EF, 0xFFC06BFF, 0xFF0E0A1A, 0xFF171026, 0xFF221634, text2 = 0xFFBCA9E0),
         dark("retro_vinyl", "Retro Vinyl", 0xFFD9A441, 0xFF8C5A2B, 0xFF17120B, 0xFF241B10, 0xFF332717, text = 0xFFF4E8D0, text2 = 0xFFC0A878),
+        // ---- 3D styles (4.8): a light and a dark variant of each ----
+        // Reference 01: ice blue #E7EFFA page = card, near-black serif type, muted cornflower accent.
+        light("neu_ice", "Neumorphism · Soft Ice Blue", 0xFF3B5DB0, 0xFF6D8DDB, 0xFFE6EEF9, 0xFFE6EEF9, 0xFFDCE6F4, text = 0xFF101318, text2 = 0xFF4A5670, style = NEU),
+        dark("neu_ice_night", "Neumorphism · Ice Night", 0xFF9DB8FF, 0xFF6D8DDB, 0xFF1E2532, 0xFF1E2532, 0xFF262F3E, text = 0xFFE8EEF8, text2 = 0xFFA6B3C8, style = NEU),
+        // Reference 02: matte charcoal page, near-black equipment panels, warm orange light.
+        dark("skeuo_graphite", "Skeuomorphism · Black & Orange", 0xFFFF7A1A, 0xFFFF4D0A, 0xFF242426, 0xFF1B1B1D, 0xFF2C2C2F, text = 0xFFEDEDEF, text2 = 0xFF9C9CA3, style = SKEUO),
+        light("skeuo_ivory", "Skeuomorphism · Studio Ivory", 0xFFA4481F, 0xFF8A6A3D, 0xFFE6E0D5, 0xFFF2EEE6, 0xFFDDD5C7, text = 0xFF2A241D, text2 = 0xFF5E5446, style = SKEUO),
+        // Hybrid: reference 01's soft ice page with reference 02's black-and-orange hardware.
+        light("hybrid_soft", "Hybrid Soft 3D", 0xFFA53D14, 0xFF3B5DB0, 0xFFE6EEF9, 0xFFE6EEF9, 0xFFDCE6F4, text = 0xFF101318, text2 = 0xFF4A5670, style = HYBRID),
+        dark("hybrid_soft_night", "Hybrid Soft 3D · Night", 0xFFFF8F4D, 0xFF9DB8FF, 0xFF1E2532, 0xFF1E2532, 0xFF262F3E, text = 0xFFE8EEF8, text2 = 0xFFA6B3C8, style = HYBRID),
         dark("high_contrast", "High Contrast", 0xFFFFEB3B, 0xFFFFFFFF, 0xFF000000, 0xFF000000, 0xFF141414, text = 0xFFFFFFFF, text2 = 0xFFFFFFFF),
     )
 
@@ -226,6 +271,18 @@ object ThemeRegistry {
         "emerald", "arctic_light", "album_adaptive", "neon_cyberpunk", "midnight_blue",
         "sunset", "minimal_mono", "premium_gold", "material_you",
     )
+
+    /** The 3D style presets (4.8): style -> (light id, dark id). */
+    val DEPTH_PRESETS: Map<DepthStyle, Pair<String, String>> = linkedMapOf(
+        DepthStyle.NEUMORPHIC to ("neu_ice" to "neu_ice_night"),
+        DepthStyle.SKEUOMORPHIC to ("skeuo_ivory" to "skeuo_graphite"),
+        DepthStyle.HYBRID to ("hybrid_soft" to "hybrid_soft_night"),
+    )
+    val DEPTH_IDS: Set<String> = DEPTH_PRESETS.values.flatMap { listOf(it.first, it.second) }.toSet()
+
+    /** The built-in preset for a 3D [style] in its light or dark variant. */
+    fun depthPresetId(style: DepthStyle, dark: Boolean): String? =
+        DEPTH_PRESETS[style]?.let { if (dark) it.second else it.first }
 
     fun byId(id: String?): ThemeDefinition = byId[id] ?: byId.getValue(DEFAULT_ID)
 }

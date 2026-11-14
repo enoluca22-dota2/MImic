@@ -227,9 +227,10 @@ fun MimicApp(viewModel: PlayerViewModel) {
     val navController = rememberNavController()
     val tabReselect = remember { kotlinx.coroutines.flow.MutableSharedFlow<TopLevel>(extraBufferCapacity = 1) }
     val glassEnv = LocalGlass.current
+    val depthTheme = com.example.mimic.ui.designsystem.LocalDepth.current.on
     val navStyle = settings.homeConfig.navStyle.resolve(
-        themeWantsGlassNav = glassEnv.style.glass && glassEnv.style.pillNav,
-        glassTheme = glassEnv.style.glass,
+        themeWantsGlassNav = (glassEnv.style.glass || depthTheme) && glassEnv.style.pillNav,
+        glassTheme = glassEnv.style.glass || depthTheme,
         themeWantsAura = glassEnv.style.auraNav,
     )
     // Live content layer for backdrop blur/refraction. Only recorded when a glass theme can
@@ -367,7 +368,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
     val overlayOpen = (nowPlayingOpen && uiState.currentSong != null) || editingTheme != null || lockViewOpen
     Scaffold(
         modifier = Modifier.fillMaxSize().then(if (overlayOpen) Modifier.clearAndSetSemantics {} else Modifier),
-        containerColor = if (glassEnv.style.gradientBackground) Color.Transparent else MaterialTheme.colorScheme.background,
+        containerColor = if (glassEnv.style.gradientBackground || com.example.mimic.ui.designsystem.LocalDepth.current.equipment) Color.Transparent else MaterialTheme.colorScheme.background,
         bottomBar = {
             Column {
                 val current = uiState.currentSong

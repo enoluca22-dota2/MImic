@@ -1,5 +1,6 @@
 package com.example.mimic.ui.radio
 
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -267,7 +268,7 @@ fun StationRow(st: RadioStation, playing: Boolean, favorite: Boolean, onPlay: ()
 
 @Composable
 fun StationLogo(st: RadioStation, size: Int) {
-    Box(Modifier.size(size.dp).clip(RoundedCornerShape((size / 4).dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size.dp).depthPanel(RoundedCornerShape((size / 4).dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp), contentAlignment = Alignment.Center) {
         Icon(Icons.Default.Radio, null, tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f))
         st.logoUrl?.let { AsyncImage(it, null, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize()) }
     }
@@ -357,8 +358,7 @@ fun RadioCountriesSettingsScreen(onBack: () -> Unit, onAddCountry: () -> Unit) {
         itemsIndexed(countries, key = { _, c -> c }) { i, code ->
             val c = MaterialTheme.colorScheme
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).clip(RoundedCornerShape(20.dp))
-                    .background(c.surfaceVariant.copy(alpha = 0.6f)).padding(horizontal = 14.dp, vertical = 6.dp),
+                Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp).depthPanel(RoundedCornerShape(20.dp), c.surfaceVariant.copy(alpha = 0.6f), elevation = 4.dp).padding(horizontal = 14.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(RadioCountries.flagOf(code), style = MaterialTheme.typography.headlineSmall)

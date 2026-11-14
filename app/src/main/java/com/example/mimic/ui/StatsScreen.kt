@@ -1,5 +1,6 @@
 package com.example.mimic.ui
 
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -113,7 +114,7 @@ private fun formatMinutes(m: Long): String = if (m < 60) "$m min" else "${m / 60
 @Composable
 private fun StatTile(label: String, value: String, modifier: Modifier) {
     Column(
-        modifier.clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)).padding(14.dp),
+        modifier.depthPanel(RoundedCornerShape(16.dp), MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f), elevation = 4.dp).padding(14.dp),
     ) {
         Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

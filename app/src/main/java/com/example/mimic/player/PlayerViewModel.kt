@@ -1024,6 +1024,16 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settingsRepo.setThemeId(id) }
     }
 
+    /**
+     * Theme Studio → 3D Styles (4.8): applies a 3D preset instantly. When leaving a non-3D theme,
+     * that theme is remembered so "Back to <theme>" can return to it.
+     */
+    fun applyDepthTheme(id: String) {
+        val current = activeTheme.value
+        val flat = current.style.depth == com.example.mimic.ui.designsystem.DepthStyle.FLAT
+        viewModelScope.launch { settingsRepo.setThemeIdRememberingFlat(id, if (flat) current.id else null) }
+    }
+
     fun setPlayerLayout(config: com.example.mimic.data.PlayerLayoutConfig) {
         viewModelScope.launch { settingsRepo.setPlayerLayout(config) }
     }

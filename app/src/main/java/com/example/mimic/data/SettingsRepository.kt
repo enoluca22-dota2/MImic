@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.map
 
 data class AppSettings(
     val themeId: String = ThemeRegistry.DEFAULT_ID,
+    /** 4.8: the theme in use before a 3D style was picked (null = none recorded). */
+    val lastFlatThemeId: String? = null,
     val sleepTimerMinutes: Int = 0,
     val playerLayout: PlayerLayoutConfig = PlayerLayoutConfig(),
     val dynamicPlayer: DynamicPlayerConfig = DynamicPlayerConfig(),
@@ -60,6 +62,9 @@ class SettingsRepository(private val context: Context) {
         val DYN_REDUCED = booleanPreferencesKey("dyn_reduced_motion")
         val LOCK_STYLE = stringPreferencesKey("lock_style")
         val CONTROL_STYLE = stringPreferencesKey("player_control_style")
+        val VOLUME_CONTROL = stringPreferencesKey("player_volume_control")
+        /** The last non-3D theme, so Theme Studio can offer "Back to <theme>" (4.8). */
+        val LAST_FLAT_THEME = stringPreferencesKey("last_flat_theme_id")
         val GLASS_QUALITY = stringPreferencesKey("glass_quality")
         val RECENT_SEARCHES = stringPreferencesKey("recent_searches")
         val SPEED = floatPreferencesKey("audio_speed")
@@ -116,6 +121,7 @@ class SettingsRepository(private val context: Context) {
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
             themeId = prefs[Keys.THEME_ID] ?: ThemeRegistry.DEFAULT_ID,
+            lastFlatThemeId = prefs[Keys.LAST_FLAT_THEME],
             sleepTimerMinutes = prefs[Keys.SLEEP] ?: 0,
             playerLayout = PlayerLayoutConfig(
                 layout = decode(prefs[Keys.LAYOUT], PlayerLayout.CLASSIC),
@@ -125,6 +131,7 @@ class SettingsRepository(private val context: Context) {
                 showSecondaryActions = prefs[Keys.SHOW_SECONDARY] ?: true,
                 background = decode(prefs[Keys.PLAYER_BG], PlayerBackground.AUTO),
                 controlStyle = decode(prefs[Keys.CONTROL_STYLE], ControlStyle.AUTO),
+                volumeControl = decode(prefs[Keys.VOLUME_CONTROL], VolumeControl.AUTO),
             ),
             dynamicPlayer = DynamicPlayerConfig(
                 gradient = prefs[Keys.DYN_GRADIENT] ?: true,
@@ -175,6 +182,14 @@ class SettingsRepository(private val context: Context) {
         context.dataStore.edit { it[Keys.THEME_ID] = id }
     }
 
+    /** Applies [id] and, in the same write, remembers [previousFlatId] for "Back to …" (4.8). */
+    suspend fun setThemeIdRememberingFlat(id: String, previousFlatId: String?) {
+        context.dataStore.edit {
+            it[Keys.THEME_ID] = id
+            if (previousFlatId != null) it[Keys.LAST_FLAT_THEME] = previousFlatId
+        }
+    }
+
     suspend fun setSleepTimerMinutes(minutes: Int) {
         context.dataStore.edit { it[Keys.SLEEP] = minutes }
     }
@@ -188,6 +203,7 @@ class SettingsRepository(private val context: Context) {
             it[Keys.SHOW_SECONDARY] = config.showSecondaryActions
             it[Keys.PLAYER_BG] = config.background.name
             it[Keys.CONTROL_STYLE] = config.controlStyle.name
+            it[Keys.VOLUME_CONTROL] = config.volumeControl.name
         }
     }
 

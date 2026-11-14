@@ -1,8 +1,9 @@
 MIMIC — COMPLETE DEVELOPMENT REPORT
 ===================================
-Last updated: 2026-11-09 (4.7.0-beta.4 — security hardening: 40-control audit, backup/network
-              policy, release security gate, GitHub scanning; see docs/security/)
-Previous: 2026-11-05 session 3 (4.7.0-beta.3 — Floating Aura motion from the video); session 2 (4.7.0-beta.2 — Floating Aura rebuilt from the reference); session 1 (4.7.0-beta.1 — first Floating Aura, built from text only); 2026-11-02 session 3 (4.6.0-beta.3 — automatic playlist loading); session 2 (4.6.0-beta.2 — Mix preview); session 1 (4.6.0-beta.1 — playlist downloads with per-song selection +
+Last updated: 2026-11-14 (4.8.0-beta.1 — three switchable 3D styles from the owner's reference
+              images; built + tested on the emulator; NOT YET PUBLISHED — see section 4.8 at the end)
+Previous: 2026-11-09 (4.7.0-beta.4 — security hardening: 40-control audit, backup/network
+              policy, release security gate, GitHub scanning; see docs/security/); 2026-11-05 session 3 (4.7.0-beta.3 — Floating Aura motion from the video); session 2 (4.7.0-beta.2 — Floating Aura rebuilt from the reference); session 1 (4.7.0-beta.1 — first Floating Aura, built from text only); 2026-11-02 session 3 (4.6.0-beta.3 — automatic playlist loading); session 2 (4.6.0-beta.2 — Mix preview); session 1 (4.6.0-beta.1 — playlist downloads with per-song selection +
               compact mini player, recovered from the second PC's APK); 2026-10-26 (Listen Together + automatic lyrics + icons, 4.5.0-beta.1 … beta.4)
 Keep this file current after every session. Plain text, written so it can be pasted into a
 new ChatGPT / Claude conversation without access to the repository.
@@ -11,7 +12,8 @@ new ChatGPT / Claude conversation without access to the repository.
 A. PROJECT IDENTITY
 -------------------
 App name ............ MImic
-Current version ..... 4.7.0-beta.4  (versionCode 400700037)
+Current version ..... 4.8.0-beta.1  (versionCode 400800034) — built, not yet released;
+                      last PUBLISHED release: 4.7.0-beta.4 (400700037)
 Application ID ...... com.example.mimic  (never change)
 Repository .......... https://github.com/enoluca22-dota2/MImic  (PUBLIC — owner's decision on
                       2026-10-25, because the in-app updater downloads release assets anonymously)
@@ -86,7 +88,8 @@ Accounts: data/account/MimicAccount.kt (Credential Manager "Sign in with Google"
   stored by AuthStore in encrypted prefs). UI: ui/settings/AccountsScreen.kt.
 Radio: data/radio/ (bundled stations + Radio Browser directory, countries list default Albania,
   +/− add/remove, DataStore radio_prefs), ui/radio/.
-Themes: Theme Studio (14 presets + custom themes JSON v2, glass styles), Player Layout Studio
+Themes: Theme Studio (14 presets + custom themes JSON v2, glass styles; 4.8: 3D Styles —
+ThemeStyle.depth FLAT/NEUMORPHIC/SKEUOMORPHIC/HYBRID, see section 4.8), Player Layout Studio
   (Classic / Immersive / Compact / Dynamic), Home & navigation customisation, Album-Adaptive colours.
 Updater: update/ (UpdateManager, UpdateCheckWorker): reads GitHub Releases of the public repo,
   picks the APK for the phone's CPU, verifies SHA-256 (SHA256SUMS.txt), package, version and the
@@ -919,3 +922,54 @@ artwork, 4.2 Radio, 4.3 Backup & Restore + Library & Storage, 4.3.1 download dia
 4.4 online music (BitChord), LRCLIB lyrics, accounts & sync code, 4.5 Listen Together,
 automatic lyrics (root cause fixed), new neon E icon, 4.6 playlist downloads with per-song
 selection + compact mini player.
+
+
+4.8 — THREE 3D STYLES (2026-11-14, branch feature/4.8-3d-styles, version 4.8.0-beta.1)
+-------------------------------------------------------------------------------------
+References (authoritative, inspected visually): Desktop\MImic\UI-Reference\
+  01-Neumorphism.png   — Soft Ice Blue (two light ice-blue phones, serif, raised/inset round buttons)
+  02-Skeuomorphism.png — Black & Orange equipment UI (the owner's favourite)
+  1/2/3.jpeg           — NOT 3D references: the CODEXURE Floating Aura dock screenshots (4.7).
+  There is NO Hybrid reference image; Hybrid = 01's pages + 02's hardware. Replace if the owner
+  provides one.
+Design: a theme TOKEN, not a parallel system. ThemeStyle.depth (+ depthStrength 0.4..1.6),
+  serialized as "depth"/"depthStrength" in theme JSON and the Room style column (no migration;
+  older files/rows = FLAT). FLAT is the default, so every existing theme renders exactly as before.
+  ui/designsystem/Depth.kt: DepthColors (pure ARGB math), DepthPalette/depthPalette (derived once
+  per theme, provided as LocalDepth by MImicTheme), Modifier.depthPanel (raised/inset panels; on
+  FLAT it is exactly clip+background), Modifier.depthControl (button bodies per state),
+  Modifier.matteGrain (96px noise tile, Black & Orange only). Shadows = Compose 1.10's cached
+  dropShadow/innerShadow (rendered once per size, no live blur).
+  ui/components/DepthComponents.kt: DepthIconButton (pressed / selected LED / disabled / bare
+  glyph), GlowIcon, MimicSlider / MimicSwitch / MimicCard (Material originals on FLAT),
+  VolumeKnob, PlayerVolumeControl, DepthChip. player/MediaVolume.kt: STREAM_MUSIC state that
+  follows the hardware keys (VOLUME_CHANGED broadcast); the radio volume slider uses it too.
+Presets (ids stable): neu_ice "Neumorphism · Soft Ice Blue" / neu_ice_night; skeuo_graphite
+  "Skeuomorphism · Black & Orange" / skeuo_ivory (light); hybrid_soft / hybrid_soft_night.
+  ThemeRegistry.DEPTH_PRESETS / DEPTH_IDS / depthPresetId(style, dark).
+Theme Studio: "3D Styles" section at the top (3 live preview cards, Light/Dark variant,
+  "Back to <previous theme>" — settings key last_flat_theme_id, written by
+  PlayerViewModel.applyDepthTheme); a "3D style presets" list; editor tab "3D".
+Player: ControlStyle.TACTILE (appended; AUTO -> TACTILE on 3D themes, explicit choices win);
+  VolumeControl AUTO/OFF/SLIDER/DIAL (key player_volume_control; AUTO = dial with 3D controls,
+  slider on screens < 680dp tall). 3D themes resolve PlayerBackground.AUTO to SOLID.
+  The Dynamic Now Playing layout is NOT restyled (artwork-driven by design).
+Reach: Now Playing, mini-player, floating nav (pillNav), artwork tiles, Home/settings tiles
+  (depthPanel), every Switch/Slider/Card call site, SelectRow chips, dialogs/menus/sheets
+  (surfaceContainer* tokens on 3D themes only), queue current row, lyrics transport.
+  List-row thumbnails stay flat (performance; the references keep them flat too).
+Tests: DepthStyleTest (16: tokens, round trip, presets, WCAG contrast >= 7 text / 4.5 secondary
+  & accent, palette, resolution, knob math). Full: 331 (full) + 213 (standard) pass; lint passes.
+Emulator (YTD_Test_4K = emulator-5554, debug build 4.8.0-beta.1 installed over 4.7.0-beta.4):
+  PASS  3 styles render; instant switching; persistence after force-stop; Back to previous theme
+  PASS  knob turns the real media volume (14 -> 9 of 15); knob follows hardware keys (12 -> 10)
+  PASS  play/pause (Media3 PLAYING/PAUSED), seek (50% / 33%), next/previous on a library queue,
+        shuffle/repeat/like lit states, queue sheet, lyrics (LRCLIB synced, credited)
+  PASS  flat theme Now Playing unchanged; Classic/Immersive/Compact on 3D; Compact @ 130% font
+  PERF  library scroll after warm-up: 3D jank 1.6-2.3% vs flat 1.8%, p99 34 vs 30 ms (debug build)
+  NOT TESTED  Navidrome (no credentials, as before), physical Samsung/Xiaomi phones, release-build
+        frame timing, TalkBack walkthrough, updater 4.7.0-beta.4 -> 4.8.0-beta.1 (not published)
+Release status: BLOCKED by the release security gate: the gitleaks history scan (--all branches)
+  flags the synthetic token in ListenTogetherProtocolTest.kt on the LOCAL commercial/standard-
+  edition branch (commit efb6eaa) — not part of this release. Needs the owner's decision (allowlist
+  with reason, or change that fixture on that branch) before scripts/release.sh --publish.

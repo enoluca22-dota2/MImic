@@ -1,5 +1,7 @@
 package com.example.mimic.ui.components
 
+import com.example.mimic.ui.designsystem.depthPanel
+import com.example.mimic.ui.designsystem.LocalDepth
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.snap
@@ -81,7 +83,18 @@ fun GlassNavBar(
             ),
             label = "navIndicator",
         )
-        if (selectedIndex >= 0 && env.style.navIndicator == NavIndicator.PILL) {
+        val depth = LocalDepth.current
+        if (selectedIndex >= 0 && env.style.navIndicator == NavIndicator.PILL && depth.on && !env.enabled) {
+            // 3D: the selected tab is pressed into the bar.
+            Box(
+                Modifier
+                    .offset(x = offset)
+                    .width(itemWidth)
+                    .fillMaxHeight()
+                    .padding(6.dp)
+                    .depthPanel(Capsule(), inset = true, elevation = 3.dp),
+            )
+        } else if (selectedIndex >= 0 && env.style.navIndicator == NavIndicator.PILL) {
             Box(
                 Modifier
                     .offset(x = offset)
@@ -149,6 +162,11 @@ fun GlassIconButton(
     tint: Color? = null,
 ) {
     val env = LocalGlass.current
+    if (!env.enabled && LocalDepth.current.on) {
+        // 3D themes: the same button as a physical / neumorphic control.
+        DepthIconButton(icon, contentDescription, onClick, modifier, size = size, iconSize = iconSize, accent = accent, enabled = enabled, tint = tint)
+        return
+    }
     val interaction = remember { MutableInteractionSource() }
     val shape = env.style.roundControlShape()
     val primary = MaterialTheme.colorScheme.primary

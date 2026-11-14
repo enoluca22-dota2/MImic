@@ -1,5 +1,6 @@
 package com.example.mimic.ui.library
 
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
@@ -86,8 +87,7 @@ private fun OfflineMusic(vm: PlayerViewModel, nav: AppNav, contentPadding: Paddi
             val c = MaterialTheme.colorScheme
             Column(
                 Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)
-                    .clip(RoundedCornerShape(22.dp))
-                    .background(c.surfaceVariant.copy(alpha = 0.6f))
+                    .depthPanel(RoundedCornerShape(22.dp), c.surfaceVariant.copy(alpha = 0.6f), elevation = 4.dp)
                     .border(1.dp, c.onSurface.copy(alpha = 0.08f), RoundedCornerShape(22.dp))
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),

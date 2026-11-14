@@ -1,5 +1,6 @@
 package com.example.mimic.ui.update
 
+import com.example.mimic.ui.components.MimicSwitch
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,7 +23,6 @@ import androidx.compose.material3.FilterChip
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -113,7 +113,7 @@ fun AppUpdatesScreen(onBack: () -> Unit) {
                     Text("Automatically check for updates")
                     Text("At most once a day on any network. Only notifies — never downloads or installs by itself.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Switch(checked = auto, onCheckedChange = { auto = it; manager.autoCheckEnabled = it })
+                MimicSwitch(checked = auto, onCheckedChange = { auto = it; manager.autoCheckEnabled = it })
             }
             Text("Update channel")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -1,5 +1,6 @@
 package com.example.mimic.ui.library
 
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -559,7 +560,7 @@ fun PlaylistRow(name: String, subtitle: String = "Playlist", onClick: () -> Unit
         Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(Modifier.size(56.dp).clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.surfaceVariant), contentAlignment = Alignment.Center) {
+        Box(Modifier.size(56.dp).depthPanel(RoundedCornerShape(10.dp), MaterialTheme.colorScheme.surfaceVariant, elevation = 4.dp), contentAlignment = Alignment.Center) {
             Icon(Icons.AutoMirrored.Filled.QueueMusic, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(14.dp))

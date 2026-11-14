@@ -1,5 +1,6 @@
 package com.example.mimic
 
+import com.example.mimic.ui.designsystem.matteGrain
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -56,7 +57,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = MaterialTheme.colorScheme.background,
                 ) {
-                    Root(viewModel)
+                    // Black & Orange: fine matte grain under everything (no-op on other themes).
+                    androidx.compose.foundation.layout.Box(Modifier.fillMaxSize().matteGrain()) { Root(viewModel) }
                 }
             }
         }

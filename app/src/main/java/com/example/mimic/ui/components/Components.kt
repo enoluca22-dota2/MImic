@@ -1,5 +1,7 @@
 package com.example.mimic.ui.components
 
+import com.example.mimic.ui.designsystem.depthPanel
+import com.example.mimic.ui.designsystem.LocalDepth
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
@@ -58,16 +60,21 @@ import java.util.Locale
  * cache key never changes between recompositions (2.8.1 fix).
  */
 @Composable
-fun AlbumArt(song: Song?, modifier: Modifier = Modifier, corner: Int = 6, shape: Shape? = null) =
-    ArtImage(song?.albumArtUri, modifier, shape ?: RoundedCornerShape(corner.dp))
+fun AlbumArt(song: Song?, modifier: Modifier = Modifier, corner: Int = 6, shape: Shape? = null, raised: Boolean = true) =
+    ArtImage(song?.albumArtUri, modifier, shape ?: RoundedCornerShape(corner.dp), raised)
 
 /** Artwork from a stable URI string (album/artist cards). */
 @Composable
-fun ArtImage(uri: String?, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(6.dp)) {
+fun ArtImage(uri: String?, modifier: Modifier = Modifier, shape: Shape = RoundedCornerShape(6.dp), raised: Boolean = true) {
     Box(
+        // 3D themes: artwork tiles are raised from the page (cached shadow; flat themes unchanged).
+        // List rows pass raised = false: dozens of shadows per scroll frame for a 52 dp thumbnail
+        // cost ~40 % frame time on mid-range GPUs, and the references keep row thumbnails flat.
         modifier = modifier
-            .clip(shape)
-            .background(MaterialTheme.colorScheme.surfaceVariant),
+            .then(
+                if (raised) Modifier.depthPanel(shape, MaterialTheme.colorScheme.surfaceVariant, elevation = 3.dp)
+                else Modifier.clip(shape).background(MaterialTheme.colorScheme.surfaceVariant),
+            ),
         contentAlignment = Alignment.Center,
     ) {
         // The note is always drawn underneath: when the artwork is missing or fails to load
@@ -116,9 +123,18 @@ fun SongRow(
     // Rows stay flat (no glass) by design: glass is reserved for a few large surfaces.
     val env = LocalGlass.current
     val scheme = MaterialTheme.colorScheme
+    val depthRow = isCurrent && LocalDepth.current.on
     Row(
         modifier = modifier
             .fillMaxWidth()
+            .then(
+                if (depthRow) {
+                    Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        .depthPanel(RoundedCornerShape((env.style.cornerRadius * 0.6f).dp), inset = true, elevation = 4.dp)
+                } else {
+                    Modifier
+                },
+            )
             .heightIn(min = 68.dp)
             .then(if (selected == true) Modifier.background(scheme.primary.copy(alpha = 0.16f)) else Modifier)
             .combinedClickable(onClick = onClick, onLongClick = onLongClick)
@@ -126,7 +142,7 @@ fun SongRow(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box {
-            AlbumArt(song, modifier = Modifier.size(52.dp), corner = (env.style.cornerRadius / 3).coerceAtLeast(4))
+            AlbumArt(song, modifier = Modifier.size(52.dp), corner = (env.style.cornerRadius / 3).coerceAtLeast(4), raised = false)
             if (selected != null) {
                 Box(
                     Modifier.size(52.dp).clip(RoundedCornerShape((env.style.cornerRadius / 3).coerceAtLeast(4).dp))
@@ -245,7 +261,9 @@ fun MiniPlayer(
     compact: Boolean = false,
 ) {
     val env = LocalGlass.current
-    val glass = env.enabled
+    val depth = LocalDepth.current.on
+    // Glass and 3D themes both get the floating capsule (3D draws it as a raised panel).
+    val glass = env.enabled || depth
     val shape = if (glass) env.style.surfaceShape(0.9f) else RoundedCornerShape((env.style.cornerRadius * 0.45f).dp)
     androidx.compose.foundation.layout.Box(modifier.fillMaxWidth()) {
     if (compact) {
@@ -326,6 +344,18 @@ fun MiniPlayer(
             )
         }
         castButton?.invoke()
+        if (depth) {
+            DepthIconButton(
+                if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                contentDescription = if (isPlaying) "Pause" else "Play",
+                onClick = onPlayPause, size = 42.dp, iconSize = 22.dp, accent = true,
+            )
+            if (onNext != null) {
+                Spacer(Modifier.width(8.dp))
+                DepthIconButton(Icons.Default.SkipNext, "Next song", onNext, size = 42.dp, iconSize = 22.dp)
+                Spacer(Modifier.width(2.dp))
+            }
+        } else {
         IconButton(onClick = onPlayPause) {
             Icon(
                 if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -337,6 +367,7 @@ fun MiniPlayer(
             IconButton(onClick = onNext) {
                 Icon(Icons.Default.SkipNext, contentDescription = "Next song", tint = MaterialTheme.colorScheme.onBackground)
             }
+        }
         }
     }
     }
