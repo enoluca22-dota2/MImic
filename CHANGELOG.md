@@ -1,5 +1,11 @@
 # Changelog
 
+## 4.8.0-beta.2
+
+- Select **Studio Hardware** under Settings → Theme Studio → Hardware theme to apply the complete theme.
+- Now Playing includes beveled transport keys, a seek fader, a rotary media-volume knob, and an EQ bypass rocker. The controls also work with Dynamic Now Playing.
+- All six bottom navigation tabs use matching beveled keys, with an amber finish on the selected tab.
+
 ## 4.8.0-beta.1
 Three switchable 3D styles. Nothing else changes: your library, downloads, Navidrome, radio,
 playlists and settings stay as they are, and every existing theme looks exactly as before.

@@ -220,6 +220,11 @@ fun DynamicNowPlayingScreen(
     sleepActive: Boolean,
     actions: DynamicActions,
     castButton: @Composable (tint: Color) -> Unit,
+    controlDeck: Boolean = false,
+    eqEnabled: Boolean = false,
+    onEqEnabledChange: ((Boolean) -> Unit)? = null,
+    volumeMode: com.example.mimic.data.VolumeControl? = null,
+    hapticSeek: Boolean = true,
 ) {
     val song = state.currentSong
     var lyricsOpen by remember { mutableStateOf(false) }
@@ -317,6 +322,16 @@ fun DynamicNowPlayingScreen(
                 }
             }
             Spacer(Modifier.height(12.dp))
+            if (controlDeck) {
+                com.example.mimic.ui.player.ControlDeckPanel(
+                    state, actions.onSeek, actions.onPrevious, actions.onPlayPause,
+                    actions.onNext, actions.onShuffle, actions.onRepeat,
+                    showShuffleRepeat = true, volumeMode = volumeMode, eqEnabled = eqEnabled,
+                    onEqEnabledChange = onEqEnabledChange, hapticSeek = hapticSeek,
+                ) {
+                    com.example.mimic.ui.radio.LiveRow(state, actions.radioFlag, scheme.onBackground, scheme.muted, scheme.accent, actions.onReconnect)
+                }
+            } else {
             if (state.isLive) com.example.mimic.ui.radio.LiveRow(state, actions.radioFlag, scheme.onBackground, scheme.muted, scheme.accent, actions.onReconnect)
             else PremiumSeekBar(state, scheme, glow = config.intensity != com.example.mimic.data.DynamicIntensity.SUBTLE, onSeek = actions.onSeek)
             Spacer(Modifier.height(8.dp))
@@ -336,6 +351,7 @@ fun DynamicNowPlayingScreen(
                         tint = if (state.repeatMode != Player.REPEAT_MODE_OFF) scheme.accent else scheme.muted,
                     )
                 }
+            }
             }
             Spacer(Modifier.height(16.dp))
 

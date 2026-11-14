@@ -1529,6 +1529,10 @@ class PlayerViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { settingsRepo.setAudio(prefs) }
     }
 
+    fun setEqualizerEnabled(enabled: Boolean) {
+        viewModelScope.launch { settingsRepo.setEqualizerEnabled(enabled) }
+    }
+
     fun setSpeed(speed: Float) = setAudio(settings.value.audio.copy(speed = speed.coerceIn(0.5f, 2f)))
 
     /** The phone's equalizer layout (bands in Hz, level range in millibels), or null if it has none. */

@@ -117,6 +117,9 @@ fun NowPlayingScreen(
     /** 4.2 radio: country flag of the station, and Reconnect after a stream failure. */
     radioFlag: String? = null,
     onReconnect: () -> Unit = {},
+    controlDeck: Boolean = false,
+    eqEnabled: Boolean = false,
+    onEqEnabledChange: ((Boolean) -> Unit)? = null,
 ) {
     val song = state.currentSong
     // System back collapses (minimizes) the full-screen player — it never gets stuck open.
@@ -307,7 +310,18 @@ fun NowPlayingScreen(
         }
 
         Spacer(Modifier.height(if (config.layout == PlayerLayout.COMPACT) 8.dp else 16.dp))
-        if (controls == ControlStyle.GLASS || tactile) {
+        if (controlDeck) {
+            com.example.mimic.ui.player.ControlDeckPanel(
+                state, onSeek, onPrevious, onPlayPause, onNext, onShuffle, onRepeat,
+                showShuffleRepeat = config.showShuffleRepeat,
+                volumeMode = config.resolvedVolume(ControlStyle.TACTILE),
+                eqEnabled = eqEnabled,
+                onEqEnabledChange = onEqEnabledChange,
+                hapticSeek = hapticSeek,
+            ) {
+                com.example.mimic.ui.radio.LiveRow(state, radioFlag, MaterialTheme.colorScheme.onBackground, MaterialTheme.colorScheme.onSurfaceVariant, MaterialTheme.colorScheme.error, onReconnect)
+            }
+        } else if (controls == ControlStyle.GLASS || tactile) {
             // One control deck holding seek + transport: frosted glass, or a raised 3D console.
             Column(
                 Modifier
@@ -342,7 +356,7 @@ fun NowPlayingScreen(
 
         // 4.8: the phone's media volume as a rotary dial (or slider). Radio's live row has its own.
         val volumeMode = config.resolvedVolume(if (tactile) ControlStyle.TACTILE else controls)
-        if (volumeMode != null && !state.isLive) {
+        if (!controlDeck && volumeMode != null && !state.isLive) {
             val volume = com.example.mimic.player.rememberMediaVolume()
             // Short screens get the slim slider so the artwork keeps its room.
             val roomy = androidx.compose.ui.platform.LocalConfiguration.current.screenHeightDp >= 680

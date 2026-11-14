@@ -52,6 +52,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             val settings by viewModel.settings.collectAsStateWithLifecycle()
             val activeTheme by viewModel.activeTheme.collectAsStateWithLifecycle()
             val adaptiveSeed by viewModel.adaptiveSeed.collectAsStateWithLifecycle()
+            if (activeTheme.id == com.example.mimic.ui.designsystem.ThemeRegistry.CONTROL_DECK_ID) {
+                androidx.compose.runtime.DisposableEffect(Unit) {
+                    val bars = androidx.core.view.WindowCompat.getInsetsController(window, window.decorView)
+                    val previousAppearance = bars.isAppearanceLightStatusBars
+                    bars.isAppearanceLightStatusBars = false
+                    onDispose { bars.isAppearanceLightStatusBars = previousAppearance }
+                }
+            }
             MImicTheme(theme = activeTheme, quality = settings.glassQuality, adaptiveSeed = adaptiveSeed) {
                 Surface(
                     modifier = Modifier.fillMaxSize(),

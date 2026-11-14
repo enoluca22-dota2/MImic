@@ -231,6 +231,10 @@ class SettingsRepository(private val context: Context) {
         }
     }
 
+    suspend fun setEqualizerEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[Keys.EQ_ON] = enabled }
+    }
+
     suspend fun setAudio(a: AudioPrefs) {
         context.dataStore.edit {
             it[Keys.SPEED] = a.speed

@@ -226,6 +226,7 @@ object ThemeRegistry {
     ) = ThemeDefinition(id, name, true, ThemeColors(primary, secondary, background, surface, elevated, text, text2, false), style)
 
     val presets: List<ThemeDefinition> = listOf(
+        dark(CONTROL_DECK_ID, "Studio Hardware", 0xFFFFB45F, 0xFFE1A16B, 0xFF0E1013, 0xFF191D22, 0xFF30353C, text = 0xFFF6F2EA, text2 = 0xFFB4BCC5, style = SKEUO),
         // ---- MImic Liquid Glass flagship, then the 14 canonical MImic 2.9 presets ----
         dark("mimic_liquid_glass", "MImic Liquid Glass", 0xFF8AB4FF, 0xFFB79CFF, 0xFF080B12, 0xFF121826, 0xFF1C2436, text = 0xFFF3F6FC, text2 = 0xFFAFB9CC, style = GLASS_MIMIC),
         dark(AURA_ID, "Floating Aura", 0xFFC4A1FF, 0xFFFF9BD2, 0xFF0B0711, 0xFF151020, 0xFF20182F, text = 0xFFF5F0FF, text2 = 0xFFB4A8CC, style = AURA),
@@ -264,6 +265,7 @@ object ThemeRegistry {
     private val byId = presets.associateBy { it.id }
     const val DEFAULT_ID = "emerald"
     const val AURA_ID = "floating_aura"
+    const val CONTROL_DECK_ID = "control_deck"
 
     /** The 14 presets from the 2.9 brief, in display order. */
     val CANONICAL_IDS = listOf(
@@ -278,7 +280,7 @@ object ThemeRegistry {
         DepthStyle.SKEUOMORPHIC to ("skeuo_ivory" to "skeuo_graphite"),
         DepthStyle.HYBRID to ("hybrid_soft" to "hybrid_soft_night"),
     )
-    val DEPTH_IDS: Set<String> = DEPTH_PRESETS.values.flatMap { listOf(it.first, it.second) }.toSet()
+    val DEPTH_IDS: Set<String> = DEPTH_PRESETS.values.flatMap { listOf(it.first, it.second) }.toSet() + CONTROL_DECK_ID
 
     /** The built-in preset for a 3D [style] in its light or dark variant. */
     fun depthPresetId(style: DepthStyle, dark: Boolean): String? =

@@ -141,7 +141,8 @@ fun ThemeStudioScreen(
         it.builtIn && it.id != "mimic_liquid_glass" && it.id != ThemeRegistry.AURA_ID && it.id !in ThemeRegistry.CANONICAL_IDS &&
             it.id !in ThemeRegistry.DEPTH_IDS
     }
-    val depthPresets = themes.filter { it.id in ThemeRegistry.DEPTH_IDS }
+    val controlDeck = themes.filter { it.id == ThemeRegistry.CONTROL_DECK_ID }
+    val depthPresets = themes.filter { it.id in ThemeRegistry.DEPTH_IDS && it.id != ThemeRegistry.CONTROL_DECK_ID }
     val custom = themes.filter { !it.builtIn }
 
     Column(Modifier.fillMaxSize()) {
@@ -156,6 +157,7 @@ fun ThemeStudioScreen(
             }
         })
         LazyColumn(Modifier.fillMaxSize()) {
+            themeSection("Hardware theme", controlDeck, settings.themeId, vm, onEdit, onExportFile, onShare) { confirmDelete = it }
             item(key = "depth3d") {
                 DepthStylesSection(
                     themes = themes,

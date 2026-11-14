@@ -74,7 +74,8 @@ class DepthStyleTest {
             assertEquals(ids.second, ThemeRegistry.depthPresetId(style, dark = true))
         }
         assertNull(ThemeRegistry.depthPresetId(DepthStyle.FLAT, dark = false))
-        assertEquals(6, ThemeRegistry.DEPTH_IDS.size)
+        assertEquals(6, ThemeRegistry.DEPTH_PRESETS.values.flatMap { listOf(it.first, it.second) }.toSet().size)
+        assertTrue(ThemeRegistry.CONTROL_DECK_ID in ThemeRegistry.DEPTH_IDS)
         assertEquals("ids are unique", ThemeRegistry.presets.size, ThemeRegistry.presets.map { it.id }.toSet().size)
     }
 
