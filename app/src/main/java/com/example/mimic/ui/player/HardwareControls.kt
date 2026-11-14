@@ -32,6 +32,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.SolidColor
+import com.example.mimic.ui.designsystem.MatteAmberOrange
+import com.example.mimic.ui.designsystem.MatteAmberRed
+import com.example.mimic.ui.designsystem.MatteAmberYellow
+import com.example.mimic.ui.designsystem.MatteGraphiteTop
+import com.example.mimic.ui.designsystem.MatteGraphiteBottom
+import com.example.mimic.ui.designsystem.matteAmberSymbolBrush
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -76,6 +83,7 @@ fun HardwareButton(
     illuminated: Boolean = false,
     accent: Color = HardwareAmber,
 ) {
+    val matteAmber = com.example.mimic.ui.designsystem.LocalDepth.current.matteAmber
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val focused by interaction.collectIsFocusedAsState()
@@ -86,8 +94,22 @@ fun HardwareButton(
             .semantics { contentDescription = label }
             .clickable(interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
     ) {
-        val iconCenter = drawHardwareKey(travel, illuminated, focused, accent)
-        transportIcon(icon, iconCenter, size.minDimension * .175f, if (illuminated) Well else Ink)
+        val unit = size.minDimension
+        val iconCenter = if (matteAmber && illuminated) {
+            val capCenter = center + Offset(0f, unit * (-.04f + travel * .05f))
+            val radius = unit * .44f
+            drawCircle(Well, radius, capCenter + Offset(0f, unit * (.07f - travel * .04f)))
+            drawCircle(
+                Brush.verticalGradient(listOf(MatteGraphiteTop, MatteGraphiteBottom), capCenter.y - radius, capCenter.y + radius),
+                radius, capCenter,
+            )
+            drawCircle(Color.White.copy(alpha = if (focused) .55f else .14f), radius, capCenter, style = Stroke(1.dp.toPx()))
+            capCenter
+        } else drawHardwareKey(travel, illuminated, focused, accent, matteAmber)
+        val radius = unit * if (matteAmber && illuminated) .21f else .175f
+        val symbol = if (matteAmber) matteAmberSymbolBrush(iconCenter.y - radius * .77f, iconCenter.y + radius * .77f)
+            else SolidColor(if (illuminated) Well else Ink)
+        transportIcon(icon, iconCenter, radius, symbol)
     }
 }
 
@@ -96,6 +118,7 @@ internal fun DrawScope.drawHardwareKey(
     illuminated: Boolean,
     focused: Boolean,
     accent: Color = HardwareAmber,
+    matteAmber: Boolean = false,
 ): Offset {
     if (size.minDimension <= 0f) return center
     val unit = size.minDimension
@@ -107,11 +130,11 @@ internal fun DrawScope.drawHardwareKey(
     roundedShade(Color(0xFF343A42), Well, Offset(0f, size.height * .08f),
         Size(size.width, size.height * .91f), corner + inset)
     roundedShade(Color(0xFF353A41), Color(0xFF121417), wall, face, corner)
-    val upper = if (illuminated) lerp(MetalTop, accent, .67f) else MetalTop
-    val lower = if (illuminated) lerp(MetalBottom, accent, .56f) else MetalBottom
+    val upper = if (matteAmber) MatteGraphiteTop else if (illuminated) lerp(MetalTop, accent, .67f) else MetalTop
+    val lower = if (matteAmber) MatteGraphiteBottom else if (illuminated) lerp(MetalBottom, accent, .56f) else MetalBottom
     roundedShade(upper, lower, top, face, corner)
     drawRoundRect(
-        color = if (focused) accent else Color.White.copy(alpha = .24f),
+        color = if (focused && !matteAmber) accent else Color.White.copy(alpha = if (focused) .55f else if (matteAmber) .11f else .24f),
         topLeft = top, size = face, cornerRadius = CornerRadius(corner),
         style = Stroke(if (focused) 2.dp.toPx() else 1.dp.toPx()),
     )
@@ -132,6 +155,7 @@ fun HardwareKnob(
     keyboardStep: Float = .05f,
 ) {
     val position = normalized(value)
+    val matteAmber = com.example.mimic.ui.designsystem.LocalDepth.current.matteAmber
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val dragged by interaction.collectIsDraggedAsState()
@@ -177,6 +201,10 @@ fun HardwareKnob(
                 onDragStopped = { finish?.invoke() })
     ) {
         val r = size.minDimension / 2f
+        if (matteAmber) {
+            drawMatteVolumeDial(r, position, focused)
+            return@Canvas
+        }
         val arc = r * .92f
         val bounds = center - Offset(arc, arc)
         val diameter = Size(2 * arc, 2 * arc)
@@ -216,13 +244,56 @@ fun HardwareKnob(
             drawCircle(Color.White.copy(alpha = if (ring % 2 == 0) .045f else .018f),
                 faceRadius * ring / 20, cap, style = Stroke(.65.dp.toPx()))
         }
-        drawCircle(if (focused || dragged) accent else Color.White.copy(alpha = .33f),
+        drawCircle(if (focused || dragged) accent else Color.White.copy(alpha = if (focused) .55f else .33f),
             faceRadius, cap, style = Stroke(1.dp.toPx()))
         val start = point(cap, r * .30f, angle)
         val end = point(cap, r * .51f, angle)
         drawLine(Well, start, end, r * .096f, StrokeCap.Round)
         drawLine(accent, start, end, r * .054f, StrokeCap.Round)
     }
+}
+
+private fun DrawScope.drawMatteVolumeDial(radius: Float, position: Float, focused: Boolean) {
+    val outer = radius * .89f
+    val trackOrigin = center - Offset(outer, outer)
+    val trackSize = Size(outer * 2f, outer * 2f)
+    drawArc(Well, 135f, 270f, false, trackOrigin, trackSize, style = Stroke(radius * .04f))
+
+    val ring = radius * .68f
+    drawCircle(Well, ring + radius * .075f)
+    drawCircle(
+        MatteAmberRed.copy(alpha = .22f), ring,
+        style = Stroke(radius * .104f),
+    )
+    drawCircle(
+        matteAmberSymbolBrush(center.y - ring, center.y + ring), ring,
+        style = Stroke(radius * .064f),
+    )
+    drawCircle(
+        Brush.radialGradient(
+            .0f to Well, .69f to Well, .89f to MatteGraphiteTop, 1f to Well,
+            center = center, radius = ring,
+        ),
+        ring - radius * .037f,
+    )
+
+    val capRadius = radius * .40f
+    drawCircle(Color.Black.copy(alpha = .76f), capRadius * 1.04f, center + Offset(0f, radius * .044f))
+    drawCircle(
+        Brush.verticalGradient(listOf(MatteGraphiteTop, MatteGraphiteBottom), center.y - capRadius, center.y + capRadius),
+        capRadius,
+    )
+    drawCircle(Color.White.copy(alpha = if (focused) .55f else .15f), capRadius, style = Stroke(1.dp.toPx()))
+    val angle = 135f + position * 270f
+    val dimple = point(center, radius * .20f, angle)
+    drawCircle(Well, radius * .065f, dimple)
+    val marker = point(center, outer, angle)
+    drawCircle(
+        Brush.radialGradient(listOf(MatteAmberOrange, Color.Transparent), center = marker, radius = radius * .16f),
+        radius * .16f, marker,
+    )
+    drawCircle(MatteAmberOrange, radius * .082f, marker)
+    drawCircle(MatteAmberYellow, radius * .056f, marker)
 }
 
 /** A latching rocker with a moving center highlight. */
@@ -235,6 +306,7 @@ fun HardwareSwitch(
     enabled: Boolean = true,
     accent: Color = HardwareAmber,
 ) {
+    val matteAmber = com.example.mimic.ui.designsystem.LocalDepth.current.matteAmber
     val interaction = remember { MutableInteractionSource() }
     val focused by interaction.collectIsFocusedAsState()
     val angle by animateFloatAsState(if (checked) 1f else 0f, tween(160), label = "Rocker tilt")
@@ -251,22 +323,24 @@ fun HardwareSwitch(
         val radius = edge * 2f
         roundedShade(Color(0xFF040506), Rim, Offset.Zero, size, radius + edge)
         drawRoundRect(Well, origin, body, CornerRadius(radius))
-        val left = lerp(MetalBottom, MetalTop, angle)
-        val right = lerp(MetalTop, MetalBottom, angle)
+        val upper = if (matteAmber) MatteGraphiteTop else MetalTop
+        val lower = if (matteAmber) MatteGraphiteBottom else MetalBottom
+        val left = lerp(lower, upper, angle)
+        val right = lerp(upper, lower, angle)
         val hinge = .42f + .16f * angle
         drawRoundRect(
-            Brush.horizontalGradient(0f to left, hinge to lerp(MetalTop, Ink, .18f), 1f to right,
+            Brush.horizontalGradient(0f to left, hinge to lerp(upper, Ink, if (matteAmber) .04f else .18f), 1f to right,
                 startX = origin.x, endX = origin.x + body.width),
             origin, body, CornerRadius(radius),
         )
-        val status = lerp(Rim, accent, angle)
+        val status = if (matteAmber) MatteAmberOrange.copy(alpha = .38f + .62f * angle) else lerp(Rim, accent, angle)
         val lamp = Offset(origin.x + body.width * .73f, center.y)
-        drawCircle(status.copy(alpha = .3f * angle), edge * 1.22f, lamp)
+        if (!matteAmber) drawCircle(status.copy(alpha = .3f * angle), edge * 1.22f, lamp)
         drawCircle(status, edge * .56f, lamp)
         val mark = Offset(origin.x + body.width * .26f, center.y)
-        drawLine(Ink.copy(alpha = .67f), mark - Offset(edge * .62f, 0f),
+        drawLine(if (matteAmber) MatteAmberOrange.copy(alpha = 1f - .62f * angle) else Ink.copy(alpha = .67f), mark - Offset(edge * .62f, 0f),
             mark + Offset(edge * .62f, 0f), 1.5.dp.toPx(), StrokeCap.Round)
-        drawRoundRect(if (focused) accent else Color.White.copy(alpha = .2f),
+        drawRoundRect(if (focused && !matteAmber) accent else Color.White.copy(alpha = if (focused) .55f else .2f),
             origin, body, CornerRadius(radius), style = Stroke(1.dp.toPx()))
     }
 }
@@ -284,6 +358,7 @@ fun HardwareSlider(
     onValueChangeFinished: (() -> Unit)? = null,
     valueDescription: String? = null,
 ) {
+    val matteAmber = com.example.mimic.ui.designsystem.LocalDepth.current.matteAmber
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val dragged by interaction.collectIsDraggedAsState()
@@ -307,12 +382,12 @@ fun HardwareSlider(
                 val face = Size(size.width - 2 * top.x, 26.dp.toPx())
                 val radius = 7.dp.toPx()
                 roundedShade(Rim, Well, top + Offset(0f, (5f - travel * 2f).dp.toPx()), face, radius)
-                roundedShade(MetalTop, MetalBottom, top, face, radius)
-                drawRoundRect(if (focused) accent else Color.White.copy(alpha = .26f),
+                roundedShade(if (matteAmber) MatteGraphiteTop else MetalTop, if (matteAmber) MatteGraphiteBottom else MetalBottom, top, face, radius)
+                drawRoundRect(if (focused && !matteAmber) accent else Color.White.copy(alpha = if (focused) .55f else .26f),
                     top, face, CornerRadius(radius), style = Stroke(1.dp.toPx()))
                 for (i in -1..1) {
                     val x = center.x + (i * 5).dp.toPx()
-                    drawLine(if (i == 0) accent else Well, Offset(x, top.y + 7.dp.toPx()),
+                    drawLine(if (i == 0) (if (matteAmber) MatteAmberOrange else accent) else Well, Offset(x, top.y + 7.dp.toPx()),
                         Offset(x, top.y + face.height - 7.dp.toPx()), 2.dp.toPx(), StrokeCap.Round)
                 }
             }
@@ -324,7 +399,7 @@ fun HardwareSlider(
                 roundedShade(Well, Rim, top, Size(size.width, slot), slot / 2f)
                 val active = size.width * state.value
                 if (active > 0f) {
-                    drawRoundRect(accent, Offset(if (rtl) size.width - active else 0f, center.y - 1.5.dp.toPx()),
+                    drawRoundRect(if (matteAmber) Color(0xFF8A828D) else accent, Offset(if (rtl) size.width - active else 0f, center.y - 1.5.dp.toPx()),
                         Size(active, 3.dp.toPx()), CornerRadius(1.5.dp.toPx()))
                 }
                 for (i in 0..16) {
@@ -354,10 +429,10 @@ private fun DrawScope.roundedShade(
     )
 }
 
-private fun DrawScope.transportIcon(icon: TransportIcon, at: Offset, radius: Float, color: Color) {
+private fun DrawScope.transportIcon(icon: TransportIcon, at: Offset, radius: Float, brush: Brush) {
     if (icon == TransportIcon.Pause) {
         for (side in listOf(-1, 1)) {
-            drawRoundRect(color, at + Offset(side * radius * .43f - radius * .21f, -radius * .71f),
+            drawRoundRect(brush, at + Offset(side * radius * .43f - radius * .21f, -radius * .71f),
                 Size(radius * .42f, radius * 1.42f), CornerRadius(radius * .11f))
         }
         return
@@ -370,10 +445,10 @@ private fun DrawScope.transportIcon(icon: TransportIcon, at: Offset, radius: Flo
         lineTo(x + direction * radius * .74f, at.y)
         lineTo(x - direction * radius * .63f, at.y + radius * .77f)
         close()
-    }, color)
+    }, brush)
     if (skip) {
         val stop = at.x + direction * radius * .79f
-        drawLine(color, Offset(stop, at.y - radius * .65f), Offset(stop, at.y + radius * .65f),
+        drawLine(brush, Offset(stop, at.y - radius * .65f), Offset(stop, at.y + radius * .65f),
             radius * .24f, StrokeCap.Round)
     }
 }

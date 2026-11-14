@@ -402,7 +402,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
                         compact = compactMini.value,
                     )
                 }
-                BottomBar(navController, navStyle, settings.themeId == ThemeRegistry.CONTROL_DECK_ID, onReselect = { tabReselect.tryEmit(it) })
+                BottomBar(navController, navStyle, ThemeRegistry.usesHardwareControls(settings.themeId), onReselect = { tabReselect.tryEmit(it) })
             }
         },
     ) { innerPadding ->
@@ -634,7 +634,7 @@ fun MimicApp(viewModel: PlayerViewModel) {
         }
     }
 
-    val controlDeck = settings.themeId == com.example.mimic.ui.designsystem.ThemeRegistry.CONTROL_DECK_ID
+    val controlDeck = ThemeRegistry.usesHardwareControls(settings.themeId)
     val setDeckEq: ((Boolean) -> Unit)? = if (controlDeck && castingTo == null) viewModel::setEqualizerEnabled else null
     if (nowPlayingOpen && uiState.currentSong != null && settings.playerLayout.layout == com.example.mimic.data.PlayerLayout.DYNAMIC) {
         com.example.mimic.ui.dynamic.DynamicNowPlayingScreen(
@@ -696,7 +696,11 @@ fun MimicApp(viewModel: PlayerViewModel) {
             onEqEnabledChange = setDeckEq,
             topEndActions = {
                 com.example.mimic.cast.CastButton(MaterialTheme.colorScheme.onBackground)
-                IconButton(onClick = { uiState.currentSong?.let(shareSong) }) {
+                if (settings.themeId == ThemeRegistry.CONTROL_DECK_ID) {
+                    com.example.mimic.ui.components.DepthIconButton(
+                        androidx.compose.material.icons.Icons.Default.Share, "Share song", { uiState.currentSong?.let(shareSong) },
+                    )
+                } else IconButton(onClick = { uiState.currentSong?.let(shareSong) }) {
                     Icon(androidx.compose.material.icons.Icons.Default.Share, contentDescription = "Share song", tint = MaterialTheme.colorScheme.onBackground)
                 }
             },

@@ -56,7 +56,9 @@ fun LiveRow(state: PlayerUiState, flag: String?, textColor: Color, mutedColor: C
                 modifier = Modifier.weight(1f),
             )
             if (state.playbackError != null) {
-                TextButton(onClick = onReconnect) {
+                if (com.example.mimic.ui.designsystem.LocalDepth.current.matteAmber) {
+                    com.example.mimic.ui.components.DepthIconButton(Icons.Default.Refresh, "Reconnect", onReconnect)
+                } else TextButton(onClick = onReconnect) {
                     Icon(Icons.Default.Refresh, null, tint = textColor, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(4.dp))
                     Text("Reconnect", color = textColor)
@@ -72,6 +74,10 @@ fun LiveRow(state: PlayerUiState, flag: String?, textColor: Color, mutedColor: C
 fun VolumeSlider(iconColor: Color, accent: Color) {
     // 4.8: shared media-volume state — also follows the hardware volume keys now.
     val volume = com.example.mimic.player.rememberMediaVolume()
+    if (com.example.mimic.ui.designsystem.LocalDepth.current.matteAmber) {
+        com.example.mimic.ui.player.HardwareSlider("Media volume", volume.fraction, volume::setFraction, enabled = !volume.fixed)
+        return
+    }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Icon(Icons.AutoMirrored.Filled.VolumeDown, "Volume", tint = iconColor)
         com.example.mimic.ui.components.MimicSlider(

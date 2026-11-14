@@ -50,8 +50,12 @@ data class GlassEnv(
     /** System "remove animations" / animator scale 0. Forces motion off regardless of theme. */
     val reducedMotion: Boolean = false,
 ) {
-    /** Glass surfaces are drawn only when the theme asks for them AND the device setting allows. */
-    val enabled: Boolean get() = style.glass && quality.allowsGlass
+    /**
+     * Glass surfaces are drawn only when the theme asks for them AND the device setting allows —
+     * and never on a 3D theme (4.8.0-beta.2): the 3D style draws its own surfaces, so a 3D theme
+     * with "Liquid Glass surfaces" switched on no longer turns its hardware controls into glass.
+     */
+    val enabled: Boolean get() = style.glass && quality.allowsGlass && style.depth == DepthStyle.FLAT
 
     /** 0 when motion is off (theme toggle or system reduced-motion), else the theme's intensity. */
     val motionScale: Float get() = if (!style.motion || reducedMotion) 0f else style.animationScale

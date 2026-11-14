@@ -3,6 +3,8 @@ package com.example.mimic.ui.player
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.BoxWithConstraints
+import com.example.mimic.ui.designsystem.matteGrain
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -56,10 +58,13 @@ internal fun ControlDeckPanel(
     hapticSeek: Boolean,
     liveContent: @Composable () -> Unit,
 ) {
+    val matteAmber = com.example.mimic.ui.designsystem.LocalDepth.current.matteAmber
+    val panelColors = if (matteAmber) listOf(Color(0xFF26262E), Color(0xFF18181E))
+        else listOf(Color(0xFF30353C), Color(0xFF191D22))
     Column(
         Modifier.fillMaxWidth()
-            .background(Brush.verticalGradient(listOf(Color(0xFF30353C), Color(0xFF191D22))), PanelShape)
-            .border(1.dp, Color(0xFF484E56), PanelShape)
+            .background(Brush.verticalGradient(panelColors), PanelShape)
+            .border(1.dp, if (matteAmber) Color(0xFF34343D) else Color(0xFF484E56), PanelShape)
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
@@ -101,7 +106,7 @@ internal fun ControlDeckPanel(
             ) {
                 if (volumeMode != null) {
                     val volume = rememberMediaVolume()
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.weight(if (matteAmber) 1.35f else 1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         val percent = "${(volume.fraction * 100).roundToInt()}%"
                         PanelLabel("Volume · $percent")
                         if (volumeMode == VolumeControl.SLIDER) {
@@ -109,14 +114,17 @@ internal fun ControlDeckPanel(
                                 Modifier.fillMaxWidth().padding(horizontal = 8.dp), enabled = !volume.fixed,
                                 valueDescription = percent)
                         } else {
-                            HardwareKnob("Media volume", volume.fraction, volume::setFraction, Modifier.size(88.dp),
-                                enabled = !volume.fixed, valueDescription = percent,
-                                keyboardStep = 1f / volume.max)
+                            BoxWithConstraints(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                                val dialSize = if (matteAmber) minOf(maxWidth, 136.dp) else 88.dp
+                                HardwareKnob("Media volume", volume.fraction, volume::setFraction, Modifier.size(dialSize),
+                                    enabled = !volume.fixed, valueDescription = percent,
+                                    keyboardStep = 1f / volume.max)
+                            }
                         }
                     }
                 }
                 if (onEqEnabledChange != null) {
-                    Column(Modifier.weight(1f), horizontalAlignment = Alignment.CenterHorizontally) {
+                    Column(Modifier.weight(if (matteAmber) 1.35f else 1f), horizontalAlignment = Alignment.CenterHorizontally) {
                         PanelLabel("EQ bypass")
                         HardwareSwitch("EQ bypass", !eqEnabled, { onEqEnabledChange(!it) })
                     }

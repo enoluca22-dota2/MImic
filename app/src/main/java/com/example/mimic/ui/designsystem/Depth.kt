@@ -16,6 +16,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.shadow.Shadow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.DpOffset
@@ -103,12 +105,13 @@ data class DepthPalette(
     val groove: Int = 0,
 ) {
     val on: Boolean get() = style != DepthStyle.FLAT
+    val matteAmber: Boolean get() = style == DepthStyle.MATTE_AMBER
 
     /** Pages, cards, sheets and the nav bar use soft neumorphic relief. */
     val softSurfaces: Boolean get() = style == DepthStyle.NEUMORPHIC || style == DepthStyle.HYBRID
 
     /** Buttons, knobs and switches are drawn as physical objects. */
-    val physicalControls: Boolean get() = style == DepthStyle.SKEUOMORPHIC || style == DepthStyle.HYBRID
+    val physicalControls: Boolean get() = style == DepthStyle.SKEUOMORPHIC || style == DepthStyle.HYBRID || matteAmber
 
     /** Equipment look (the Black & Orange reference): bare lit transport glyphs, uppercase labels. */
     val equipment: Boolean get() = style == DepthStyle.SKEUOMORPHIC && dark
@@ -143,15 +146,18 @@ fun depthPalette(
     // Physical controls: matte black on dark styles; Hybrid always uses dark graphite controls
     // (the Black & Orange hardware) set into its soft page; Ivory uses light enamel.
     val controlBase = when {
-        style == DepthStyle.HYBRID -> GRAPHITE
+        style == DepthStyle.HYBRID || style == DepthStyle.MATTE_AMBER -> GRAPHITE
         dark -> surface
         else -> surface
     }
     val darkControls = style == DepthStyle.HYBRID || dark
-    val metalTop = if (darkControls) m(controlBase, white, 0.09f) else m(controlBase, white, 0.62f)
-    val metalBottom = if (darkControls) m(controlBase, black, 0.38f) else m(controlBase, black, 0.10f)
+    // Black & Orange (equipment) bodies use the reference's measured blue-graphite dome colors
+    // (#30303A lit top, #1A1B20 shaded bottom; sampled from reference 02, 4.8.0-beta.2).
+    val equipment = style == DepthStyle.SKEUOMORPHIC && dark
+    val metalTop = if (style == DepthStyle.MATTE_AMBER) 0xFF2D2D37.toInt() else if (equipment) EQ_DOME_TOP else if (darkControls) m(controlBase, white, 0.09f) else m(controlBase, white, 0.62f)
+    val metalBottom = if (style == DepthStyle.MATTE_AMBER) 0xFF1A1A20.toInt() else if (equipment) EQ_DOME_BOTTOM else if (darkControls) m(controlBase, black, 0.38f) else m(controlBase, black, 0.10f)
     val orange = darkControls && style != DepthStyle.NEUMORPHIC
-    val glow = if (orange) ORANGE else primary
+    val glow = if (style == DepthStyle.MATTE_AMBER) 0xFFFF8100.toInt() else if (orange) ORANGE else primary
     return DepthPalette(
         style = style,
         dark = dark,
@@ -170,11 +176,11 @@ fun depthPalette(
         accentTop = m(primary, white, 0.22f),
         accentBottom = m(primary, black, 0.22f),
         onAccent = DepthColors.onColor(primary),
-        glowHot = if (orange) ORANGE_HOT else m(glow, black, 0.15f),
+        glowHot = if (style == DepthStyle.MATTE_AMBER) 0xFFFF4A00.toInt() else if (equipment) EQ_HOT else if (orange) ORANGE_HOT else m(glow, black, 0.15f),
         glow = glow,
-        glowWarm = if (orange) AMBER else m(glow, white, 0.25f),
+        glowWarm = if (style == DepthStyle.MATTE_AMBER) 0xFFFDFA15.toInt() else if (equipment) EQ_WARM else if (orange) AMBER else m(glow, white, 0.25f),
         groove = when {
-            style == DepthStyle.SKEUOMORPHIC && dark -> 0xFF0D0D0F.toInt()
+            equipment -> EQ_WELL
             dark -> m(surface, black, 0.30f)
             else -> m(surface, NAVY, 0.06f)
         },
@@ -182,10 +188,35 @@ fun depthPalette(
 }
 
 private const val NAVY = 0xFF1F3868.toInt()
+internal val MatteAmberRed = Color(0xFFFF4A00)
+internal val MatteAmberOrange = Color(0xFFFEA30A)
+internal val MatteAmberYellow = Color(0xFFFDFA15)
+internal val MatteGraphiteTop = Color(0xFF2D2D37)
+internal val MatteGraphiteBottom = Color(0xFF202126)
+
+internal fun matteAmberSymbolBrush(top: Float, bottom: Float): Brush =
+    Brush.linearGradient(
+        0f to MatteAmberRed, .48f to MatteAmberOrange, 1f to MatteAmberYellow,
+        start = Offset(0f, top), end = Offset(0f, bottom),
+    )
+
 private const val GRAPHITE = 0xFF2A2B2F.toInt()
 private const val ORANGE = 0xFFFF7A1A.toInt()
 private const val ORANGE_HOT = 0xFFFF3D0A.toInt()
 private const val AMBER = 0xFFFFC23A.toInt()
+
+// Black & Orange equipment colors, sampled from reference 02 (Desktop\MImic\UI-Reference).
+private const val EQ_DOME_TOP = 0xFF30303A.toInt()
+private const val EQ_DOME_BOTTOM = 0xFF1A1B20.toInt()
+private const val EQ_HOT = 0xFFFF4A00.toInt()
+private const val EQ_WARM = 0xFFFFD21A.toInt()
+private const val EQ_WELL = 0xFF0D0E10.toInt()
+
+/** Status LEDs on the equipment knob: cyan at the low end (reference 02's right-hand dial). */
+const val EQ_CYAN = 0xFF3EE8F0.toInt()
+
+/** The knob's indicator dot: a cream-hot centre (reference 02: #FFE07B). */
+const val EQ_CREAM = 0xFFFFE07B.toInt()
 
 /**
  * A 3D panel: cards, tiles, the mini-player, the nav bar, the player control deck. On FLAT themes
@@ -353,29 +384,38 @@ fun Modifier.depthControl(
  * Fine matte grain (reference 02's powder-coated finish): one 96×96 noise tile generated once per
  * process and tiled by the GPU — no per-frame work. Only the Black & Orange style uses it.
  */
-private val matteTile: androidx.compose.ui.graphics.ImageBitmap by lazy {
+private val matteTile by lazy { makeMatteTile(6, 10) }
+private val graphiteTile by lazy { makeMatteTile(8, 24) }
+
+private fun makeMatteTile(minAlpha: Int, alphaRange: Int): androidx.compose.ui.graphics.ImageBitmap {
     val size = 96
     val rnd = java.util.Random(4_808L)
     val px = IntArray(size * size) {
-        val v = rnd.nextInt(256)
-        val a = 6 + rnd.nextInt(10)
+        val v = if (minAlpha == 6) rnd.nextInt(256) else if (rnd.nextBoolean()) 255 else 0
+        val a = minAlpha + rnd.nextInt(alphaRange)
         (a shl 24) or (v shl 16) or (v shl 8) or v
     }
     val bmp = android.graphics.Bitmap.createBitmap(px, size, size, android.graphics.Bitmap.Config.ARGB_8888)
-    bmp.asImageBitmap()
+    return bmp.asImageBitmap()
 }
 
 @Composable
-fun Modifier.matteGrain(): Modifier {
+fun Modifier.matteGrain(shape: Shape = RectangleShape): Modifier {
     val d = LocalDepth.current
-    if (!d.equipment) return this
-    val brush = androidx.compose.runtime.remember {
+    if (!d.equipment && !d.matteAmber) return this
+    val brush = androidx.compose.runtime.remember(d.matteAmber) {
         androidx.compose.ui.graphics.ShaderBrush(
-            androidx.compose.ui.graphics.ImageShader(matteTile, androidx.compose.ui.graphics.TileMode.Repeated, androidx.compose.ui.graphics.TileMode.Repeated),
+            androidx.compose.ui.graphics.ImageShader(if (d.matteAmber) graphiteTile else matteTile, androidx.compose.ui.graphics.TileMode.Repeated, androidx.compose.ui.graphics.TileMode.Repeated),
         )
     }
-    return this.drawBehind { drawRect(brush) }
+    return if (shape == RectangleShape) this.drawBehind { drawRect(brush) }
+        else this.clip(shape).drawBehind { drawRect(brush) }
 }
+
+@Composable
+internal fun Modifier.mattePlayerBackground(): Modifier = background(
+    Brush.verticalGradient(listOf(Color(0xFF29292E), Color(0xFF19191D), Color(0xFF111114))),
+).matteGrain()
 
 /** Color -> packed ARGB Int (sRGB), for the pure [DepthColors] math. */
 fun Color.toArgbInt(): Int {

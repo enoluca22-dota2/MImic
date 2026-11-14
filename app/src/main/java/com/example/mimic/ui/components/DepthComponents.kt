@@ -27,6 +27,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.VolumeDown
 import androidx.compose.material.icons.automirrored.filled.VolumeUp
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -121,9 +123,21 @@ fun DepthIconButton(
     shape: Shape = CircleShape,
     /** Equipment transport (reference 02): no button body, just a lit glyph that dims when pressed. */
     bare: Boolean = false,
+    /** Internal: already drawn inside its recessed housing. */
+    housed: Boolean = false,
 ) {
     val d = LocalDepth.current
     val scheme = MaterialTheme.colorScheme
+    // Reference 02's big play knob sits in a recessed housing ring cut into the chassis.
+    if (accent && !bare && !housed && d.equipment && size >= 64.dp) {
+        Box(modifier.size(size + 16.dp).equipmentHousing(), contentAlignment = Alignment.Center) {
+            DepthIconButton(
+                icon, contentDescription, onClick, Modifier, size, iconSize, accent, selected, enabled, tint,
+                stateDescription, shape, bare = false, housed = true,
+            )
+        }
+        return
+    }
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     Box(
@@ -146,7 +160,10 @@ fun DepthIconButton(
             )
             .clickable(
                 interactionSource = interaction,
-                indication = ripple(bounded = true),
+                // Black & Orange: the press is shown physically (the dome sinks, its cast shadow
+                // collapses, a bare glyph dims and shrinks). A Material ripple would wash the dome
+                // grey and, on bare glyphs, draw an unclipped grey square.
+                indication = if (d.equipment) null else ripple(bounded = true),
                 enabled = enabled,
                 role = Role.Button,
                 onClick = onClick,
@@ -159,9 +176,9 @@ fun DepthIconButton(
             },
         contentAlignment = Alignment.Center,
     ) {
-        val lit = d.physicalControls && enabled && (accent || selected || bare)
+        val lit = enabled && (d.matteAmber || d.physicalControls && (accent || selected || bare))
         if (lit && tint == null) {
-            GlowIcon(icon, contentDescription, iconSize, dim = bare && pressed)
+            GlowIcon(icon, contentDescription, iconSize, dim = (bare || d.matteAmber) && pressed, muted = d.matteAmber && stateDescription != null && !selected)
         } else {
             val iconTint = when {
                 !enabled -> (if (d.physicalControls) d.c(d.onControl) else scheme.onSurface).copy(alpha = 0.38f)
@@ -175,7 +192,7 @@ fun DepthIconButton(
             }
             Icon(icon, contentDescription = contentDescription, tint = iconTint, modifier = Modifier.size(iconSize))
         }
-        if (selected && enabled && d.physicalControls && !accent) {
+        if (selected && enabled && d.physicalControls && !accent && !d.matteAmber) {
             // LED: a lit dot under the icon with a soft glow.
             val led = d.c(d.glow)
             Box(
@@ -194,14 +211,14 @@ fun DepthIconButton(
  * plus a faint halo. One offscreen layer per icon; nothing animates while idle.
  */
 @Composable
-fun GlowIcon(icon: ImageVector, contentDescription: String?, size: Dp, dim: Boolean = false) {
+fun GlowIcon(icon: ImageVector, contentDescription: String?, size: Dp, dim: Boolean = false, muted: Boolean = false) {
     val d = LocalDepth.current
     val hot = d.c(d.glowHot)
     val mid = d.c(d.glow)
     val warm = d.c(d.glowWarm)
     Box(
         Modifier.size(size).drawBehind {
-            drawCircle(Brush.radialGradient(listOf(mid.copy(alpha = if (dim) 0.08f else 0.22f), Color.Transparent)), radius = this.size.minDimension * 0.75f)
+            if (!d.matteAmber) drawCircle(Brush.radialGradient(listOf(mid.copy(alpha = if (dim) 0.08f else 0.22f), Color.Transparent)), radius = this.size.minDimension * 0.75f)
         },
         contentAlignment = Alignment.Center,
     ) {
@@ -210,11 +227,12 @@ fun GlowIcon(icon: ImageVector, contentDescription: String?, size: Dp, dim: Bool
             contentDescription = contentDescription,
             tint = Color.White,
             modifier = Modifier.size(size)
-                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen; alpha = if (dim) 0.55f else 1f }
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen; alpha = if (dim || muted) 0.55f else 1f }
                 .drawWithContent {
                     drawContent()
                     drawRect(
-                        Brush.linearGradient(listOf(hot, mid, warm), start = Offset(0f, this.size.height), end = Offset(this.size.width, 0f)),
+                        if (d.matteAmber) com.example.mimic.ui.designsystem.matteAmberSymbolBrush(this.size.height * .15f, this.size.height * .85f)
+                        else Brush.linearGradient(listOf(hot, mid, warm), start = Offset(0f, this.size.height), end = Offset(this.size.width, 0f)),
                         blendMode = BlendMode.SrcIn,
                     )
                 },
@@ -297,7 +315,28 @@ private fun DepthTrack(fraction: Float, enabled: Boolean) {
     val start = if (physical) d.c(d.glowHot) else MaterialTheme.colorScheme.primary
     val end = if (physical) d.c(d.glow) else MaterialTheme.colorScheme.primary.copy(alpha = 0.55f)
     Box(
-        Modifier.fillMaxWidth().height(if (d.equipment) 6.dp else 7.dp)
+        Modifier.fillMaxWidth().height(if (d.equipment) 5.dp else 7.dp)
+            .then(
+                if (d.equipment && enabled && fraction > 0f) {
+                    // Lit channel: the orange light spills a little over the groove's lips
+                    // (two soft rounded rects behind the groove; no blur, nothing per frame).
+                    Modifier.drawBehind {
+                        val h = size.height
+                        val w = (size.width * fraction).coerceAtLeast(h)
+                        for ((grow, a) in listOf(3.2f to 0.10f, 1.9f to 0.20f)) {
+                            val gh = h * grow
+                            drawRoundRect(
+                                Brush.horizontalGradient(listOf(start.copy(alpha = a), end.copy(alpha = a)), endX = w),
+                                topLeft = Offset(-(gh - h) / 2f, (h - gh) / 2f),
+                                size = androidx.compose.ui.geometry.Size(w + (gh - h), gh),
+                                cornerRadius = androidx.compose.ui.geometry.CornerRadius(gh / 2f),
+                            )
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .depthPanel(Capsule(), color = d.c(d.groove), inset = true, elevation = 2.dp)
             .drawBehind {
                 if (fraction <= 0f) return@drawBehind
@@ -512,7 +551,9 @@ fun VolumeKnob(
         contentAlignment = Alignment.Center,
     ) {
         val angle = knobAngleFor(shown)
-        if (physical) {
+        if (d.equipment) {
+            EquipmentKnobFace(shown, angle, enabled, size)
+        } else if (physical) {
             // Reference 02: a recessed outer arc with a glowing indicator dot, and a glowing
             // red -> orange -> amber ring (the level) around a matte domed cap.
             val hot = d.c(d.glowHot)
@@ -615,14 +656,17 @@ fun VolumeKnob(
 fun PlayerVolumeControl(volume: MediaVolumeState, dial: Boolean, modifier: Modifier = Modifier, haptics: Boolean = true) {
     val scheme = MaterialTheme.colorScheme
     val percent = (volume.fraction * 100).roundToInt()
+    val equipment = LocalDepth.current.equipment
     if (dial) {
         Row(modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f), horizontalAlignment = Alignment.End) {
-                Icon(Icons.AutoMirrored.Filled.VolumeDown, contentDescription = null, tint = scheme.onSurfaceVariant)
+                // Reference 02's "+ | -" rocker; other styles keep the plain volume icon.
+                if (equipment) VolumeRocker(volume)
+                else Icon(Icons.AutoMirrored.Filled.VolumeDown, contentDescription = null, tint = scheme.onSurfaceVariant)
             }
-            Spacer(Modifier.width(16.dp))
-            VolumeKnob(volume, haptics = haptics)
-            Spacer(Modifier.width(16.dp))
+            Spacer(Modifier.width(if (equipment) 12.dp else 16.dp))
+            VolumeKnob(volume, size = if (equipment) 120.dp else 104.dp, haptics = haptics)
+            Spacer(Modifier.width(if (equipment) 12.dp else 16.dp))
             Column(Modifier.weight(1f)) {
                 Text(
                     if (volume.fixed) "Fixed" else "$percent%",
@@ -673,5 +717,199 @@ fun DepthChip(label: String, selected: Boolean, onClick: () -> Unit) {
             },
             style = MaterialTheme.typography.labelLarge,
         )
+    }
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Black & Orange equipment parts (4.8.0-beta.2), drawn after reference 02. Static Canvas drawing:
+// gradients and alpha strokes only, no blur, nothing animates while idle.
+// ---------------------------------------------------------------------------------------------
+
+const val EQ_TICKS = 17
+
+/**
+ * Lit-tick color along the dial, in discrete LED bands like reference 02's right-hand dial: cyan
+ * for the low third, amber/yellow through the middle, red-orange at the top. Never blended (a
+ * cyan-to-yellow blend would pass through green, which the reference never shows). Pure.
+ */
+fun equipmentTickColor(f: Float, cyan: Int, warm: Int, hot: Int): Int {
+    val x = if (f.isFinite()) f.coerceIn(0f, 1f) else 0f
+    return when {
+        x < 0.40f -> cyan
+        x < 0.70f -> warm
+        else -> hot
+    }
+}
+
+/** Number of lit perimeter ticks for a knob position (0..[EQ_TICKS]). Pure (unit-tested). */
+fun equipmentLitTicks(fraction: Float): Int {
+    if (!fraction.isFinite() || fraction <= 0f) return 0
+    return (fraction.coerceIn(0f, 1f) * (EQ_TICKS - 1) + 1.001f).toInt().coerceIn(1, EQ_TICKS)
+}
+
+/**
+ * The knob of reference 02: perimeter status LEDs (cyan -> amber -> orange, lit to the level), a
+ * recessed outer arc with a cream-hot indicator dot, a glowing level ring lit diagonally (red-orange
+ * top-left to yellow bottom-right, as sampled from the image), a dark recessed well and a raised
+ * domed cap with a finger dimple that turns with the level.
+ */
+@Composable
+private fun EquipmentKnobFace(shown: Float, angle: Float, enabled: Boolean, size: Dp) {
+    val d = LocalDepth.current
+    val hot = d.c(d.glowHot)
+    val mid = d.c(d.glow)
+    val warm = d.c(d.glowWarm)
+    val groove = d.c(d.groove)
+    val rimLight = d.c(d.ctrlRimLight)
+    val cream = d.c(com.example.mimic.ui.designsystem.EQ_CREAM)
+    val off = Color(0xFF2C2D34)
+    val bowl = Color(0xFF33343F)
+    val lit = if (enabled) equipmentLitTicks(shown) else 0
+    Canvas(Modifier.fillMaxSize()) {
+        val r = this.size.minDimension / 2f
+        val c0 = Offset(this.size.width / 2f, this.size.height / 2f)
+        fun at(deg: Float, radius: Float): Offset {
+            val a = Math.toRadians(deg.toDouble())
+            return c0 + Offset(sin(a).toFloat(), -cos(a).toFloat()) * radius
+        }
+        fun box(radius: Float) = androidx.compose.ui.geometry.Rect(c0.x - radius, c0.y - radius, c0.x + radius, c0.y + radius)
+        fun stroke(w: Float, round: Boolean = true) =
+            androidx.compose.ui.graphics.drawscope.Stroke(w, cap = if (round) StrokeCap.Round else StrokeCap.Butt)
+
+        // 1. Perimeter status LEDs.
+        val tickR = r - 3.dp.toPx()
+        val dotR = 2.1.dp.toPx()
+        for (i in 0 until EQ_TICKS) {
+            val f = i / (EQ_TICKS - 1f)
+            val p = at(knobAngleFor(f), tickR)
+            if (i < lit) {
+                val c = Color(equipmentTickColor(f, com.example.mimic.ui.designsystem.EQ_CYAN, d.glowWarm, d.glowHot))
+                drawCircle(c.copy(alpha = 0.28f), radius = dotR * 2.4f, center = p)
+                drawCircle(c, radius = dotR, center = p)
+            } else {
+                drawCircle(off, radius = dotR, center = p)
+            }
+        }
+        // 2. Recessed outer arc (dark groove with a faint lit lower lip).
+        val arcR = r - 12.dp.toPx()
+        val o = box(arcR)
+        drawArc(groove, 135f, 270f, false, o.topLeft, o.size, style = stroke(3.5.dp.toPx()))
+        // 3. Level ring: groove all round, glowing lit arc up to the level.
+        val ringR = r * 0.64f
+        val ringW = r * 0.075f
+        val ring = box(ringR)
+        drawCircle(groove, radius = ringR, center = c0, style = stroke(ringW + 3.dp.toPx(), round = false))
+        if (enabled && shown > 0f) {
+            val light = Brush.linearGradient(
+                listOf(hot, mid, warm),
+                start = Offset(c0.x - ringR, c0.y - ringR),
+                end = Offset(c0.x + ringR, c0.y + ringR),
+            )
+            val sweep = 270f * shown
+            drawArc(light, 135f, sweep, false, ring.topLeft, ring.size, alpha = 0.12f, style = stroke(ringW * 4.2f))
+            drawArc(light, 135f, sweep, false, ring.topLeft, ring.size, alpha = 0.24f, style = stroke(ringW * 2.2f))
+            drawArc(light, 135f, sweep, false, ring.topLeft, ring.size, style = stroke(ringW))
+            // Hot core along the lit arc.
+            drawArc(cream.copy(alpha = 0.35f), 135f, sweep, false, ring.topLeft, ring.size, style = stroke(ringW * 0.28f))
+        }
+        // 4. Recessed graphite bowl inside the ring (reference 02: a concave dish, #2A2B38 at its
+        //    lit side): darker toward the top-left where the rim shades it, a soft dark edge all
+        //    round, and a faint lit lip at the bottom-right.
+        val wellR = ringR - ringW / 2f - 0.5.dp.toPx()
+        drawCircle(
+            Brush.linearGradient(listOf(Color(0xFF17181E), bowl), start = c0 - Offset(wellR, wellR), end = c0 + Offset(wellR, wellR)),
+            radius = wellR, center = c0,
+        )
+        drawCircle(
+            Brush.radialGradient(0.78f to Color.Transparent, 1f to Color.Black.copy(alpha = 0.40f), center = c0, radius = wellR),
+            radius = wellR, center = c0,
+        )
+        val wb = box(wellR - 1.dp.toPx())
+        drawArc(rimLight.copy(alpha = 0.10f), 10f, 70f, false, wb.topLeft, wb.size, style = stroke(1.dp.toPx()))
+        // 5. Indicator dot riding the outer arc: cream-hot core, amber halo.
+        val dot = at(angle, arcR)
+        if (enabled) {
+            drawCircle(Brush.radialGradient(listOf(warm.copy(alpha = 0.55f), Color.Transparent), center = dot, radius = 13.dp.toPx()), radius = 13.dp.toPx(), center = dot)
+            drawCircle(Brush.radialGradient(listOf(cream, warm), center = dot - Offset(1.dp.toPx(), 1.dp.toPx()), radius = 6.dp.toPx()), radius = 5.5.dp.toPx(), center = dot)
+        } else {
+            drawCircle(off, radius = 5.dp.toPx(), center = dot)
+        }
+    }
+    // 6. Raised cap sitting in the bowl: smooth, lit from the top-left (no drawn inner rings).
+    val capSize = size * 0.40f
+    Box(
+        Modifier.size(capSize).depthControl(CircleShape, enabled = enabled, accent = true, elevation = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        val top = d.c(d.metalTop)
+        val bottom = d.c(d.metalBottom)
+        Canvas(Modifier.fillMaxSize()) {
+            val r = this.size.minDimension / 2f
+            val c0 = Offset(this.size.width / 2f, this.size.height / 2f)
+            // Soft flat-topped face: a gentle top-left sheen, no hard lines.
+            drawCircle(
+                Brush.radialGradient(listOf(top.copy(alpha = 0.55f), Color.Transparent), center = c0 - Offset(r * 0.35f, r * 0.4f), radius = r * 0.9f),
+                radius = r, center = c0,
+            )
+            rotate(angle, c0) {
+                val dimple = Offset(c0.x, c0.y - r * 0.50f)
+                val dr = r * 0.12f
+                drawCircle(Brush.linearGradient(listOf(Color.Black.copy(alpha = 0.7f), top), start = dimple - Offset(dr, dr), end = dimple + Offset(dr, dr)), radius = dr, center = dimple)
+            }
+        }
+    }
+}
+
+/** A recessed circular housing cut into the chassis (reference 02's play knob seat). */
+@Composable
+private fun Modifier.equipmentHousing(): Modifier {
+    val d = LocalDepth.current
+    val groove = d.c(d.groove)
+    val rimLight = d.c(d.ctrlRimLight)
+    return this.drawBehind {
+        val r = size.minDimension / 2f
+        val c0 = Offset(size.width / 2f, size.height / 2f)
+        drawCircle(Brush.linearGradient(listOf(Color.Black.copy(alpha = 0.85f), groove), start = c0 - Offset(r, r), end = c0 + Offset(r, r)), radius = r, center = c0)
+        val b = androidx.compose.ui.geometry.Rect(c0.x - r, c0.y - r, c0.x + r, c0.y + r)
+        // Lit lower-right lip, shadowed upper-left lip: the seat is cut INTO the panel.
+        drawArc(rimLight.copy(alpha = 0.18f), -10f, 120f, false, b.topLeft, b.size, style = androidx.compose.ui.graphics.drawscope.Stroke(1.2.dp.toPx()))
+        drawArc(Color.Black.copy(alpha = 0.6f), 170f, 120f, false, b.topLeft, b.size, style = androidx.compose.ui.graphics.drawscope.Stroke(1.5.dp.toPx()))
+    }
+}
+
+/**
+ * Reference 02's "+ | -" rocker: two tactile halves in one capsule, each a real volume step on the
+ * phone's media volume (the same volume as the hardware keys). Orange-lit glyphs; a pressed half
+ * sinks in. Each half is a 46x48 dp target with its own TalkBack label.
+ */
+@Composable
+fun VolumeRocker(volume: MediaVolumeState, modifier: Modifier = Modifier) {
+    val d = LocalDepth.current
+    val enabled = !volume.fixed
+    Row(
+        modifier.depthPanel(Capsule(), color = d.c(d.groove), inset = true, elevation = 3.dp).padding(3.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RockerHalf(Icons.Default.Add, "Volume up", enabled && volume.level < volume.max) { volume.set(volume.level + 1) }
+        Box(Modifier.width(1.dp).height(28.dp).drawBehind { drawRect(Color.Black.copy(alpha = 0.7f)) })
+        RockerHalf(Icons.Default.Remove, "Volume down", enabled && volume.level > 0) { volume.set(volume.level - 1) }
+    }
+}
+
+@Composable
+private fun RockerHalf(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
+    val d = LocalDepth.current
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    Box(
+        Modifier.size(width = 46.dp, height = 48.dp)
+            .depthControl(androidx.compose.foundation.shape.RoundedCornerShape(14.dp), pressed = pressed && enabled, enabled = enabled, elevation = 3.dp)
+            .clickable(interactionSource = interaction, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .semantics { contentDescription = label },
+        contentAlignment = Alignment.Center,
+    ) {
+        if (enabled) GlowIcon(icon, null, 20.dp, dim = pressed)
+        else Icon(icon, null, tint = d.c(d.onControl).copy(alpha = 0.3f), modifier = Modifier.size(20.dp))
     }
 }

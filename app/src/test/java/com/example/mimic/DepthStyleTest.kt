@@ -58,37 +58,14 @@ class DepthStyleTest {
     // ---- Presets ----
 
     @Test
-    fun eachStyleHasALightAndADarkPreset() {
-        assertEquals(setOf(DepthStyle.NEUMORPHIC, DepthStyle.SKEUOMORPHIC, DepthStyle.HYBRID), ThemeRegistry.DEPTH_PRESETS.keys)
-        ThemeRegistry.DEPTH_PRESETS.forEach { (style, ids) ->
-            val light = ThemeRegistry.byId(ids.first)
-            val dark = ThemeRegistry.byId(ids.second)
-            assertEquals(ids.first, light.id)
-            assertEquals(ids.second, dark.id)
-            assertFalse(light.colors.isDark)
-            assertTrue(dark.colors.isDark)
-            assertEquals(style, light.style.depth)
-            assertEquals(style, dark.style.depth)
-            assertFalse("3D presets are not glass", light.style.glass || dark.style.glass)
-            assertEquals(ids.first, ThemeRegistry.depthPresetId(style, dark = false))
-            assertEquals(ids.second, ThemeRegistry.depthPresetId(style, dark = true))
+    fun retiredPresetSelectionsUseTheDefault() {
+        listOf("neu_ice", "neu_ice_night", "skeuo_graphite", "skeuo_ivory", "hybrid_soft", "hybrid_soft_night").forEach {
+            assertFalse(ThemeRegistry.presets.any { preset -> preset.id == it })
+            assertEquals(ThemeRegistry.DEFAULT_ID, ThemeRegistry.resolveSelection(it))
         }
-        assertNull(ThemeRegistry.depthPresetId(DepthStyle.FLAT, dark = false))
-        assertEquals(6, ThemeRegistry.DEPTH_PRESETS.values.flatMap { listOf(it.first, it.second) }.toSet().size)
-        assertTrue(ThemeRegistry.CONTROL_DECK_ID in ThemeRegistry.DEPTH_IDS)
-        assertEquals("ids are unique", ThemeRegistry.presets.size, ThemeRegistry.presets.map { it.id }.toSet().size)
-    }
-
-    @Test
-    fun neumorphicPagesAreTheCardColor() {
-        // The raised illusion needs card == page; Soft Ice Blue is a light icy blue.
-        listOf("neu_ice", "neu_ice_night", "hybrid_soft", "hybrid_soft_night").forEach {
-            val c = ThemeRegistry.byId(it).colors
-            assertEquals(it, c.background, c.surface)
-        }
-        val ice = ThemeRegistry.byId("neu_ice").colors.background.toInt()
-        assertTrue("ice blue: blue channel leads", (ice and 0xFF) > ((ice shr 16) and 0xFF))
-        assertTrue("light", DepthColors.luminance(ice) > 0.7)
+        assertEquals("custom-theme", ThemeRegistry.resolveSelection("custom-theme"))
+        assertEquals(ThemeRegistry.CONTROL_DECK_ID, ThemeRegistry.resolveSelection("matte_amber_3d"))
+        assertTrue(ThemeRegistry.usesHardwareControls(ThemeRegistry.CONTROL_DECK_ID))
     }
 
     @Test
@@ -159,7 +136,19 @@ class DepthStyleTest {
         val auto = PlayerLayoutConfig()
         assertEquals(ControlStyle.TACTILE, auto.resolvedControls(glassTheme = false, depthTheme = true))
         assertEquals(ControlStyle.FILLED, auto.resolvedControls(glassTheme = false, depthTheme = false))
-        assertEquals(ControlStyle.GLASS, auto.resolvedControls(glassTheme = true, depthTheme = true))
+        // 4.8.0-beta.2: a 3D theme with glass switched on stays 3D (glass used to win here).
+        assertEquals(ControlStyle.TACTILE, auto.resolvedControls(glassTheme = true, depthTheme = true))
+        assertEquals(ControlStyle.GLASS, auto.resolvedControls(glassTheme = true, depthTheme = false))
+        assertEquals(PlayerBackground.SOLID, auto.resolvedBackground(glassTheme = true, depthTheme = true))
+        assertEquals(PlayerBackground.BLURRED_ARTWORK, auto.resolvedBackground(glassTheme = true, depthTheme = false))
+        // Explicit choices on a glass + 3D theme are respected, whatever they are.
+        for (explicit in listOf(ControlStyle.FILLED, ControlStyle.GLASS, ControlStyle.MINIMAL, ControlStyle.TACTILE)) {
+            assertEquals(explicit, auto.copy(controlStyle = explicit).resolvedControls(glassTheme = true, depthTheme = true))
+            assertEquals(explicit, auto.copy(controlStyle = explicit).resolvedControls(glassTheme = false, depthTheme = false))
+        }
+        for (explicit in PlayerBackground.entries.filter { it != PlayerBackground.AUTO }) {
+            assertEquals(explicit, auto.copy(background = explicit).resolvedBackground(glassTheme = true, depthTheme = true))
+        }
         // An explicit choice always wins.
         assertEquals(ControlStyle.MINIMAL, auto.copy(controlStyle = ControlStyle.MINIMAL).resolvedControls(false, depthTheme = true))
         assertEquals(PlayerBackground.SOLID, auto.resolvedBackground(glassTheme = false, depthTheme = true))
@@ -180,7 +169,7 @@ class DepthStyleTest {
     fun enumsAreAppendOnly() {
         // Persisted by name and shown by ordinal in Settings — new values only at the end.
         assertEquals(listOf("AUTO", "FILLED", "GLASS", "MINIMAL", "TACTILE"), ControlStyle.entries.map { it.name })
-        assertEquals(listOf("FLAT", "NEUMORPHIC", "SKEUOMORPHIC", "HYBRID"), DepthStyle.entries.map { it.name })
+        assertEquals(listOf("FLAT", "NEUMORPHIC", "SKEUOMORPHIC", "HYBRID", "MATTE_AMBER"), DepthStyle.entries.map { it.name })
     }
 
     // ---- Volume knob ----
@@ -215,5 +204,49 @@ class DepthStyleTest {
         // Clamped at the end stops.
         assertEquals(1f, knobFractionAfterTurn(0.95f, 0f, 90f), 0f)
         assertEquals(0f, knobFractionAfterTurn(0.05f, 0f, -90f), 0f)
+    }
+
+    @Test
+    fun equipmentKnobLightsTicksUpToTheLevelOnly() {
+        assertEquals(0, com.example.mimic.ui.components.equipmentLitTicks(0f))
+        assertEquals(0, com.example.mimic.ui.components.equipmentLitTicks(Float.NaN))
+        assertEquals(0, com.example.mimic.ui.components.equipmentLitTicks(-1f))
+        assertEquals(1, com.example.mimic.ui.components.equipmentLitTicks(0.01f))
+        assertEquals(9, com.example.mimic.ui.components.equipmentLitTicks(0.5f))
+        assertEquals(com.example.mimic.ui.components.EQ_TICKS, com.example.mimic.ui.components.equipmentLitTicks(1f))
+        assertEquals(com.example.mimic.ui.components.EQ_TICKS, com.example.mimic.ui.components.equipmentLitTicks(3f))
+        // Monotonic: turning up never turns a light off.
+        var last = 0
+        for (i in 0..100) {
+            val n = com.example.mimic.ui.components.equipmentLitTicks(i / 100f)
+            assertTrue(n >= last)
+            last = n
+        }
+    }
+
+    @Test
+    fun equipmentTicksAreDiscreteCyanAmberOrangeBands() {
+        val cyan = com.example.mimic.ui.designsystem.EQ_CYAN
+        val warm = 0xFFFFD21A.toInt()
+        val hot = 0xFFFF4A00.toInt()
+        assertEquals(cyan, com.example.mimic.ui.components.equipmentTickColor(0f, cyan, warm, hot))
+        assertEquals(cyan, com.example.mimic.ui.components.equipmentTickColor(0.39f, cyan, warm, hot))
+        assertEquals(warm, com.example.mimic.ui.components.equipmentTickColor(0.5f, cyan, warm, hot))
+        assertEquals(hot, com.example.mimic.ui.components.equipmentTickColor(0.7f, cyan, warm, hot))
+        assertEquals(hot, com.example.mimic.ui.components.equipmentTickColor(1f, cyan, warm, hot))
+        assertEquals(cyan, com.example.mimic.ui.components.equipmentTickColor(Float.NaN, cyan, warm, hot))
+    }
+
+    @Test
+    fun blackAndOrangePaletteUsesTheSampledReferenceColors() {
+        val graphite = ThemeRegistry.byId(ThemeRegistry.CONTROL_DECK_ID)
+        val d = depthPalette(DepthStyle.SKEUOMORPHIC, graphite.style.depthStrength, true, graphite.colors.surface.toInt(), graphite.colors.primary.toInt())
+        assertTrue(d.equipment)
+        assertEquals(0xFF30303A.toInt(), d.metalTop)
+        assertEquals(0xFF1A1B20.toInt(), d.metalBottom)
+        assertEquals(0xFF0D0E10.toInt(), d.groove)
+        // Hybrid keeps its own graphite controls (unchanged by the Black & Orange refinement).
+        val hybrid = depthPalette(DepthStyle.HYBRID, 1f, true, graphite.colors.surface.toInt(), graphite.colors.primary.toInt())
+        assertTrue(hybrid.metalTop != d.metalTop)
     }
 }

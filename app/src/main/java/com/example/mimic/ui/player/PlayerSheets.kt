@@ -1,5 +1,8 @@
 package com.example.mimic.ui.player
 
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.ui.draw.drawBehind
+import com.example.mimic.ui.designsystem.matteGrain
 import com.example.mimic.ui.components.MimicSlider
 import com.example.mimic.ui.components.MimicSwitch
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -190,10 +193,22 @@ fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
     var dragOffset by remember { mutableFloatStateOf(0f) }
     var rowPx by remember { mutableFloatStateOf(0f) }
 
+    // Black & Orange (reference 02's "Shuffle playlist" panel): matte chassis, spaced uppercase
+    // labels, dark slab rows with separators and an orange-lit marker on the playing song.
+    val equipment = com.example.mimic.ui.designsystem.LocalDepth.current.equipment
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
-        Column(Modifier.fillMaxWidth().fillMaxHeight(0.9f)) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.9f).then(if (equipment) Modifier.matteGrain() else Modifier)) {
             Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                if (equipment) {
+                    Text(
+                        "QUEUE",
+                        style = MaterialTheme.typography.labelLarge.copy(letterSpacing = androidx.compose.ui.unit.TextUnit(3f, androidx.compose.ui.unit.TextUnitType.Sp)),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                } else {
+                    Text("Queue", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
+                }
                 IconButton(onClick = { saveAs = true }, enabled = queue.isNotEmpty()) {
                     Icon(Icons.AutoMirrored.Filled.PlaylistAdd, contentDescription = "Save queue as playlist")
                 }
@@ -208,8 +223,8 @@ fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
                 itemsIndexed(order, key = { pos, _ -> "q$pos" }) { pos, original ->
                     val song = queue.getOrNull(original) ?: return@itemsIndexed
                     val isCurrent = original == currentIndex
-                    if (isCurrent) QueueHeader("Now playing")
-                    if (pos == currentIndex + 1) QueueHeader("Up next · ${queue.size - currentIndex - 1}")
+                    if (isCurrent) QueueHeader("Now playing", equipment, lit = true)
+                    if (pos == currentIndex + 1) QueueHeader("Up next · ${queue.size - currentIndex - 1}", equipment)
                     val dragging = dragPos == pos
                     Row(
                         Modifier.fillMaxWidth()
@@ -222,14 +237,31 @@ fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
                                     else -> androidx.compose.ui.graphics.Color.Transparent
                                 },
                             )
+                            .then(if (equipment && !dragging) Modifier.equipmentRowBand(pos) else Modifier)
                             .onSizeChanged { if (rowPx == 0f) rowPx = it.height.toFloat() },
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Box(Modifier.weight(1f)) {
                             SongRow(song = song, onClick = { vm.playQueueItem(original) }, isCurrent = isCurrent, showAlbum = false)
                         }
-                        IconButton(onClick = { vm.removeFromQueue(original) }, enabled = !isCurrent) {
-                            Icon(Icons.Default.Close, contentDescription = "Remove ${song.title} from queue")
+                        if (equipment && isCurrent) {
+                            // Reference 02: the playing row carries an orange-lit play marker.
+                            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+                                com.example.mimic.ui.components.GlowIcon(
+                                    androidx.compose.material.icons.Icons.Filled.PlayArrow,
+                                    if (state.isPlaying) "Playing" else "Paused",
+                                    22.dp,
+                                    dim = !state.isPlaying,
+                                )
+                            }
+                        } else {
+                            IconButton(onClick = { vm.removeFromQueue(original) }, enabled = !isCurrent) {
+                                Icon(
+                                    Icons.Default.Close,
+                                    contentDescription = "Remove ${song.title} from queue",
+                                    tint = if (equipment) MaterialTheme.colorScheme.onSurfaceVariant else androidx.compose.material3.LocalContentColor.current,
+                                )
+                            }
                         }
                         Icon(
                             Icons.Default.DragHandle,
@@ -298,13 +330,31 @@ fun QueueSheet(vm: PlayerViewModel, onDismiss: () -> Unit) {
 }
 
 @Composable
-private fun QueueHeader(text: String) {
+private fun QueueHeader(text: String, equipment: Boolean = false, lit: Boolean = false) {
     Text(
-        text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
+        if (equipment) text.uppercase() else text,
+        style = if (equipment) MaterialTheme.typography.labelMedium.copy(letterSpacing = androidx.compose.ui.unit.TextUnit(2.5f, androidx.compose.ui.unit.TextUnitType.Sp))
+        else MaterialTheme.typography.labelLarge,
+        color = if (equipment && !lit) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.primary,
         modifier = Modifier.fillMaxWidth().padding(start = 24.dp, top = 12.dp, bottom = 4.dp),
     )
+}
+
+/**
+ * Reference 02's playlist slabs: rows alternate between two near-black tones (#141318 / #100F13,
+ * sampled) with a hairline lit edge on top and a dark seam below. Drawn behind the row; static.
+ */
+@Composable
+private fun Modifier.equipmentRowBand(pos: Int): Modifier {
+    val d = com.example.mimic.ui.designsystem.LocalDepth.current
+    val a = androidx.compose.ui.graphics.Color(0xFF16151A)
+    val b = androidx.compose.ui.graphics.Color(0xFF111015)
+    val rim = d.c(d.rimLight)
+    return this.drawBehind {
+        drawRect(if (pos % 2 == 0) a else b)
+        drawLine(rim.copy(alpha = 0.06f), androidx.compose.ui.geometry.Offset(0f, 0.5f), androidx.compose.ui.geometry.Offset(size.width, 0.5f), strokeWidth = 1f)
+        drawLine(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.75f), androidx.compose.ui.geometry.Offset(0f, size.height - 1f), androidx.compose.ui.geometry.Offset(size.width, size.height - 1f), strokeWidth = 2f)
+    }
 }
 
 // ---------------------------------------------------------------------------------------------

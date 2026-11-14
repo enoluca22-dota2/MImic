@@ -71,6 +71,7 @@ import com.example.mimic.ui.components.PlayerVolumeControl
 import com.example.mimic.ui.designsystem.LocalDepth
 import com.example.mimic.ui.designsystem.depthPanel
 import com.example.mimic.ui.designsystem.matteGrain
+import com.example.mimic.ui.designsystem.mattePlayerBackground
 import com.example.mimic.data.resolvedVolume
 import com.example.mimic.data.ControlStyle
 import com.example.mimic.data.PlayerBackground
@@ -128,14 +129,15 @@ fun NowPlayingScreen(
     val glassTheme = env.enabled
     val depthTheme = LocalDepth.current.on
     val background = config.resolvedBackground(glassTheme, depthTheme)
-    val controls = config.resolvedControls(glassTheme, depthTheme)
+    val controls = if (LocalDepth.current.matteAmber) ControlStyle.TACTILE else config.resolvedControls(glassTheme, depthTheme)
     // 3D controls need a 3D theme to draw; an explicit "3D" choice on a flat theme uses Filled.
     val tactile = controls == ControlStyle.TACTILE && depthTheme
     val roundTop = controls == ControlStyle.GLASS || tactile
     // The overlay must FULLY occlude whatever is behind it. Gradient / artwork backgrounds are
     // translucent, so they are always layered ON TOP of an opaque base; otherwise the screen
     // underneath bleeds through (the 2.8.4 "Now Playing over the settings page" bug).
-    val gradientOverlay = if (background == PlayerBackground.GRADIENT) {
+    val matteAmber = LocalDepth.current.matteAmber
+    val gradientOverlay = if (background == PlayerBackground.GRADIENT && !matteAmber) {
         Modifier.background(
             Brush.verticalGradient(
                 listOf(
@@ -166,15 +168,14 @@ fun NowPlayingScreen(
     Box(
         Modifier.fillMaxSize()
             .blockTouchesBehind()
-            .background(MaterialTheme.colorScheme.background)
-            .matteGrain(),
+            .then(if (matteAmber) Modifier.mattePlayerBackground() else Modifier.background(MaterialTheme.colorScheme.background).matteGrain()),
     ) {
     Box(
         Modifier.matchParentSize()
             .then(if (liveGlass) Modifier.layerBackdrop(playerBackdrop) else Modifier)
             .then(gradientOverlay),
     ) {
-        if (background == PlayerBackground.BLURRED_ARTWORK) BlurredArtwork(song)
+        if (!matteAmber && background == PlayerBackground.BLURRED_ARTWORK) BlurredArtwork(song)
     }
     CompositionLocalProvider(LocalGlassBackdrop provides if (liveGlass) playerBackdrop else null) {
     Column(
@@ -258,7 +259,8 @@ fun NowPlayingScreen(
                     style = if (config.layout == PlayerLayout.COMPACT) MaterialTheme.typography.titleLarge
                     else MaterialTheme.typography.headlineSmall,
                     fontWeight = env.headerFontWeight,
-                    color = MaterialTheme.colorScheme.onBackground,
+                    // Reference 02's title is a soft light grey, not pure white.
+                    color = if (tactile && LocalDepth.current.equipment) MaterialTheme.colorScheme.onBackground.copy(alpha = 0.86f) else MaterialTheme.colorScheme.onBackground,
                     maxLines = 1,
                     // Long titles scroll slowly instead of being cut off (respecting reduced motion).
                     modifier = if (env.motionScale > 0f) Modifier.basicMarquee(initialDelayMillis = 1500) else Modifier,

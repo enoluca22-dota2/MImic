@@ -1,8 +1,15 @@
 package com.example.mimic.cast
 
+import android.graphics.Paint
+import android.graphics.PorterDuff
+import android.graphics.PorterDuffColorFilter
 import android.view.ContextThemeWrapper
+import androidx.compose.ui.graphics.toArgb
 import android.widget.Toast
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
+import com.example.mimic.ui.designsystem.LocalDepth
+import com.example.mimic.ui.designsystem.depthControl
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Cast
 import androidx.compose.material3.Icon
@@ -29,6 +36,9 @@ import com.google.android.gms.cast.framework.CastButtonFactory
 @androidx.annotation.OptIn(markerClass = [UnstableApi::class])
 @Composable
 fun CastButton(tint: Color, modifier: Modifier = Modifier) {
+    val depth = LocalDepth.current
+    val castTint = if (depth.matteAmber) depth.c(depth.glow) else tint
+    val body = if (depth.matteAmber) modifier.depthControl(CircleShape) else modifier
     val context = LocalContext.current
     val cast = remember { (context.applicationContext as MimicApplication).container.castController }
     val ok = remember { cast.ensureInitialized() }
@@ -38,20 +48,34 @@ fun CastButton(tint: Color, modifier: Modifier = Modifier) {
                 val reason = (cast.status.value as? CastController.Status.Unsupported)?.reason ?: "Casting isn't available on this phone."
                 Toast.makeText(context, reason, Toast.LENGTH_LONG).show()
             },
-            modifier = modifier,
-        ) { Icon(Icons.Default.Cast, contentDescription = "Cast (unavailable)", tint = tint.copy(alpha = 0.4f)) }
+            modifier = body,
+        ) { Icon(Icons.Default.Cast, contentDescription = "Cast (unavailable)", tint = castTint.copy(alpha = 0.4f)) }
         return
     }
     // Light icon on dark backgrounds, dark icon on light ones.
     val theme = if (tint.luminance() > 0.5f) androidx.appcompat.R.style.Theme_AppCompat else androidx.appcompat.R.style.Theme_AppCompat_Light
     AndroidView(
         factory = { ctx ->
-            MediaRouteButton(ContextThemeWrapper(ctx, theme)).apply {
+            val themedContext = ContextThemeWrapper(ctx, theme)
+            val button = if (depth.matteAmber) {
+                object : MediaRouteButton(themedContext) {
+                    private val indicatorTint = Paint().apply {
+                        colorFilter = PorterDuffColorFilter(castTint.toArgb(), PorterDuff.Mode.SRC_IN)
+                    }
+
+                    override fun onDraw(canvas: android.graphics.Canvas) {
+                        val layer = canvas.saveLayer(0f, 0f, width.toFloat(), height.toFloat(), indicatorTint)
+                        super.onDraw(canvas)
+                        canvas.restoreToCount(layer)
+                    }
+                }
+            } else MediaRouteButton(themedContext)
+            button.apply {
                 CastButtonFactory.setUpMediaRouteButton(ctx.applicationContext, this)
                 setAlwaysVisible(true)
                 contentDescription = "Cast to a TV or speaker"
             }
         },
-        modifier = modifier.size(48.dp),
+        modifier = body.size(48.dp),
     )
 }

@@ -120,7 +120,7 @@ class SettingsRepository(private val context: Context) {
 
     val settings: Flow<AppSettings> = context.dataStore.data.map { prefs ->
         AppSettings(
-            themeId = prefs[Keys.THEME_ID] ?: ThemeRegistry.DEFAULT_ID,
+            themeId = ThemeRegistry.resolveSelection(prefs[Keys.THEME_ID]),
             lastFlatThemeId = prefs[Keys.LAST_FLAT_THEME],
             sleepTimerMinutes = prefs[Keys.SLEEP] ?: 0,
             playerLayout = PlayerLayoutConfig(

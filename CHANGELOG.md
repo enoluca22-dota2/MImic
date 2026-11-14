@@ -1,5 +1,14 @@
 # Changelog
 
+## 4.8.0-beta.3
+
+- Studio Hardware now uses the textured charcoal Now Playing background, raised graphite controls, and orange-to-yellow symbols.
+- The larger volume dial stays in the same row and adds an illuminated ring and a moving level marker.
+- Matte Amber 3D is no longer a separate preset. An existing selection opens Studio Hardware.
+- MImic Liquid Glass, Floating Aura, and the other retained themes remain available. Retired Neumorphism, Skeuomorphism, and Hybrid Soft 3D presets fall back to Emerald.
+
+
+
 ## 4.8.0-beta.2
 
 - Select **Studio Hardware** under Settings → Theme Studio → Hardware theme to apply the complete theme.

@@ -1,5 +1,7 @@
 package com.example.mimic.ui.dynamic
 
+import com.example.mimic.ui.designsystem.surfaceShape
+import com.example.mimic.ui.designsystem.depthPanel
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -19,6 +21,7 @@ import androidx.compose.animation.scaleIn
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import com.example.mimic.ui.designsystem.mattePlayerBackground
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -230,11 +233,13 @@ fun DynamicNowPlayingScreen(
     var lyricsOpen by remember { mutableStateOf(false) }
     BackHandler { if (lyricsOpen) lyricsOpen = false else actions.onBack() }
     val scheme = rememberDynamicScheme(song, config)
+    val matteAmber = com.example.mimic.ui.designsystem.LocalDepth.current.matteAmber
     val reduced = LocalGlass.current.motionScale == 0f
     val ms = config.transitionMs(reduced)
 
     Box(Modifier.fillMaxSize().blockTouchesBehind()) {
-        DynamicBackground(song, scheme, config)
+        if (matteAmber) Box(Modifier.fillMaxSize().mattePlayerBackground())
+        else DynamicBackground(song, scheme, config)
         if (lyricsOpen) {
             DynamicLyrics(vm, state, scheme, onClose = { lyricsOpen = false })
             return@Box
@@ -245,9 +250,11 @@ fun DynamicNowPlayingScreen(
                 RoundAction(Icons.Default.KeyboardArrowDown, "Minimize", scheme, config.glassControls, actions.onBack)
                 Spacer(Modifier.width(8.dp))
                 RoundAction(Icons.Default.Stop, "Stop & close", scheme, config.glassControls, actions.onStop)
+                val equipmentLabel = com.example.mimic.ui.designsystem.LocalDepth.current.equipment
                 Text(
-                    "Now Playing",
-                    style = MaterialTheme.typography.titleSmall,
+                    if (equipmentLabel) "NOW PLAYING" else "Now Playing",
+                    style = if (equipmentLabel) MaterialTheme.typography.labelMedium.copy(letterSpacing = androidx.compose.ui.unit.TextUnit(2.5f, androidx.compose.ui.unit.TextUnitType.Sp))
+                    else MaterialTheme.typography.titleSmall,
                     color = scheme.muted,
                     textAlign = TextAlign.Center,
                     modifier = Modifier.weight(1f),
@@ -313,6 +320,16 @@ fun DynamicNowPlayingScreen(
                         }
                     }
                 }
+                if (com.example.mimic.ui.designsystem.LocalDepth.current.let { it.equipment || it.matteAmber }) {
+                    com.example.mimic.ui.components.DepthIconButton(
+                        if (state.isCurrentFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
+                        contentDescription = "Like",
+                        onClick = actions.onToggleFavorite,
+                        enabled = song != null,
+                        selected = state.isCurrentFavorite,
+                        stateDescription = if (state.isCurrentFavorite) "Liked" else "Not liked",
+                    )
+                } else
                 IconButton(onClick = actions.onToggleFavorite, enabled = song != null) {
                     Icon(
                         if (state.isCurrentFavorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder,
@@ -332,12 +349,42 @@ fun DynamicNowPlayingScreen(
                     com.example.mimic.ui.radio.LiveRow(state, actions.radioFlag, scheme.onBackground, scheme.muted, scheme.accent, actions.onReconnect)
                 }
             } else {
+            // Black & Orange (4.8.0-beta.2): the artwork backdrop stays (that is the Dynamic
+            // player), but seek + transport sit on the theme's matte equipment console.
+            val equipment = com.example.mimic.ui.designsystem.LocalDepth.current.equipment
+            Column(
+                if (equipment) {
+                    Modifier.fillMaxWidth()
+                        .equipmentConsole()
+                        .padding(horizontal = 14.dp, vertical = 12.dp)
+                } else {
+                    Modifier.fillMaxWidth()
+                },
+            ) {
             if (state.isLive) com.example.mimic.ui.radio.LiveRow(state, actions.radioFlag, scheme.onBackground, scheme.muted, scheme.accent, actions.onReconnect)
             else PremiumSeekBar(state, scheme, glow = config.intensity != com.example.mimic.data.DynamicIntensity.SUBTLE, onSeek = actions.onSeek)
             Spacer(Modifier.height(8.dp))
 
             // Transport
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                if (equipment) {
+                    com.example.mimic.ui.components.DepthIconButton(
+                        Icons.Default.Shuffle, "Shuffle", actions.onShuffle, size = 44.dp, iconSize = 20.dp,
+                        selected = state.shuffle, stateDescription = if (state.shuffle) "On" else "Off",
+                    )
+                    com.example.mimic.ui.components.DepthIconButton(Icons.Default.SkipPrevious, "Previous", actions.onPrevious, size = 52.dp, iconSize = 34.dp, bare = true)
+                    com.example.mimic.ui.components.DepthIconButton(
+                        if (state.isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                        if (state.isPlaying) "Pause" else "Play", actions.onPlayPause, size = 76.dp, iconSize = 38.dp, accent = true,
+                    )
+                    com.example.mimic.ui.components.DepthIconButton(Icons.Default.SkipNext, "Next", actions.onNext, size = 52.dp, iconSize = 34.dp, bare = true)
+                    com.example.mimic.ui.components.DepthIconButton(
+                        if (state.repeatMode == Player.REPEAT_MODE_ONE) Icons.Default.RepeatOne else Icons.Default.Repeat,
+                        "Repeat", actions.onRepeat, size = 44.dp, iconSize = 20.dp,
+                        selected = state.repeatMode != Player.REPEAT_MODE_OFF,
+                        stateDescription = when (state.repeatMode) { Player.REPEAT_MODE_ONE -> "Repeat one"; Player.REPEAT_MODE_ALL -> "Repeat all"; else -> "Off" },
+                    )
+                } else {
                 IconButton(onClick = actions.onShuffle) {
                     Icon(Icons.Default.Shuffle, "Shuffle ${if (state.shuffle) "on" else "off"}", tint = if (state.shuffle) scheme.accent else scheme.muted)
                 }
@@ -351,6 +398,8 @@ fun DynamicNowPlayingScreen(
                         tint = if (state.repeatMode != Player.REPEAT_MODE_OFF) scheme.accent else scheme.muted,
                     )
                 }
+                }
+            }
             }
             }
             Spacer(Modifier.height(16.dp))
@@ -359,17 +408,18 @@ fun DynamicNowPlayingScreen(
             var menu by remember { mutableStateOf(false) }
             Row(
                 Modifier.fillMaxWidth().clip(RoundedCornerShape(28.dp))
-                    .then(if (config.glassControls) Modifier.background(scheme.onBackground.copy(alpha = 0.08f)).border(1.dp, scheme.onBackground.copy(alpha = 0.12f), RoundedCornerShape(28.dp)) else Modifier)
+                    .then(if (config.glassControls && !matteAmber) Modifier.background(scheme.onBackground.copy(alpha = 0.08f)).border(1.dp, scheme.onBackground.copy(alpha = 0.12f), RoundedCornerShape(28.dp)) else Modifier)
                     .padding(horizontal = 8.dp, vertical = 2.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = { lyricsOpen = true }) { Icon(Icons.Default.Lyrics, "Lyrics", tint = scheme.onBackground) }
-                IconButton(onClick = actions.onOpenQueue) { Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue", tint = scheme.onBackground) }
+                if (matteAmber) RoundAction(Icons.Default.Lyrics, "Lyrics", scheme, false, { lyricsOpen = true }) else IconButton(onClick = { lyricsOpen = true }) { Icon(Icons.Default.Lyrics, "Lyrics", tint = scheme.onBackground) }
+                if (matteAmber) RoundAction(Icons.AutoMirrored.Filled.QueueMusic, "Queue", scheme, false, actions.onOpenQueue) else IconButton(onClick = actions.onOpenQueue) { Icon(Icons.AutoMirrored.Filled.QueueMusic, "Queue", tint = scheme.onBackground) }
                 castButton(scheme.onBackground)
-                IconButton(onClick = actions.onShare, enabled = song != null) { Icon(Icons.Default.Share, "Share song", tint = scheme.onBackground) }
+                if (matteAmber) RoundAction(Icons.Default.Share, "Share song", scheme, false, actions.onShare)
+                else IconButton(onClick = actions.onShare, enabled = song != null) { Icon(Icons.Default.Share, "Share song", tint = scheme.onBackground) }
                 Box {
-                    IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More options", tint = scheme.onBackground) }
+                    if (matteAmber) RoundAction(Icons.Default.MoreVert, "More options", scheme, false, { menu = true }) else IconButton(onClick = { menu = true }) { Icon(Icons.Default.MoreVert, "More options", tint = scheme.onBackground) }
                     DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                         DropdownMenuItem(
                             text = { Text(if (sleepActive) "Sleep timer (on)" else "Sleep timer") },
@@ -408,6 +458,10 @@ fun DynamicArtwork(song: Song?, config: DynamicPlayerConfig, modifier: Modifier)
 
 @Composable
 fun RoundAction(icon: ImageVector, label: String, scheme: AnimatedScheme, glass: Boolean, onClick: () -> Unit, size: Int = 44) {
+    if (com.example.mimic.ui.designsystem.LocalDepth.current.let { it.equipment || it.matteAmber }) {
+        com.example.mimic.ui.components.DepthIconButton(icon, label, onClick, size = maxOf(size, 44).dp, iconSize = (size * 0.5f).dp)
+        return
+    }
     Box(
         Modifier.size(size.dp).clip(CircleShape)
             .then(if (glass) Modifier.background(scheme.onBackground.copy(alpha = 0.12f)).border(1.dp, scheme.onBackground.copy(alpha = 0.16f), CircleShape) else Modifier)
@@ -446,6 +500,7 @@ fun PremiumSeekBar(state: PlayerUiState, scheme: AnimatedScheme, glow: Boolean, 
     LaunchedEffect(songId) { lastSongId = songId }
     val fraction = dragFraction ?: shown
     val buffered = if (known) (state.bufferedPositionMs.toFloat() / duration).coerceIn(0f, 1f) else 0f
+    val eq = com.example.mimic.ui.designsystem.LocalDepth.current
 
     Column(Modifier.fillMaxWidth()) {
         Canvas(
@@ -465,6 +520,10 @@ fun PremiumSeekBar(state: PlayerUiState, scheme: AnimatedScheme, glow: Boolean, 
                 }
                 .semantics { contentDescription = "Seek bar, ${formatDuration(state.positionMs)} of ${if (known) formatDuration(duration) else "unknown"}" },
         ) {
+            if (eq.equipment) {
+                drawEquipmentChannel(fraction, buffered, known, dragFraction != null, eq)
+                return@Canvas
+            }
             val h = if (dragFraction != null) 8.dp.toPx() else 5.dp.toPx()
             val y = size.height / 2 - h / 2
             val r = CornerRadius(h / 2, h / 2)
@@ -500,5 +559,53 @@ fun DynamicLyrics(vm: PlayerViewModel, ui: PlayerUiState, scheme: AnimatedScheme
             onClose = onClose,
             modifier = Modifier.weight(1f),
         )
+    }
+}
+
+
+/** The Black & Orange console under Dynamic's seek + transport: a raised matte panel (4.8.0-beta.2). */
+@Composable
+private fun Modifier.equipmentConsole(): Modifier =
+    this.depthPanel(LocalGlass.current.style.surfaceShape(1.1f), elevation = 8.dp)
+
+/**
+ * Black & Orange seek channel for the Dynamic player: a recessed near-black groove with a lit lower
+ * lip, the played part glowing red-orange to orange, and a small dark dome thumb with an orange LED.
+ */
+private fun androidx.compose.ui.graphics.drawscope.DrawScope.drawEquipmentChannel(
+    fraction: Float,
+    buffered: Float,
+    known: Boolean,
+    dragging: Boolean,
+    d: com.example.mimic.ui.designsystem.DepthPalette,
+) {
+    val h = (if (dragging) 7.dp else 5.dp).toPx()
+    val y = size.height / 2 - h / 2
+    val r = CornerRadius(h / 2, h / 2)
+    val hot = d.c(d.glowHot)
+    val mid = d.c(d.glow)
+    val w = size.width * fraction
+    // Glow spilling over the groove (behind it).
+    if (w > 0f) {
+        for ((grow, a) in listOf(3.2f to 0.10f, 1.9f to 0.20f)) {
+            val gh = h * grow
+            drawRoundRect(Brush.horizontalGradient(listOf(hot.copy(alpha = a), mid.copy(alpha = a)), endX = w), Offset(-(gh - h) / 2f, size.height / 2 - gh / 2), Size(w + (gh - h), gh), CornerRadius(gh / 2, gh / 2))
+        }
+    }
+    // Groove + lit lower lip + shaded top edge.
+    drawRoundRect(d.c(d.groove), Offset(0f, y), Size(size.width, h), r)
+    drawRoundRect(Color.Black.copy(alpha = 0.6f), Offset(0f, y), Size(size.width, h * 0.45f), r)
+    drawLine(d.c(d.rimLight).copy(alpha = 0.12f), Offset(h / 2, y + h + 0.8.dp.toPx()), Offset(size.width - h / 2, y + h + 0.8.dp.toPx()), strokeWidth = 1.dp.toPx())
+    if (buffered > 0f) drawRoundRect(Color.White.copy(alpha = 0.06f), Offset(0f, y), Size(size.width * buffered, h), r)
+    if (w > 0f) drawRoundRect(Brush.horizontalGradient(listOf(hot, mid), endX = w.coerceAtLeast(h)), Offset(0f, y), Size(w.coerceAtLeast(h), h), r)
+    if (known) {
+        val tr = (if (dragging) 12.dp else 10.dp).toPx()
+        val cx = w.coerceIn(tr, size.width - tr)
+        val c = Offset(cx, size.height / 2)
+        drawCircle(Color.Black.copy(alpha = 0.55f), tr, c + Offset(0.5.dp.toPx(), 2.dp.toPx()))
+        drawCircle(Brush.linearGradient(listOf(d.c(d.metalTop), d.c(d.metalBottom)), start = c - Offset(tr, tr), end = c + Offset(tr, tr)), tr, c)
+        drawCircle(d.c(d.ctrlRimLight), tr, c, style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()))
+        drawCircle(mid.copy(alpha = 0.35f), tr * 0.55f, c)
+        drawCircle(mid, tr * 0.3f, c)
     }
 }

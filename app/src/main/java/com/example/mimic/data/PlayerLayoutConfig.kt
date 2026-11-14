@@ -32,20 +32,24 @@ data class PlayerLayoutConfig(
     val volumeControl: VolumeControl = VolumeControl.AUTO,
 )
 
-/** AUTO resolution: glass themes get the blurred-artwork backdrop, Immersive the accent gradient. */
+/**
+ * AUTO resolution: 3D themes get a solid page, glass themes the blurred-artwork backdrop, Immersive
+ * the accent gradient. 3D is checked first (4.8.0-beta.2): a 3D theme that also has "Liquid Glass
+ * surfaces" switched on in Theme Studio is still drawn as 3D hardware, never as glass.
+ */
 fun PlayerLayoutConfig.resolvedBackground(glassTheme: Boolean, depthTheme: Boolean = false): PlayerBackground = when {
     background != PlayerBackground.AUTO -> background
-    glassTheme -> PlayerBackground.BLURRED_ARTWORK
     // 3D surfaces are lit against the page color; a busy backdrop would break the illusion.
     depthTheme -> PlayerBackground.SOLID
+    glassTheme -> PlayerBackground.BLURRED_ARTWORK
     layout == PlayerLayout.IMMERSIVE -> PlayerBackground.GRADIENT
     else -> PlayerBackground.SOLID
 }
 
 fun PlayerLayoutConfig.resolvedControls(glassTheme: Boolean, depthTheme: Boolean = false): ControlStyle = when {
     controlStyle != ControlStyle.AUTO -> controlStyle
-    glassTheme -> ControlStyle.GLASS
     depthTheme -> ControlStyle.TACTILE
+    glassTheme -> ControlStyle.GLASS
     else -> ControlStyle.FILLED
 }
 

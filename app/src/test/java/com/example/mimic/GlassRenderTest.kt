@@ -1,6 +1,7 @@
 package com.example.mimic
 
 import com.example.mimic.data.GlassQuality
+import com.example.mimic.ui.designsystem.DepthStyle
 import com.example.mimic.ui.designsystem.GlassEnv
 import com.example.mimic.ui.designsystem.GlassRenderMode
 import com.example.mimic.ui.designsystem.ThemeRegistry
@@ -25,6 +26,14 @@ class GlassRenderTest {
         assertEquals(GlassRenderMode.TINTED, glassRenderMode(GlassEnv(glass, GlassQuality.HIGH), true, sdk = 29))
         assertEquals(GlassRenderMode.OPAQUE, glassRenderMode(GlassEnv(glass, GlassQuality.OFF), true, sdk = 35))
         assertEquals(GlassRenderMode.OPAQUE, glassRenderMode(GlassEnv(ThemeStyle(), GlassQuality.HIGH), true, sdk = 35))
+    }
+
+    @Test fun a_3d_theme_never_renders_glass_even_with_glass_switched_on() {
+        for (depth in DepthStyle.entries) {
+            val env = GlassEnv(ThemeStyle(glass = true, depth = depth), GlassQuality.HIGH)
+            assertEquals(depth == DepthStyle.FLAT, env.enabled)
+            if (depth != DepthStyle.FLAT) assertEquals(GlassRenderMode.OPAQUE, glassRenderMode(env, true, sdk = 35))
+        }
     }
 
     @Test fun readability_floor_never_forces_an_opaque_slab() {

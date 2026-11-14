@@ -171,9 +171,13 @@ fun SongRow(
             Spacer(Modifier.height(2.dp))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 SourceIndicator(song, isDownloading)
+                // Black & Orange: reference 02's spaced uppercase sub-line ("ALBUM : BRICK").
+                val equipmentSub = LocalDepth.current.equipment
+                val sub = if (showAlbum && song.album != MetadataFallback.UNKNOWN_ALBUM) "${song.artist} · ${song.album}" else song.artist
                 Text(
-                    if (showAlbum && song.album != MetadataFallback.UNKNOWN_ALBUM) "${song.artist} · ${song.album}" else song.artist,
-                    style = MaterialTheme.typography.bodyMedium,
+                    if (equipmentSub) sub.uppercase() else sub,
+                    style = if (equipmentSub) MaterialTheme.typography.labelMedium.copy(letterSpacing = androidx.compose.ui.unit.TextUnit(1.5f, androidx.compose.ui.unit.TextUnitType.Sp))
+                    else MaterialTheme.typography.bodyMedium,
                     fontWeight = env.artistFontWeight,
                     color = scheme.onSurfaceVariant,
                     maxLines = 1,
@@ -371,7 +375,25 @@ fun MiniPlayer(
         }
     }
     }
-    if (progress != null) {
+    val eqd = LocalDepth.current
+    if (progress != null && eqd.equipment) {
+        // Black & Orange: a hairline recessed channel with a glowing red-orange fill (real playback).
+        val p = progress.coerceIn(0f, 1f)
+        androidx.compose.foundation.Canvas(
+            Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 18.dp).height(6.dp),
+        ) {
+            val h = 2.dp.toPx()
+            val y = size.height / 2 - h / 2
+            val r = androidx.compose.ui.geometry.CornerRadius(h / 2, h / 2)
+            drawRoundRect(eqd.c(eqd.groove), androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Size(size.width, h), r)
+            val w = size.width * p
+            if (w > 0f) {
+                val brush = androidx.compose.ui.graphics.Brush.horizontalGradient(listOf(eqd.c(eqd.glowHot), eqd.c(eqd.glow)), endX = w.coerceAtLeast(h))
+                drawRoundRect(brush, androidx.compose.ui.geometry.Offset(0f, 0f), androidx.compose.ui.geometry.Size(w, size.height), androidx.compose.ui.geometry.CornerRadius(size.height / 2), alpha = 0.22f)
+                drawRoundRect(brush, androidx.compose.ui.geometry.Offset(0f, y), androidx.compose.ui.geometry.Size(w, h), r)
+            }
+        }
+    } else if (progress != null) {
         // A 2 dp line along the bottom edge; it only moves with real playback.
         androidx.compose.material3.LinearProgressIndicator(
             progress = { progress.coerceIn(0f, 1f) },
